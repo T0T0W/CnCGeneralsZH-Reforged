@@ -26,6 +26,7 @@
 #include "Common/GlobalData.h"
 #include "Common/UserPreferences.h"
 #include "GameClient/PlayerColorScheme.h"
+#include "GameClient/View.h"
 
 //-----------------------------------------------------------------------------
 // The accessors.  Each is two lines and exists only because a member pointer cannot span Bool and
@@ -41,6 +42,18 @@
 	static Int get_##field( void ) { return TheGlobalData->field; }															\
 	static void set_##field( Int value ) { TheWritableGlobalData->field = value; }
 
+OPTION_BOOL_ACCESSORS( m_useCameraConstraints )
+
+static Int get_m_cameraBoundaryMargin( void ) { return TheGlobalData->m_cameraBoundaryMargin; }
+static void set_m_cameraBoundaryMargin( Int value )
+{
+	TheWritableGlobalData->m_cameraBoundaryMargin = value;
+	if (TheTacticalView)
+	{
+		TheTacticalView->forceCameraConstraintRecalc();
+		TheTacticalView->forceRedraw();
+	}
+}
 OPTION_BOOL_ACCESSORS( m_edgeScrollInWindowedMode )
 OPTION_BOOL_ACCESSORS( m_snapCameraRotateTo45 )
 OPTION_BOOL_ACCESSORS( m_zoomToCursor )
@@ -159,6 +172,14 @@ const OptionDef TheOptionCatalog[] =
 	// not gone: an empty widgetName only makes the menu passes skip the row, so Options.ini still
 	// loads, clamps and saves each one and a player who wants the old behaviour can put the key
 	// back by hand.  The defaults in GlobalData are what everybody else gets.
+
+	{ "UseCameraConstraints", "", "",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_useCameraConstraints, set_m_useCameraConstraints },
+
+	{ "CameraBoundaryMargin", "", "",
+		OPTION_INT, APPLY_LIVE, 0, 1000,
+		get_m_cameraBoundaryMargin, set_m_cameraBoundaryMargin },
 
 	// Retail refuses to edge-scroll in a window because the cursor can legitimately sit on the
 	// border while you reach for something else; on a second monitor, or borderless, that is

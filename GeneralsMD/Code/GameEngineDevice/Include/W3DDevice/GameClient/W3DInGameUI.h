@@ -81,12 +81,14 @@ protected:
 	virtual void drawAttackCircleFill( void );		///< the wash on the ground inside an attack circle
 	virtual void drawFormationLine( void );				///< the line a right drag is spreading the selection along
 	virtual void drawOrderHints( void );					///< a line from each selected unit to where its order sends it
+	const Image *getOrderDestinationImage();		///< shared antialiased fist marker
 	virtual void drawAttackCircle( void );				///< the circle a left drag is sweeping targets out of
 	virtual void drawAllyCursorLights( void );		///< the patch of an ally's colour lying under their cursor
 	void drawAllyCursors( void );									///< each ally's pointer and name, over the world
 
 	RenderObjClass *m_buildingPlacementAnchor;
 	RenderObjClass *m_buildingPlacementArrow;
+	Image *m_orderDestinationImage;					///< UI-owned marker image and raw texture
 
 	/// One name plate per player, built the first time that ally's cursor is drawn and kept, because
 	/// laying out the same string every frame for every ally is work nobody sees.

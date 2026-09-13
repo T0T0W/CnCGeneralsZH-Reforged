@@ -49,6 +49,7 @@
 #include "Common/Player.h"
 
 #include "GameClient/Color.h"
+#include "GameClient/CameraBoundary.h"
 #include "GameClient/CommandXlat.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GameClient.h"
@@ -177,6 +178,10 @@ W3DView::W3DView()
 	m_FXPitch = 1.0f;
 	m_freezeTimeForCameraMovement = false;
 	m_cameraHasMovedSinceRequest = true;
+	// Scripted pans may expand this region even while map constraints are disabled.
+	m_cameraConstraint.lo.x = m_cameraConstraint.lo.y = 0.0f;
+	m_cameraConstraint.hi.x = m_cameraConstraint.hi.y = 0.0f;
+	m_cameraConstraintValid = false;
 	m_locationRequests.clear();
 	m_locationRequests.reserve(MAX_REQUEST_CACHE_SIZE + 10);	// This prevents the vector from ever re-allocing
 
@@ -295,12 +300,9 @@ void W3DView::buildCameraTransform( Matrix3D *transform )
 	pos.x += m_shakeOffset.x;
 	pos.y += m_shakeOffset.y;
 
-	if (m_cameraConstraintValid)
+	if (TheGlobalData->m_useCameraConstraints && m_cameraConstraintValid)
 	{
-		pos.x = maxf(m_cameraConstraint.lo.x, pos.x);
-		pos.x = minf(m_cameraConstraint.hi.x, pos.x);
-		pos.y = maxf(m_cameraConstraint.lo.y, pos.y);
-		pos.y = minf(m_cameraConstraint.hi.y, pos.y);
+		pos = constrainCameraPosition(pos, m_cameraConstraint);
 	}
 
 	// set position of camera itself
@@ -530,6 +532,13 @@ void W3DView::calcCameraConstraints()
 	{
 		Region3D mapRegion;
 		TheTerrainLogic->getExtent( &mapRegion );
+		if (TheGlobalData->m_cameraBoundaryMargin > 0)
+		{
+			// A fixed margin follows the map rather than shrinking with zoom or camera angle.
+			m_cameraConstraint = cameraBoundaryFromMap(mapRegion, (Real)TheGlobalData->m_cameraBoundaryMargin);
+			m_cameraConstraintValid = true;
+			return;
+		}
 		
 	/*
 		Note the following restrictions on camera constraints!
@@ -672,9 +681,7 @@ void W3DView::setCameraTransform( void )
 	}
 
 	m_3DCamera->Set_Clip_Planes(nearZ, farZ);
-#if defined(_DEBUG) || defined(_INTERNAL)
 	if (TheGlobalData->m_useCameraConstraints)
-#endif
 	{
 		if (!m_cameraConstraintValid)
 		{
@@ -686,11 +693,7 @@ void W3DView::setCameraTransform( void )
 
 		if (m_cameraConstraintValid)
 		{
-			Coord3D pos = *getPosition();
-			pos.x = maxf(m_cameraConstraint.lo.x, pos.x);
-			pos.x = minf(m_cameraConstraint.hi.x, pos.x);
-			pos.y = maxf(m_cameraConstraint.lo.y, pos.y);
-			pos.y = minf(m_cameraConstraint.hi.y, pos.y);
+			Coord3D pos = constrainCameraPosition(*getPosition(), m_cameraConstraint);
 			setPosition(&pos);
 		}
 	}
@@ -2097,26 +2100,18 @@ void W3DView::setSnapMode( CameraLockType lockType, Real lockDist )
 //-------------------------------------------------------------------------------------------------
 void W3DView::scrollBy( Coord2D *delta )
 {
-	// if we haven't moved, ignore
+	// Sample every render tick, including zero movement. Measuring only nonzero scrolls
+	// includes all the idle time in the first move and produces a jump on every restart.
+	const Real scrollDtFactor = m_scrollClock.sample(timeGetTime(), TheW3DFrameLengthInMsec);
+	if (delta)
+		m_scrollAmount = *delta;
+
 	if( delta && (delta->x != 0 || delta->y != 0) )
 	{
 		const Real SCROLL_RESOLUTION = 250.0f;
 
-		// The scroll offsets are tuned as per-30Hz-tick amounts but arrive once per render
-		// frame, so scale the applied movement by real elapsed time to keep scroll speed
-		// framerate-independent. m_scrollAmount stays unscaled - the height-adjust cutoff
-		// in update() compares it against per-tick thresholds.
-		static DWORD prevScrollTime = timeGetTime();
-		DWORD nowScrollTime = timeGetTime();
-		Real scrollDtFactor = (nowScrollTime - prevScrollTime) / (Real)TheW3DFrameLengthInMsec;
-		prevScrollTime = nowScrollTime;
-		if (scrollDtFactor > 3.0f)
-			scrollDtFactor = 3.0f;	// after a hitch or idle, don't teleport the camera
-
 		Vector3 world, worldStart, worldEnd;
 		Vector2 screen, start, end;
-
-		m_scrollAmount = *delta;
 
 		screen.X = delta->x;
 		screen.Y = delta->y;

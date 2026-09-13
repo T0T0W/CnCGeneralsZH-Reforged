@@ -366,6 +366,8 @@ public:
 	Real m_scrollAmountCutoff;				///< Scroll speed to not adjust camera height
 	Real m_cameraAdjustSpeed;					///< Rate at which we adjust camera height
 	Bool m_enforceMaxCameraHeight;		///< Enfoce max camera height while scrolling?
+	Bool m_useCameraConstraints;		///< constrain camera movement to the map and its configured margin
+	Int m_cameraBoundaryMargin;		///< world units permitted beyond the map; 0 uses the original framing limit
 	Bool m_edgeScrollInWindowedMode;	///< allow screen-edge scrolling while running in a window
 	Bool m_snapBuildPlacementTo45;		///< quantize the drag-to-rotate build placement angle to 45 degrees
 	Bool m_snapCameraRotateTo45;		///< quantize the camera heading to 45 degrees when a middle-drag rotate ends
@@ -579,7 +581,6 @@ public:
 #if defined(_DEBUG) || defined(_INTERNAL)
 	Bool m_wireframe;
 	Bool m_stateMachineDebug;
-	Bool m_useCameraConstraints;
 	Bool m_shroudOn;
 	Bool m_fogOfWarOn;
 	Bool m_jabberOn;

@@ -57,8 +57,8 @@ You need to own the game; no game data ships here. Nothing changes unit stats, w
   there.
 - **Soldiers cast real shadows**, built from the pose instead of a flat blob. Scud trails, falling
   bombs, smoke clouds and all 128 tree types cast too — the tree shadows had never been drawn at all.
-- **It fits your monitor.** Widescreen resolutions are back in the options menu, zoom-to-cursor
-  works, and buildings snap to the pathfinder's own grid with the blocked squares crossed out.
+- **It fits your monitor.** Widescreen resolutions are back in the options menu, zoom changes the current view without following the pointer,
+  and buildings snap to the pathfinder's own grid with the blocked squares crossed out.
 - **It does not crash.** Poison clouds, mine clearing, garrison kills, full transports blowing up,
   and quitting the game — all traced and fixed.
 
@@ -127,6 +127,23 @@ The new shadows and the opening camera are `GameData.ini` keys instead —
 restores the retail opening view.
 
 </details>
+
+## Camera and production corrections
+
+Camera pans restart smoothly after idle. The camera target can move up to 200 world units beyond
+each map edge, with a finite limit independent of zoom and rotation. `CameraBoundaryMargin` in
+Options.ini adjusts this margin (1–1000); 0 restores the original framing limit.
+`UseCameraConstraints = No` permits unlimited camera movement.
+Wheel zoom changes the current view's height without following the pointer; cursor anchoring is
+removed and ZoomToCursor defaults to No. Height easing remains the upstream implementation.
+
+Right-clicking the global production strip cancels one queued item and refunds its cost;
+left-click still jumps to the producer. Queued unit buttons also accept cancellation while
+greyed out by insufficient money or a full queue. Right-click cancels one item with modifiers
+held, and consumed GUI clicks do not issue world orders.
+
+Order destination arrows use a small antialiased green dot for movement; other orders keep
+their semantic colours. The artwork is embedded, so no external cursor artwork is required.
 
 ## Not there yet
 

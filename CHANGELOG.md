@@ -8,6 +8,18 @@ found and fixed â€” EA's own, not port damage.**
 
 ---
 
+## Camera, production and destination corrections (2026-09-13)
+
+- Advance each view's pan clock during stationary frames, avoiding an initial jump after idle.
+- Allow a finite 200-unit margin beyond map edges, independent of zoom and angle, with Release
+  constraints and Options.ini settings for the margin and enabling constraints.
+- Remove wheel cursor anchoring and default ZoomToCursor to off; retain upstream height easing.
+- Right-click cancels one item from the global production strip and works on disabled queued-unit
+  buttons. Consume associated raw/logical clicks and releases so cancellation cannot issue orders.
+- Replace destination arrows with an embedded antialiased dot, green for movement, preserving
+  other order colours and arrival animation.
+- Add regression coverage for pan timing, map corners, cursor-independent zoom and GUI cancellation.
+
 ## The frame rate cap is gone
 
 - The picture now runs uncapped; the rules keep their own steady clock.

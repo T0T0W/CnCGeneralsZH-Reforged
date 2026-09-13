@@ -53,6 +53,7 @@
 #include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "W3DDevice/GameClient/W3DGUICallbacks.h"
 #include "W3DDevice/GameClient/W3DInGameUI.h"
+#include "DestinationDotIcon.h"
 #include "W3DDevice/GameClient/W3DDisplay.h"
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/Common/W3DConvert.h"
@@ -287,6 +288,7 @@ W3DInGameUI::W3DInGameUI()
 {
 	m_buildingPlacementAnchor = NULL;
 	m_buildingPlacementArrow = NULL;
+	m_orderDestinationImage = NULL;
 
 	for( Int i = 0; i < MAX_PLAYER_COUNT; ++i )
 		m_allyCursorNames[ i ] = NULL;
@@ -299,6 +301,13 @@ W3DInGameUI::~W3DInGameUI()
 {
 	REF_PTR_RELEASE( m_buildingPlacementAnchor );
 	REF_PTR_RELEASE( m_buildingPlacementArrow );
+	if (m_orderDestinationImage)
+	{
+		TextureClass *texture = (TextureClass*)m_orderDestinationImage->getRawTextureData();
+		REF_PTR_RELEASE(texture);
+		m_orderDestinationImage->deleteInstance();
+		m_orderDestinationImage = NULL;
+	}
 
 	for( Int i = 0; i < MAX_PLAYER_COUNT; ++i )
 		if( m_allyCursorNames[ i ] )
@@ -928,19 +937,7 @@ void W3DInGameUI::drawAttackCircle( void )
 }  // end drawAttackCircle
 
 //-------------------------------------------------------------------------------------------------
-/** The marker on a destination is the cursor the player would be holding if they were pointing at
-	* it: the move cursor for a move, the attack-move one for an attack-move, the attack one for an
-	* attack.  Same art, out of Mouse.ini, so nothing here has to invent a second visual language. */
-//-------------------------------------------------------------------------------------------------
-//-------------------------------------------------------------------------------------------------
-/** One cursor per order, out of the set the game already draws under the hand.  A unit told to
-	* garrison shows the garrison cursor where it is going, one sent to a repair bay shows that one,
-	* and a group given four different jobs reads as four different markers rather than four arrows. */
-//-------------------------------------------------------------------------------------------------
-/** The thread is coloured by what it is for: anything that ends in a shot is red, an attack move
-	* is pink, a post to be held is blue, everything else is green.  The marker on the end of it is
-	* the plain pointer in the same colour - one shape for every order, so the colour is the whole
-	* message. */
+// Order lines keep their semantic colours; destinations use a small dot with a dark outline.
 //-------------------------------------------------------------------------------------------------
 static UnsignedInt orderHintLineColor( InGameUI::OrderHintKind kind )
 {
@@ -961,143 +958,57 @@ static UnsignedInt orderHintLineColor( InGameUI::OrderHintKind kind )
 
 static UnsignedInt orderHintMarkerColor( InGameUI::OrderHintKind kind )
 {
-	return orderHintLineColor( kind ) | 0xFF000000;
-}
-
-struct OrderCursorArt
-{
-	const Image *image;
-	ICoord2D hotSpot;
-	Bool tried;
-};
-static OrderCursorArt s_orderCursorArt[ Mouse::NUM_MOUSE_CURSORS ];
-
-//-------------------------------------------------------------------------------------------------
-/** Turn one Windows cursor into something the 2D renderer can draw.  Mouse.ini's Image entries
-	* name mapped images that do not exist in the shipped data, and the Texture entries name .ANI
-	* files rather than textures - so the art the player is actually holding only exists as an HCURSOR.
-	* Pull the first frame's bits out of it and keep them as a texture. */
-//-------------------------------------------------------------------------------------------------
-static const Image *loadOrderCursorImage( Mouse::MouseCursor cursor, ICoord2D *hotSpot )
-{
-	const AsciiString& name = TheMouse->m_cursorInfo[ cursor ].textureName;
-	if( name.isEmpty() )
-		return NULL;
-
-	char path[ 256 ];
-	snprintf( path, ARRAY_SIZE(path), "data\\cursors\\%s.ANI", name.str() );
-
-	HCURSOR hcursor = LoadCursorFromFile( path );
-	if( hcursor == NULL )
-		return NULL;
-
-	ICONINFO info;
-	if( GetIconInfo( hcursor, &info ) == FALSE )
-		return NULL;
-
-	const Image *result = NULL;
-
-	BITMAP bm;
-	if( info.hbmColor && GetObject( info.hbmColor, sizeof( BITMAP ), &bm ) )
-	{
-		const Int w = bm.bmWidth;
-		const Int h = bm.bmHeight;
-
-		BITMAPINFO bi;
-		memset( &bi, 0, sizeof( bi ) );
-		bi.bmiHeader.biSize = sizeof( BITMAPINFOHEADER );
-		bi.bmiHeader.biWidth = w;
-		bi.bmiHeader.biHeight = -h;			// negative means top down, which is the order a texture wants
-		bi.bmiHeader.biPlanes = 1;
-		bi.bmiHeader.biBitCount = 32;
-		bi.bmiHeader.biCompression = BI_RGB;
-
-		UnsignedInt *color = NEW UnsignedInt[ w * h ];
-		UnsignedInt *mask = NEW UnsignedInt[ w * h ];
-
-		HDC dc = GetDC( NULL );
-		GetDIBits( dc, info.hbmColor, 0, h, color, &bi, DIB_RGB_COLORS );
-		GetDIBits( dc, info.hbmMask, 0, h, mask, &bi, DIB_RGB_COLORS );
-		ReleaseDC( NULL, dc );
-
-		//
-		// a 32-bit cursor carries its own alpha; an older one leaves it zero and says what is
-		// transparent in the AND mask instead, where a white pixel is a hole
-		//
-		Bool hasAlpha = FALSE;
-		for( Int i = 0; i < w * h; ++i )
-			if( color[ i ] & 0xFF000000 )
-			{
-				hasAlpha = TRUE;
-				break;
-			}
-
-		if( hasAlpha == FALSE )
-			for( Int i = 0; i < w * h; ++i )
-				color[ i ] |= (mask[ i ] & 0x00FFFFFF) ? 0x00000000 : 0xFF000000;
-
-		TextureClass *texture = MSGNEW("TextureClass") TextureClass( w, h, WW3D_FORMAT_A8R8G8B8, MIP_LEVELS_1 );
-		SurfaceClass *surface = texture->Get_Surface_Level();
-		Int pitch;
-		UnsignedByte *bits = (UnsignedByte *)surface->Lock( &pitch );
-		for( Int row = 0; row < h; ++row )
-			memcpy( bits + row * pitch, color + row * w, w * sizeof( UnsignedInt ) );
-		surface->Unlock();
-		REF_PTR_RELEASE( surface );
-
-		delete [] color;
-		delete [] mask;
-
-		Image *image = newInstance(Image);
-		Region2D uv;
-		uv.lo.x = 0.0f;
-		uv.lo.y = 0.0f;
-		uv.hi.x = 1.0f;
-		uv.hi.y = 1.0f;
-		image->setStatus( IMAGE_STATUS_RAW_TEXTURE );
-		image->setRawTextureData( texture );
-		image->setUV( &uv );
-		image->setTextureWidth( w );
-		image->setTextureHeight( h );
-		ICoord2D size;
-		size.x = w;
-		size.y = h;
-		image->setImageSize( &size );
-
-		hotSpot->x = info.xHotspot;
-		hotSpot->y = info.yHotspot;
-		result = image;
-	}
-
-	if( info.hbmColor )
-		DeleteObject( info.hbmColor );
-	if( info.hbmMask )
-		DeleteObject( info.hbmMask );
-
-	return result;
+	const UnsignedInt rgb = orderHintLineColor(kind) & 0x00FFFFFF;
+	return rgb == 0x55FF55 ? 0xFF62E686 : rgb | 0xFF000000;
 }
 
 //-------------------------------------------------------------------------------------------------
-/** The marker on a destination is the cursor the player would be holding if they were pointing at
-	* it: the move cursor for a move, the attack-move one for an attack-move, the attack one for an
-	* attack.  Same art, so nothing here has to invent a second visual language.  Built once. */
-//-------------------------------------------------------------------------------------------------
-static const Image *orderCursorImage( Mouse::MouseCursor cursor, ICoord2D *hotSpot )
+// The marker owns its artwork rather than extracting the mouse pointer from a Windows cursor.
+// Upload once per UI instance; every unit's destination shares this small antialiased texture.
+const Image *W3DInGameUI::getOrderDestinationImage()
 {
-	OrderCursorArt& art = s_orderCursorArt[ cursor ];
-	if( art.tried == FALSE )
-	{
-		art.image = loadOrderCursorImage( cursor, &art.hotSpot );
-		art.tried = TRUE;
-	}
+	if (m_orderDestinationImage)
+		return m_orderDestinationImage;
 
-	*hotSpot = art.hotSpot;
-	return art.image;
+	const Int size = DESTINATION_DOT_SIZE;
+	TextureClass *texture = MSGNEW("TextureClass") TextureClass(size, size, WW3D_FORMAT_A8R8G8B8, MIP_LEVELS_1);
+	SurfaceClass *surface = texture->Get_Surface_Level();
+	if (!surface)
+	{
+		REF_PTR_RELEASE(texture);
+		return NULL;
+	}
+	Int pitch;
+	UnsignedByte *bits = (UnsignedByte*)surface->Lock(&pitch);
+	if (!bits)
+	{
+		REF_PTR_RELEASE(surface);
+		REF_PTR_RELEASE(texture);
+		return NULL;
+	}
+	for (Int row = 0; row < size; ++row)
+		memcpy(bits + row * pitch, DestinationDotPixels + row * size, size * sizeof(UnsignedInt));
+	surface->Unlock();
+	REF_PTR_RELEASE(surface);
+
+	Image *image = newInstance(Image);
+	Region2D uv;
+	uv.lo.x = uv.lo.y = 0.0f;
+	uv.hi.x = uv.hi.y = 1.0f;
+	image->setStatus(IMAGE_STATUS_RAW_TEXTURE);
+	image->setRawTextureData(texture);
+	image->setUV(&uv);
+	image->setTextureWidth(size);
+	image->setTextureHeight(size);
+	ICoord2D dimensions = {size, size};
+	image->setImageSize(&dimensions);
+	m_orderDestinationImage = image;
+	return image;
 }
 
 //-------------------------------------------------------------------------------------------------
 /** One faint line per selected unit, from where it stands to where it is going, with the order's
-	* own cursor sitting on the destination.  Green for a move, pink for an attack-move, red for an
+	* dot marker sitting on the destination.  Green for a move, pink for an attack-move, red for an
 	* attack.  The goals are read off the units every frame, so the lines last as long as the orders
 	* do and go when the units arrive or the selection changes. */
 //-------------------------------------------------------------------------------------------------
@@ -1141,19 +1052,15 @@ void W3DInGameUI::drawOrderHints( void )
 
 		TheDisplay->drawLine( from.x, from.y, to.x, to.y, width, lineColor );
 
-		// the marker is the plain pointer, tinted: its white body takes the order colour and the
-		// dark outline stays.  The hot spot is the pixel the player aims with, so that is the pixel
-		// that goes on the destination - a pointer hung by its top left corner points at the wrong
-		// ground
-		ICoord2D hotSpot;
-		const Image *image = orderCursorImage( Mouse::ARROW, &hotSpot );
+		// Centre the dot on the actual goal; keep the existing arrival slide and fade.
+		const Image *image = getOrderDestinationImage();
 		if( image )
 		{
 			const Int w = image->getImageWidth();
 			const Int h = image->getImageHeight();
 			const Int slide = REAL_TO_INT_FLOOR( ( 1.0f - eased ) * MARKER_SLIDE_PIXELS );
-			const Int x = to.x - hotSpot.x + slide;
-			const Int y = to.y - hotSpot.y + slide;
+			const Int x = to.x - DESTINATION_DOT_HOTSPOT_X + slide;
+			const Int y = to.y - DESTINATION_DOT_HOTSPOT_Y + slide;
 
 			// the tint carries the fade as well as the order's colour
 			const UnsignedInt markerColor = ( orderHintMarkerColor( it->kind ) & 0x00FFFFFF )
@@ -1459,4 +1366,3 @@ void W3DInGameUI::drawPlaceAngle( View *view )
 	//TheDisplay->drawLine( start.x, start.y, end.x, end.y, width, color );
 
 }  // end drawPlaceAngle
-

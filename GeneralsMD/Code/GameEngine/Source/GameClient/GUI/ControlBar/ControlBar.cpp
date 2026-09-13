@@ -3498,9 +3498,8 @@ CommandSet *ControlBar::newCommandSetOverride( CommandSet *setToOverride )
 //-------------------------------------------------------------------------------------------------
 /** How many units this click on a build button is worth.  Three rungs, taken from Beyond All
 	Reason's build menu, which is the only RTS that treats the batch size as a first class thing:
-	shift is a squad, control is a queue, both together is everything the bank will pay for.  The
-	same number runs the right button, so whatever a click queued, one right-click of the same
-	shape takes back out. */
+	shift is a squad, control is a queue, both together is everything the bank will pay for.
+	Right-click cancellation removes one item independently of these build modifiers. */
 //-------------------------------------------------------------------------------------------------
 Int getBuildBatchCount( void )
 {
@@ -3538,10 +3537,8 @@ CBCommandStatus ControlBar::processContextSensitiveButtonClick( GameWindow *butt
 
 		if( command->getCommandType() == GUI_COMMAND_UNIT_BUILD )
 		{
-			// a modifier takes the same batch back out that it would have queued
-			Int wanted = getBuildBatchCount();
-			while( wanted-- > 0 && cancelLastQueuedUnit( command->getThingTemplate() ) )
-				;
+			// One right click cancels one unit, independently of held build modifiers.
+			cancelLastQueuedUnit( command->getThingTemplate() );
 			return CBC_COMMAND_USED;
 		}
 

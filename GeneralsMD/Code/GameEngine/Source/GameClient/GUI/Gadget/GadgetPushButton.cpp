@@ -831,6 +831,8 @@ void GadgetButtonSetData(GameWindow *g, void *data)
 		pData = getNewPushButtonData();	
 	}
 	pData->userData = data;
+	// Reused command windows must not keep another command's cancellation permission.
+	g->winClearStatus( WIN_STATUS_CANCEL_WHEN_DISABLED );
 	g->winSetUserData(pData);
 }
 

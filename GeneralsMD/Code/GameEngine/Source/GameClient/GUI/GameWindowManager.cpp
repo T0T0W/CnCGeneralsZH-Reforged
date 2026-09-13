@@ -851,6 +851,9 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 	GameWindow *childWindow;
 	Int dx, dy;
 	Bool clearGrabWindow = FALSE;
+	// Only right-button events may reach disabled production buttons. Left clicks and
+	// hotkeys still obey the normal availability check.
+	Bool allowDisabledCancel = msg == GWM_RIGHT_DOWN || msg == GWM_RIGHT_UP;
 
 	// pack mouse coords into one entity for message passing
 	packedMouseCoords = SHORTTOLONG( mousePos->x, mousePos->y );
@@ -866,7 +869,7 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 		m_grabWindow = NULL;
 
 		// what what window within the captured window are we in
-		window = m_mouseCaptor->winPointInChild( mousePos->x, mousePos->y );
+		window = m_mouseCaptor->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
 
 		//
 		// send buttons, drags, wheels to the windows, we don't continually
@@ -1013,7 +1016,7 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 
 			if( m_modalHead && m_modalHead->window )
 			{
-				window = m_modalHead->window->winPointInChild( mousePos->x, mousePos->y );
+				window = m_modalHead->window->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
 			}
 			else
 			{
@@ -1045,7 +1048,7 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 						if( BitTest( window->m_status, WIN_STATUS_ENABLED ) )
 						{
 							// determine which child window the mouse is in
-							window = window->winPointInChild( mousePos->x, mousePos->y );
+							window = window->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
 							break;  // exit for
 						}
 						
@@ -1081,7 +1084,7 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 							if( BitTest( window->m_status, WIN_STATUS_ENABLED ))
 							{								
 								// determine which child window the mouse is in
-								window = window->winPointInChild( mousePos->x, mousePos->y );
+								window = window->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
 								break;  // exit for
 							}
 						}
@@ -1115,7 +1118,7 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 							if( BitTest( window->m_status, WIN_STATUS_ENABLED ))
 							{
 								// determine which child window the mouse is in
-								window = window->winPointInChild( mousePos->x, mousePos->y );
+								window = window->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
 								break;  // exit for
 							}
 						}

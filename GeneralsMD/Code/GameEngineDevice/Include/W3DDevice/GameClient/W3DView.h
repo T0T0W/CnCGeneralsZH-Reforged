@@ -43,6 +43,7 @@
 #include "Common/STLTypedefs.h"
 #include "GameClient/ParabolicEase.h"
 #include "GameClient/View.h"
+#include "GameClient/CameraScrollClock.h"
 #include "WW3D2/Camera.h"
 
 // FORWARD REFERENCES /////////////////////////////////////////////////////////////////////////////
@@ -276,6 +277,7 @@ private:
 	Coord3D m_cameraOffset;													///< offset for camera from view center
 	Coord3D m_previousLookAtPosition;													///< offset for camera from view center
 	Coord2D m_scrollAmount;													///< scroll speed
+	CameraScrollClock m_scrollClock;	///< elapsed render time, also sampled while idle
 	Real m_scrollAmountCutoff;											///< scroll speed at which we do not adjust height
 
 	Real m_groundLevel;															///< height of ground.

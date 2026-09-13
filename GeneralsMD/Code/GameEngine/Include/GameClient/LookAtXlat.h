@@ -47,23 +47,6 @@ public:
 	void resetModes(); //Used when disabling input, so when we reenable it we aren't stuck in a mode.
 
 private:
-	//
-	// ZoomToCursor: the wheel only moves the camera's *desired* height, and W3DView::update eases
-	// the real zoom towards it over the frames that follow, so the world point under the cursor is
-	// held in place by re-measuring it every frame for as long as that easing lasts.
-	//
-	enum
-	{
-		ZOOM_ANCHOR_MAX_TICKS = 240,	///< hard budget, so a stalled camera cannot pin the view forever
-		ZOOM_ANCHOR_GRACE_TICKS = 4		///< ticks before a still zoom is allowed to end the pin
-	};
-	void updateZoomToCursor( void );	///< keep the anchored world point under its pixel
-	Bool m_zoomAnchorValid;						///< a wheel zoom is being followed
-	ICoord2D m_zoomAnchorPixel;				///< the pixel the wheel was spun over
-	Coord3D m_zoomAnchorWorld;				///< the terrain point that has to stay under it
-	Real m_zoomAnchorZoom;						///< last zoom seen, to tell whether the camera is still easing
-	Int m_zoomAnchorTicks;						///< ticks left in the budget
-
 	enum 
 	{
 		MAX_VIEW_LOCS = 8
