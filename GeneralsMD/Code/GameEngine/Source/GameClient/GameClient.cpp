@@ -119,6 +119,18 @@ Real TheWindowRepaintMS = 0.0f;	///< TheWindowManager->winRepaint() - the contro
 //
 Real TheStripGatherMS = 0.0f;		///< InGameUI::drawProductionStrip() - reading the queues
 Real TheStripDrawMS = 0.0f;			///< InGameUI::drawProductionStrip() - drawing the rows
+//
+// Particles cost in three places that have nothing in common: the update that ages and emits them
+// once a logic frame, the fill that turns each system into quads, and the translucent flush that
+// sorts those quads with every other see-through polygon and draws them.  GameEngine adds these up
+// over an unattended run and prints HEADLESS PARTICLECOST.
+//
+Real TheParticleUpdateMS = 0.0f;			///< ParticleSystemManager::update()
+Real TheParticleFillMS = 0.0f;				///< W3DParticleSystemManager::doParticles(), the system loop alone
+Real TheTranslucentMS = 0.0f;					///< DoParticles() and SortingRendererClass::Flush() together, fill included
+UnsignedInt TheTranslucentDraws = 0;	///< draw calls made by the fill and the flush
+UnsignedInt TheSortingPolygonsRefused = 0;	///< polygons the sorting pool had no room for, so never drawn
+UnsignedInt TheParticlesPastGroupLimit = 0;	///< on-screen particles doParticles cut at MAX_POINTS_PER_GROUP a system
 #endif
 
 //-------------------------------------------------------------------------------------------------

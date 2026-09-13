@@ -1,0 +1,20 @@
+# A hundred thousand particles on one screen, the same frame every run.
+#
+# No unit in the game carries an effect that holds more than a few hundred particles, so this does
+# not come out of an army. It places 370 copies of the cinematic jet exhaust in a block, each one
+# emitting three particles every other frame. The INI says they live three hundred frames, but a
+# particle whose alpha falls under 0.02 is retired early, so a system settles at about 273 rather
+# than 450: 250 of them held 68,284. The count climbs for 300 frames and holds from there.
+#
+#   generals.exe -win -xres 1280 -yres 720 -quickstart -noshellmap -multiInstance -noFPSLimit
+#     -msaa 0 -map "Maps\Alpine Assault\Alpine Assault.map" -autoskirmish 2 -takeover
+#     -seed 1 -maxframes 1200 -particlecap 150000
+#     -scenario particles100k -camera 760 850 -logPrefix p100k_
+#
+# then grep the log for HEADLESS PARTICLECOST. Its two "not drawn" figures say how much of the scene
+# the renderer's own ceilings threw away: the sorting pool's 4096 nodes, and 512 particles a system.
+# Before the pool was flushed in batches, 250 systems here had 88,109 polygons a frame refused.
+#
+#   <frame> particles <slot> <particle system> <count> <x> <y> [spacing]
+
+30    particles  0  CINE_JetLenzflareExhaust  370  760 850  25

@@ -36,6 +36,8 @@
 #include "WW3D2/RInfo.h"
 #include "WWLib/BitType.h"
 
+#include <vector>
+
 //=============================================================================
 /** W3D implementation of the game display which is responsible for creating
   * all interaction with the screen and updating the display 
@@ -62,6 +64,24 @@ private:
 	ShareBufferClass<float> *m_sizeBuffer;			///< array of particle sizes
 	ShareBufferClass<uint8> *m_angleBuffer;			///< array of particle orientations
 	Bool m_readyToRender;											///< if true, it is OK to render
+
+public:
+	/// One sorted billboard system's share of a frame's fill: reserved on the render thread, written by
+	/// one job, inserted into the sorting pool on the render thread again, in system list order.
+	struct BillboardFill
+	{
+		ParticleSystem *												system;
+		PointGroupClass::SortingBillboardRange	range;
+		TextureClass *													texture;
+		ShaderClass															shader;
+		Int																			capacity;					///< quads reserved: the system's particles, at most MAX_POINTS_PER_GROUP
+		UnsignedInt															fieldIncrement;		///< 1 if every drawn particle counts against the field budget
+		Int																			drawn;						///< written by the job
+		UnsignedInt															pastLimit;				///< written by the job: on-screen particles past capacity
+	};
+
+private:
+	std::vector<BillboardFill> m_billboardFills;	///< kept across frames so the fill does not allocate
 };
 
 #endif  // end __W3DParticleSys_H_

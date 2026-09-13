@@ -1764,3 +1764,22 @@ TEST(surface_draw_h_line_fills_the_run_inclusive_at_both_ends)
 	CHECK_EQ( *(unsigned int *)buf, 0 );
 	CHECK_EQ( *(unsigned int *)( buf + 2 * pitch ), 0 );
 }
+
+// ---------------------------------------------------------------------------------------------
+// The sorting pool radix-sorts its triangles on an unsigned key made from each depth's bits.  A key
+// that orders negatives the wrong way round draws everything behind the camera plane in reverse,
+// and nothing on screen would say why, so the ordering is pinned here across the sign.
+// ---------------------------------------------------------------------------------------------
+#include "sortingrenderer.h"
+
+TEST(sorting_depth_key_orders_the_way_the_depths_do)
+{
+	const float depths[] = { -1.0e30f, -2.5f, -1.0f, -1.0e-30f, -0.0f, 0.0f, 1.0e-30f, 1.0f, 2.5f, 1.0e30f };
+	const unsigned count = sizeof( depths ) / sizeof( depths[ 0 ] );
+
+	for( unsigned i = 1; i < count; ++i )
+		CHECK( SortingRendererClass::_Depth_Sort_Key( depths[ i - 1 ] ) < SortingRendererClass::_Depth_Sort_Key( depths[ i ] ) );
+
+	/* the same depth twice is the same key, which is what keeps equal depths in pooled order */
+	CHECK_EQ( SortingRendererClass::_Depth_Sort_Key( 3.25f ), SortingRendererClass::_Depth_Sort_Key( 3.25f ) );
+}

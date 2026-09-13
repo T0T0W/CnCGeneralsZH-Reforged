@@ -54,6 +54,15 @@ static bool _DynamicSortingVertexArrayInUse=false;
 //static VertexFormatXYZNDUV2* _DynamicSortingVertexArray=NULL;
 static SortingVertexBufferClass* _DynamicSortingVertexArray=NULL;
 static unsigned short _DynamicSortingVertexArraySize=0;
+
+// Sorting arrays that filled up.  A full array used to be released and replaced by one sized to the
+// request that overflowed it, so a frame with more sorted vertices than one array holds made a new
+// array every few particle systems - and global operator new[] zeroes every byte it hands out, which
+// put memset at a tenth of a hundred-thousand-particle frame.  A full array waits here instead, and
+// once the flush has let go of it (this list is its only holder) it is handed out again.
+static const unsigned short SORTING_VERTEX_ARRAY_SIZE=65535;
+static const int MAX_RETIRED_SORTING_VERTEX_ARRAYS=16;
+static SortingVertexBufferClass* _RetiredSortingVertexArrays[MAX_RETIRED_SORTING_VERTEX_ARRAYS];
 static unsigned short _DynamicSortingVertexArrayOffset=0;	
 
 static bool _DynamicDX8VertexBufferInUse=false;
@@ -808,6 +817,9 @@ void DynamicVBAccessClass::_Deinit()
 
 	WWASSERT ((_DynamicSortingVertexArray == NULL) || (_DynamicSortingVertexArray->Num_Refs() == 1));
 	REF_PTR_RELEASE(_DynamicSortingVertexArray);
+	for (int i=0;i<MAX_RETIRED_SORTING_VERTEX_ARRAYS;++i) {
+		REF_PTR_RELEASE(_RetiredSortingVertexArrays[i]);
+	}
 	WWASSERT(!_DynamicSortingVertexArrayInUse);
 	_DynamicSortingVertexArrayInUse=false;
 	_DynamicSortingVertexArraySize=0;
@@ -859,14 +871,32 @@ void DynamicVBAccessClass::Allocate_Sorting_Dynamic_Buffer()
 
 	unsigned new_vertex_count=_DynamicSortingVertexArrayOffset+VertexCount;
 	WWASSERT(new_vertex_count<65536);
-	if (new_vertex_count>_DynamicSortingVertexArraySize) {
-		REF_PTR_RELEASE(_DynamicSortingVertexArray);
-		_DynamicSortingVertexArraySize=new_vertex_count;
-		if (_DynamicSortingVertexArraySize<DEFAULT_VB_SIZE) _DynamicSortingVertexArraySize=DEFAULT_VB_SIZE;
+	if (_DynamicSortingVertexArray && new_vertex_count>_DynamicSortingVertexArraySize) {
+		int slot=0;
+		while (slot<MAX_RETIRED_SORTING_VERTEX_ARRAYS && _RetiredSortingVertexArrays[slot]) {
+			++slot;
+		}
+		if (slot<MAX_RETIRED_SORTING_VERTEX_ARRAYS) {
+			_RetiredSortingVertexArrays[slot]=_DynamicSortingVertexArray;
+			_DynamicSortingVertexArray=NULL;
+		}
+		else {
+			REF_PTR_RELEASE(_DynamicSortingVertexArray);
+		}
 	}
 
 	if (!_DynamicSortingVertexArray) {
-		_DynamicSortingVertexArray=NEW_REF(SortingVertexBufferClass,(_DynamicSortingVertexArraySize));
+		for (int i=0;i<MAX_RETIRED_SORTING_VERTEX_ARRAYS;++i) {
+			if (_RetiredSortingVertexArrays[i] && _RetiredSortingVertexArrays[i]->Num_Refs()==1) {
+				_DynamicSortingVertexArray=_RetiredSortingVertexArrays[i];
+				_RetiredSortingVertexArrays[i]=NULL;
+				break;
+			}
+		}
+		if (!_DynamicSortingVertexArray) {
+			_DynamicSortingVertexArray=NEW_REF(SortingVertexBufferClass,(SORTING_VERTEX_ARRAY_SIZE));
+		}
+		_DynamicSortingVertexArraySize=SORTING_VERTEX_ARRAY_SIZE;
 		_DynamicSortingVertexArrayOffset=0;
 	}
 
@@ -913,7 +943,8 @@ DynamicVBAccessClass::WriteLockClass::WriteLockClass(DynamicVBAccessClass* dynam
 				Vertices,
 				DynamicVBAccess->VertexBufferOffset*DynamicVBAccess->VertexBuffer->FVF_Info().Get_FVF_Size(),
 				DynamicVBAccess->Get_Vertex_Count()*DynamicVBAccess->VertexBuffer->FVF_Info().Get_FVF_Size(),
-				!DynamicVBAccess->VertexBufferOffset ? D3DLOCK_DISCARD : D3DLOCK_NOOVERWRITE);
+				!DynamicVBAccess->VertexBufferOffset ? D3DLOCK_DISCARD : D3DLOCK_NOOVERWRITE,
+				!Direct3D11_Present_Is_Enabled());
 			if (mirror) Vertices=(VertexFormatXYZNDUV2*)mirror;
 		}
 		break;

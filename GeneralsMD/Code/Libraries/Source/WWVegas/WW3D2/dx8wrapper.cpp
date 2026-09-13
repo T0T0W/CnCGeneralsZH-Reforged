@@ -2240,6 +2240,30 @@ void DX8Wrapper::Set_Vertex_Buffer(const DynamicVBAccessClass& vba_)
 
 // ----------------------------------------------------------------------------
 //
+// Bind a range of a sorting vertex array that was reserved and written before, the way the dynamic
+// access above binds one it is holding.  The particle fill reserves every system's range first,
+// writes them on the job pool, and only then binds each one to insert it into the sorting pool.
+//
+// ----------------------------------------------------------------------------
+
+void DX8Wrapper::Set_Sorting_Vertex_Range(VertexBufferClass* vb, unsigned short offset, unsigned short count)
+{
+	for (int i=1;i<MAX_VERTEX_STREAMS;++i) {
+		DX8Wrapper::Set_Vertex_Buffer(NULL, i);
+	}
+
+	if (render_state.vertex_buffers[0]) render_state.vertex_buffers[0]->Release_Engine_Ref();
+	render_state.vertex_buffer_types[0]=BUFFER_TYPE_DYNAMIC_SORTING;
+	render_state.vba_offset=offset;
+	render_state.vba_count=count;
+	REF_PTR_SET(render_state.vertex_buffers[0],vb);
+	render_state.vertex_buffers[0]->Add_Engine_Ref();
+	render_state_changed|=VERTEX_BUFFER_CHANGED;
+	render_state_changed|=INDEX_BUFFER_CHANGED;		// vba_offset changes so index buffer needs to be reset as well.
+}
+
+// ----------------------------------------------------------------------------
+//
 // Set index buffer using dynamic access object.
 //
 // ----------------------------------------------------------------------------
@@ -2376,7 +2400,10 @@ public:
 	explicit CombinerShaderBinding(IDirect3DDevice9 * device)
 		: Device(device), Bound(false)
 	{
-		if (!CombinerShaders_Are_Enabled() || Device == NULL) {
+		// While Direct3D 11 presents, this device skips the indexed draw the shader would be bound
+		// for, and reading the stages back to format a cache key for it was a string build and a map
+		// lookup per draw for nothing.
+		if (!CombinerShaders_Are_Enabled() || Device == NULL || Direct3D11_Present_Is_Enabled()) {
 			return;
 		}
 

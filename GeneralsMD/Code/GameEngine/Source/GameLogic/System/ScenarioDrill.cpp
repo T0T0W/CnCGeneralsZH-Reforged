@@ -42,6 +42,7 @@
 #include "GameLogic/Object.h"
 #include "GameLogic/ScenarioDrill.h"
 #include "GameLogic/TerrainLogic.h"
+#include "GameClient/ParticleSys.h"
 
 #include <algorithm>
 #include <vector>
@@ -162,6 +163,8 @@ static Bool parseActionType( const AsciiString &token, ScenarioActionType *actio
 		*action = SCENARIO_ACTION_STOP;
 	else if (token == "arrive")
 		*action = SCENARIO_ACTION_ARRIVE;
+	else if (token == "particles")
+		*action = SCENARIO_ACTION_PARTICLES;
 	else
 		return FALSE;
 
@@ -234,6 +237,7 @@ static Int tokensNeededFor( ScenarioActionType action )
 	switch (action)
 	{
 		case SCENARIO_ACTION_SPAWN:				return SCENARIO_TOKENS_SPAWN;
+		case SCENARIO_ACTION_PARTICLES:		return SCENARIO_TOKENS_SPAWN;
 		case SCENARIO_ACTION_MOVE:				return SCENARIO_TOKENS_MOVE;
 		case SCENARIO_ACTION_ATTACKMOVE:	return SCENARIO_TOKENS_MOVE;
 		case SCENARIO_ACTION_ATTACK:			return SCENARIO_TOKENS_ATTACK;
@@ -285,6 +289,7 @@ ScenarioParseResult ScenarioDrill_parseLine( const char *line, ScenarioAction *a
 	switch (actionType)
 	{
 		case SCENARIO_ACTION_SPAWN:
+		case SCENARIO_ACTION_PARTICLES:
 		{
 			if (!parseWholeNumber( tokens[ 4 ], &action->count ) || action->count < 1)
 				return SCENARIO_PARSE_BAD_COUNT;
@@ -613,6 +618,47 @@ static Bool executeSpawn( const ScenarioAction &action, Player *player, const Co
 	return made > 0;
 }
 
+/** Particle systems standing on their own, in the same square block spawn lays units out in.  No
+	  unit carries an effect that holds more than a few hundred particles, so a scene with a hundred
+	  thousand of them cannot be got out of an army; it is asked for here instead.  The systems are
+	  client state and draw only on the client's random stream, so they change nothing a CRC sees. */
+static Bool executeParticles( const ScenarioAction &action, const Coord3D &centre )
+{
+	const ParticleSystemTemplate *tmpl = TheParticleSystemManager->findTemplate( action.selector );
+	if (tmpl == NULL)
+	{
+		DEBUG_LOG(("SCENARIO: frame %d particles: no particle system named '%s'\n",
+							 action.frame, action.selector.str()));
+		return FALSE;
+	}
+
+	Int columns = 1;
+	while (columns * columns < action.count)
+		++columns;
+	const Int rows = (action.count + columns - 1) / columns;
+	const Real halfWidth = (columns - 1) * action.spacing * 0.5f;
+	const Real halfHeight = (rows - 1) * action.spacing * 0.5f;
+
+	Int made = 0;
+	for( Int i = 0; i < action.count; ++i )
+	{
+		ParticleSystem *system = TheParticleSystemManager->createParticleSystem( tmpl );
+		if (system == NULL)
+			continue;
+
+		Coord3D pos;
+		pos.x = centre.x + (i % columns) * action.spacing - halfWidth;
+		pos.y = centre.y + (i / columns) * action.spacing - halfHeight;
+		pos.z = TheTerrainLogic->getGroundHeight( pos.x, pos.y );
+		system->setPosition( &pos );
+		++made;
+	}
+
+	DEBUG_LOG(("SCENARIO: frame %d particles '%s' %d of %d at (%.0f,%.0f)\n",
+						 action.frame, action.selector.str(), made, action.count, centre.x, centre.y));
+	return made > 0;
+}
+
 /** Watch every unit of this seat that matches the selector as they stand now, and note the frame
 	  each one first comes within the radius of the target.  The watch starts on the line's own frame,
 	  so a file puts it on the frame of the order it is timing. */
@@ -771,6 +817,7 @@ static Bool executeOrder( const ScenarioAction &action, Player *player, const Co
 
 		case SCENARIO_ACTION_SPAWN:
 		case SCENARIO_ACTION_ARRIVE:
+		case SCENARIO_ACTION_PARTICLES:
 			ordered = FALSE;		// handled before the group is built
 			break;
 	}
@@ -794,6 +841,9 @@ Bool ScenarioDrill_execute( const ScenarioAction &action )
 
 	if (action.action == SCENARIO_ACTION_SPAWN)
 		return executeSpawn( action, player, position );
+
+	if (action.action == SCENARIO_ACTION_PARTICLES)
+		return executeParticles( action, position );
 
 	if (action.action == SCENARIO_ACTION_ARRIVE)
 		return executeArrive( action, player, position );

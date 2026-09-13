@@ -166,6 +166,8 @@ public:
 	const FVFInfoClass& FVF_Info() const { return FVFInfo; }
 	unsigned Get_Type() const { return Type; }
 	unsigned short Get_Vertex_Count() const { return VertexCount; }
+	VertexBufferClass* Peek_Vertex_Buffer() const { return VertexBuffer; }	///< the array or buffer the range lives in, no reference added
+	unsigned short Get_Vertex_Buffer_Offset() const { return VertexBufferOffset; }
 
 	// Call at the end of the execution, or at whatever time you wish to release
 	// the recycled dynamic vertex buffer.

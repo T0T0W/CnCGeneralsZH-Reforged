@@ -42,6 +42,7 @@
 
 #include "WWMath/Matrix3D.h"		///< @todo Replace with our own matrix library
 #include "Common/STLTypedefs.h"
+#include <vector>
 
  
 /// @todo Once the client framerate is decoupled, the frame counters within will have to become time-based
@@ -162,6 +163,8 @@ protected:
 };
 
 
+struct ParticleUpdateContext;
+
 /**
  * An individual particle created by a ParticleSystem.
  * NOTE: Particles cannot exist without a parent particle system.
@@ -176,10 +179,9 @@ public:
 
 	Particle( ParticleSystem *system, const ParticleInfo *data );
 
-	inline Bool update( void );												///< update this particle's behavior - return false if dead
+	inline Bool update( const ParticleUpdateContext &context );	///< update this particle's behavior - return false if dead
 	void doWindMotion( void );									///< do wind motion (if present) from particle system
 
-	void applyForce( const Coord3D *force );		///< add the given acceleration
 
 	inline const Coord3D *getPosition( void ) { return &m_pos; }
 	inline Real getSize( void ) { return m_size; }
@@ -188,9 +190,9 @@ public:
 	inline const RGBColor *getColor( void ) { return &m_color; }
 	inline void setColor( RGBColor *color ) { m_color = *color; }
 
-	inline Bool isInvisible( void );										///< return true if this particle is invisible
-	inline Bool isCulled (void) {return m_isCulled;}				///< return true if the particle falls off the edge of the screen
-	inline void setIsCulled (Bool enable) { m_isCulled = enable;}		///< set particle to not visible because it's outside view frustum
+	inline Bool isInvisible( const ParticleUpdateContext &context );	///< return true if this particle is invisible
+	inline Bool diesThisUpdate (void) const { return m_diesThisUpdate; }			///< marked dead by ParticleSystem::updateParticlesMark, not yet removed
+	inline void setDiesThisUpdate (Bool dies) { m_diesThisUpdate = dies; }
 
 	void controlParticleSystem( ParticleSystem *sys ) { m_systemUnderControl = sys; }
 	void detachControlledParticleSystem( void ) { m_systemUnderControl = NULL; }
@@ -237,7 +239,7 @@ protected:
 	Int								m_colorTargetKey;												///< next index into key array
 
 
-	Bool							m_isCulled;														///< status of particle relative to screen bounds
+	Bool							m_diesThisUpdate;											///< set on the job pool, read when the dead are removed; never saved
 public:
 	Bool							m_inSystemList;
 	Bool							m_inOverallList;
@@ -559,6 +561,23 @@ public:
 
 };
 
+/**
+ * What every particle of one system reads during one update, looked up once for the system.  The
+ * particles used to ask their system for each of these, and the client for the frame twice, once
+ * a particle: with a hundred thousand of them Particle::update was 13% of the frame's samples.
+ */
+struct ParticleUpdateContext
+{
+	Coord3D																	driftVelocity;
+	Real																		gravity;
+	UnsignedInt															clientFrame;
+	ParticleSystemInfo::ParticleShaderType	shaderType;
+	ParticleSystemInfo::WindMotion					windMotion;
+	Bool																		groundCollision;	///< the system asked for it and there is terrain to hit
+	Real																		groundBounce;
+	Real																		groundFriction;
+};
+
 
 /**
  * A ParticleSystemTemplate, used by the ParticleSystemManager to instantiate ParticleSystems.
@@ -649,6 +668,14 @@ public:
 	void attachToObject( const Object *obj );									///< attach this particle system to an Object
 
 	virtual Bool update( Int localPlayerIndex );								///< update this particle system, return false if dead
+
+	/// update() in three parts, for a system no other system reads or writes, so the manager can run
+	/// the middle one on the job pool: the emission serially in list order, the particles anywhere,
+	/// then the dead particles, the ground blob and the lifetime serially in list order again.
+	Bool isUpdateIndependent( void ) const;
+	Bool updateEmission( Int localPlayerIndex, Bool *keepSystem );	///< FALSE when the update ended before the particles; *keepSystem is then the answer
+	void updateParticlesMark( void );			///< job-safe: integrate every particle and mark the ones that die
+	Bool reapAndFinishUpdate( void );			///< remove the marked particles and finish; return false if the system is done
 	void updateWindMotion( void );							///< update wind motion
 
 	void setControlParticle( Particle *p );			///< set control particle
@@ -768,6 +795,13 @@ protected:
 	/// refresh (or release) the one decal that shades the ground under this system's particles
 	void updateGroundShadow( const ParticleShadowBlob *blob );
 	void releaseGroundShadow( void );							///< give the ground blob back, if we have one
+
+	void makeUpdateContext( ParticleUpdateContext *context ) const;
+	Bool finishUpdate( const ParticleShadowBlob *blob );	///< the ground blob and the lifetime, after the particles
+
+	ParticleShadowBlob	m_pendingShadowBlob;				///< the survivors' footprint, gathered by updateParticlesMark
+	Bool								m_pendingCastsGroundShadow;	///< decided by updateEmission, where update() always decided it
+	UnsignedInt					m_pendingDeaths;						///< particles updateParticlesMark marked; the reap stops once it has removed them
 
 protected:
 	Particle *				m_systemParticlesHead;
@@ -932,6 +966,7 @@ protected:
 	Int m_onScreenParticleCount;                ///< number of particles displayed on screen per frame
 	UnsignedInt m_lastLogicFrameUpdate;
 	Int m_localPlayerIndex;	///<used to tell particle systems which particles can be skipped due to player shroud status
+	std::vector<ParticleSystem *> m_independentUpdates;	///< this update's systems whose particles go to the job pool; kept so it does not reallocate
 
 private:
 	TemplateMap m_templateMap;		///< a hash map of all particle system templates

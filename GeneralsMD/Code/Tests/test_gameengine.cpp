@@ -9162,6 +9162,38 @@ TEST(an_allocation_inside_a_job_is_counted)
 	JobSystem::shutdown();
 }
 
+/* A fork made the moment the last one returned finds some workers still on their way back to the
+	 wait; a fork made after a pause finds them all asleep.  A wake lost in either case hangs this test,
+	 and a wake left over from one fork and taken by the next returns before its workers are done,
+	 which the visit count sees.  A spin-before-sleep version of the pool hung the full test run once
+	 on exactly that, and measured worse on the particle scene besides, so the pool sleeps at once. */
+TEST(parallel_for_covers_forks_back_to_back_and_forks_after_a_pause)
+{
+	static const Int BACK_TO_BACK_FORKS = 2000;
+	static const Int PAUSED_FORKS = 20;
+	static const DWORD PAUSE_MS = 5;
+	static const Int ITEMS = 64;
+
+	JobSystem::shutdown();
+	JobSystem::init( 4 );
+
+	for( Int fork = 0; fork < BACK_TO_BACK_FORKS + PAUSED_FORKS; ++fork )
+	{
+		if( fork >= BACK_TO_BACK_FORKS )
+			::Sleep( PAUSE_MS );
+
+		resetJobVisits();
+		JobSystem::parallel_for( ITEMS, 1, jobTestCount, NULL );
+
+		Int seen = 0;
+		for( Int i = 0; i < ITEMS; ++i )
+			seen += (s_jobVisits[ i ] == 1) ? 1 : 0;
+		CHECK_EQ( ITEMS, seen );
+	}
+
+	JobSystem::shutdown();
+}
+
 /* The pool is torn down inside ~GameEngine, on the way out of a process that may be quitting from
 	 anywhere.  It has to survive being stopped without ever being started, being stopped twice, and
 	 being started again afterwards - none of which may hang. */
@@ -11541,6 +11573,24 @@ TEST(scenario_parses_a_spawn_line)
 						(Int)SCENARIO_PARSE_OK );
 	CHECK_EQ( (Int)action.frame, 30 );
 	CHECK_NEAR( action.spacing, 55.0f, 0.01f );
+}
+
+TEST(scenario_parses_a_particles_line)
+{
+	ScenarioAction action;
+
+	CHECK_EQ( (Int)ScenarioDrill_parseLine( "30 particles 0 CINE_JetLenzflareExhaust 250 760 850 25", &action ),
+						(Int)SCENARIO_PARSE_OK );
+	CHECK_EQ( (Int)action.action, (Int)SCENARIO_ACTION_PARTICLES );
+	CHECK_STR( action.selector.str(), "CINE_JetLenzflareExhaust" );
+	CHECK_EQ( action.count, 250 );
+	CHECK_NEAR( action.at.x, 760.0f, 0.01f );
+	CHECK_NEAR( action.at.y, 850.0f, 0.01f );
+	CHECK_NEAR( action.spacing, 25.0f, 0.01f );
+
+	// the same count and position rules as spawn, because it shares spawn's parse
+	CHECK_EQ( (Int)ScenarioDrill_parseLine( "30 particles 0 X 0 760 850", &action ), (Int)SCENARIO_PARSE_BAD_COUNT );
+	CHECK_EQ( (Int)ScenarioDrill_parseLine( "30 particles 0 X 5 760", &action ), (Int)SCENARIO_PARSE_MISSING_ARGS );
 }
 
 TEST(scenario_parses_the_order_lines)

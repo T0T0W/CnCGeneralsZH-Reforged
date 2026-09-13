@@ -365,13 +365,16 @@ private:
 	std::string ReportLine;
 	PipelineUse * Record_Use(const std::string & key);
 
-	// The last pipeline Resolve worked out, and the state it was worked out from.
+	// The pipelines Resolve worked out most recently, and the state each was worked out from.
 	//
 	// Resolve runs once a draw and its key costs about twenty snprintf calls, a handful of string
 	// appends and two lookups in a map keyed by that string.  Sampling a burning column at 1280x720
 	// put a eighth of the whole frame inside the C runtime's integer formatter.  The renderer
 	// batches by texture and material, so consecutive draws ask for the same pipeline far more
-	// often than not, and a draw that matches this skips the key entirely.
+	// often than not, and a draw that matches skips the key entirely.  One remembered pipeline was
+	// enough for that; a sorted particle frame goes back and forth between a few pipelines draw after
+	// draw, and with a hundred thousand particles the formatter was back at seven percent of the
+	// frame.  So a handful are kept, the one used last checked first and the oldest written over.
 	//
 	// The descriptions are compared with memcmp, which is safe because Build_Vertex_Description and
 	// Build_Combiner_Description both memset before they fill: no padding byte is ever undefined.
@@ -388,7 +391,10 @@ private:
 		Pipeline Resolved;
 		PipelineUse * Use;
 	};
-	ResolveMemo Memo;
+	enum { RESOLVE_MEMO_ENTRIES = 8 };
+	ResolveMemo Memos[RESOLVE_MEMO_ENTRIES];
+	unsigned LastMemo;		///< the entry the last hit or write used; checked first
+	unsigned NextMemo;		///< the entry the next miss writes over
 	void Remember_Resolution(const std::string & key, const Pipeline & resolved,
 		const VertexPipelineDescription & vertex, const CombinerDescription & combiner);
 
@@ -415,6 +421,23 @@ private:
 	std::map<std::string, ID3D11DepthStencilState *> DepthStencilStates;
 	std::map<std::string, ID3D11RasterizerState *> RasterizerStates;
 	std::map<std::string, ID3D11SamplerState *> SamplerStates;
+
+	// The last description each kind of state object was looked up by, and the object it got.
+	//
+	// The maps above are keyed by a description's bytes in a std::string, and every description is
+	// longer than the string's own small buffer, so each lookup allocated and freed.  Bind_State_Objects
+	// makes seven of them a draw, and a particle-heavy frame is several hundred draws whose states
+	// change far less often than that.  memcmp is safe for the ResolveMemo's reason: every
+	// Build_*_Description memsets first.  A null object means no memo; Release_Cached nulls them all.
+	D3D11_BLEND_DESC LastBlendDescription;
+	ID3D11BlendState * LastBlendState;
+	D3D11_DEPTH_STENCIL_DESC LastDepthStencilDescription;
+	ID3D11DepthStencilState * LastDepthStencilState;
+	D3D11_RASTERIZER_DESC LastRasterizerDescription;
+	ID3D11RasterizerState * LastRasterizerState;
+	D3D11_SAMPLER_DESC LastSamplerDescriptions[DX11_BACKEND_TEXTURE_STAGES];
+	ID3D11SamplerState * LastSamplerStates[DX11_BACKEND_TEXTURE_STAGES];
+	void Forget_Last_State_Objects();
 
 	unsigned PipelinesBuilt;
 	unsigned long long DrawsMade;

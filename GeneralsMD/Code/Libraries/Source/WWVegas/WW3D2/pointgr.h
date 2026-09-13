@@ -47,10 +47,13 @@
 #include "vector3.h"
 #include "vector2.h"
 #include "vector.h"
+#include "matrix4.h"
+#include "dx8fvf.h"
 
 class VertexMaterialClass;
 class RenderInfoClass;
 class TextureClass;
+class VertexBufferClass;
 
 /*
 ** PointGroupClass -- a custom object for rendering 
@@ -210,6 +213,52 @@ protected:
 public:
 	static void				_Init(void);
 	static void				_Shutdown(void);
+
+	/// Would Render put billboards drawn with this shader into the sorting pool?
+	static bool				Would_Sort_Billboards(const ShaderClass &shader);
+
+	/// Room for one particle system's sorted billboards, reserved in the sorting vertex array on the
+	/// render thread so the quads can be written into it from anywhere afterwards.  Array holds a
+	/// reference, so the array cannot be recycled until Insert_Sorted_Billboards gives it back.
+	struct SortingBillboardRange
+	{
+		VertexBufferClass *		Array;
+		VertexFormatXYZNDUV2 *	Vertices;
+		unsigned short				Offset;
+	};
+
+	/// Reserve four vertices a quad, at most MAX_VB_SIZE of them.  Render thread only.
+	static void				Reserve_Sorted_Billboards(int quads, SortingBillboardRange *range);
+
+	/// Bind a reserved range holding quads written by Write_Billboard and put it into the sorting
+	/// pool, with the state Render gives a billboarded QUADS group; then release the range.  The
+	/// shader has to be one Would_Sort_Billboards accepts.  Render thread only.
+	static void				Insert_Sorted_Billboards(SortingBillboardRange *range, int quads,
+										TextureClass *texture, const ShaderClass &shader);
+
+	/// One billboard's four vertices: the transform, corner table and single-frame UVs Render uses
+	/// for a billboarded QUADS group with per-point sizes, orientations and colours, written the
+	/// same way so the vertices come out bit for bit the same.  color is packed already
+	/// (DX8Wrapper::Convert_Color_Clamp).  Touches nothing but its arguments and the static tables,
+	/// so any thread may call it.
+	static inline void		Write_Billboard(VertexFormatXYZNDUV2 *quad, const Matrix4x4 &view,
+										const Vector3 &world, float size, unsigned char orientation, unsigned color)
+	{
+		const Vector4 result=view*world;
+		const Vector3 point(result.X,result.Y,result.Z);
+		const Vector3 *corners=_QuadVertexLocationOrientationTable[orientation];
+		const Vector2 *uv=_QuadVertexUVFrameTable[0];
+		for (int k=0;k<4;++k)
+		{
+			const Vector3 location=point + corners[k] * size;
+			quad[k].x=location.X;
+			quad[k].y=location.Y;
+			quad[k].z=location.Z;
+			quad[k].diffuse=color;
+			quad[k].u1=uv[k].X;
+			quad[k].v1=uv[k].Y;
+		}
+	}
 
 private:
 	static Vector3 _TriVertexLocationOrientationTable[256][3];

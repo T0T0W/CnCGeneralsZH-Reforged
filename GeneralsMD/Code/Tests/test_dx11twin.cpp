@@ -158,6 +158,81 @@ TEST(dx11twin_a_dynamic_buffer_keeps_what_a_no_overwrite_write_did_not_touch)
 	delete twin;
 }
 
+// A dynamic lock while Direct3D 11 presents asks End not to copy into the D3D9 memory, because
+// Direct3D 9 skips its indexed draws then and nothing reads a D3D9 buffer back.  The D3D11 buffer
+// still has to get the write, and the D3D9 block must come back exactly as it was lent.
+TEST(dx11twin_a_lock_that_skips_d3d9_still_uploads_and_leaves_d3d9_alone)
+{
+	DX11DeviceClass device;
+	device.Request_Debug_Layer();
+	CHECK(device.Create_Offscreen());
+
+	DX11BufferTwinClass * twin =
+		DX11Twin_Create_Vertex_Buffer(device.Get_Device(), device.Get_Context(), BUFFER_BYTES, true);
+	CHECK(twin != NULL);
+
+	unsigned char d3d9_memory[BUFFER_BYTES];
+	memset(d3d9_memory, UNWRITTEN_BYTE, sizeof(d3d9_memory));
+
+	DX11BufferLockClass lock;
+	memset(lock.Begin(twin, d3d9_memory, 0, RANGE_BYTES, D3DLOCK_DISCARD, false), 0x33, RANGE_BYTES);
+	lock.End();
+
+	unsigned char d3d11_memory[BUFFER_BYTES];
+	CHECK(read_back(device, twin->Buffer(), d3d11_memory, BUFFER_BYTES));
+
+	for (unsigned i = 0; i < RANGE_BYTES; ++i) {
+		CHECK_EQ(d3d11_memory[i], 0x33);
+	}
+	for (unsigned i = 0; i < BUFFER_BYTES; ++i) {
+		CHECK_EQ(d3d9_memory[i], UNWRITTEN_BYTE);
+	}
+
+	delete twin;
+}
+
+// That lock writes straight into the mapped D3D11 buffer rather than the mirror.  A second,
+// non-discarding write to another range has to leave the first intact, because the engine fills
+// one dynamic buffer in batches and draws between them.
+TEST(dx11twin_direct_dynamic_writes_keep_what_a_no_overwrite_write_did_not_touch)
+{
+	DX11DeviceClass device;
+	device.Request_Debug_Layer();
+	CHECK(device.Create_Offscreen());
+
+	DX11BufferTwinClass * twin =
+		DX11Twin_Create_Vertex_Buffer(device.Get_Device(), device.Get_Context(), BUFFER_BYTES, true);
+	CHECK(twin != NULL);
+
+	unsigned char d3d9_memory[BUFFER_BYTES];
+	memset(d3d9_memory, UNWRITTEN_BYTE, sizeof(d3d9_memory));
+
+	DX11BufferLockClass first;
+	unsigned char * first_write =
+		(unsigned char *)first.Begin(twin, d3d9_memory, 0, RANGE_BYTES, D3DLOCK_DISCARD, false);
+	CHECK(first_write != twin->Mirror());
+	memset(first_write, 0x44, RANGE_BYTES);
+	first.End();
+
+	DX11BufferLockClass second;
+	memset(second.Begin(twin, d3d9_memory + RANGE_OFFSET, RANGE_OFFSET, RANGE_BYTES,
+		D3DLOCK_NOOVERWRITE, false), 0x55, RANGE_BYTES);
+	second.End();
+
+	unsigned char d3d11_memory[BUFFER_BYTES];
+	CHECK(read_back(device, twin->Buffer(), d3d11_memory, BUFFER_BYTES));
+
+	for (unsigned i = 0; i < RANGE_BYTES; ++i) {
+		CHECK_EQ(d3d11_memory[i], 0x44);
+		CHECK_EQ(d3d11_memory[RANGE_OFFSET + i], 0x55);
+	}
+	for (unsigned i = 0; i < BUFFER_BYTES; ++i) {
+		CHECK_EQ(d3d9_memory[i], UNWRITTEN_BYTE);
+	}
+
+	delete twin;
+}
+
 // An append lock, which is how the terrain and the dynamic buffers fill one region at a time.  The
 // pointer starts at the offset, and everything outside the range is left as it was - a twin that
 // uploaded the whole buffer on every partial write would still draw correctly and would cost the

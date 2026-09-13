@@ -1236,6 +1236,28 @@ extern Real TheUIPostDrawMS;			///< ...of which the overlays and the HUD strips
 extern Real TheWindowRepaintMS;		///< ...and the window system's repaint
 extern Real TheStripGatherMS;			///< ...of the overlays, the production strip's sweep
 extern Real TheStripDrawMS;				///< ...and the production strip's own drawing
+extern Real TheParticleUpdateMS;		///< GameClient.cpp: the three places particles cost
+extern Real TheParticleFillMS;
+extern Real TheTranslucentMS;
+extern UnsignedInt TheTranslucentDraws;
+extern UnsignedInt TheSortingPolygonsRefused;
+extern UnsignedInt TheParticlesPastGroupLimit;
+
+/** Particle cost summed over an unattended run, per drawn frame, for HEADLESS PARTICLECOST. */
+struct ParticleCostTotals
+{
+	Int			m_passes;
+	double	m_updateMS;
+	double	m_fillMS;
+	double	m_flushMS;
+	double	m_draws;
+	double	m_particles;
+	double	m_onScreen;
+	double	m_refusedPolygons;
+	double	m_pastGroupLimit;
+	UnsignedInt	m_peakParticles;
+};
+static ParticleCostTotals theParticleCost;
 
 #endif
 
@@ -1399,6 +1421,9 @@ static void startFrameTimeStats( void )
 	theFrameTimes.reset();
 	theLogicTimes.reset();
 	theFrameTimesStarted = TRUE;
+#ifdef DEBUG_LOGGING
+	memset( &theParticleCost, 0, sizeof(theParticleCost) );
+#endif
 }
 
 static void reportFrameTimeStats( void )
@@ -1436,6 +1461,19 @@ static void reportFrameTimeStats( void )
 							 (Int)TheGlobalData->m_useHeatEffects,
 							 lodName));
 	}
+
+#ifdef DEBUG_LOGGING
+	if( theParticleCost.m_passes > 0 )
+	{
+		const double passes = (double)theParticleCost.m_passes;
+		DEBUG_LOG(("HEADLESS PARTICLECOST: per drawn frame | update %.3f fill %.3f translucent flush %.3f ms | %.1f translucent draws | %.0f particles, %.0f on screen, peak %u | not drawn: %.0f polygons refused by the sorting pool, %.0f particles past the per-system limit\n",
+							 theParticleCost.m_updateMS / passes, theParticleCost.m_fillMS / passes,
+							 theParticleCost.m_flushMS / passes, theParticleCost.m_draws / passes,
+							 theParticleCost.m_particles / passes, theParticleCost.m_onScreen / passes,
+							 theParticleCost.m_peakParticles,
+							 theParticleCost.m_refusedPolygons / passes, theParticleCost.m_pastGroupLimit / passes));
+	}
+#endif
 
 	if( theLogicTimes.count() > 0 )
 	{
@@ -2052,6 +2090,8 @@ void GameEngine::update( void )
 		Int logicTicks = 0;
 		TheClientDrawMS = TheSceneDrawMS = TheUIDrawMS = TheUIPostDrawMS = TheWindowRepaintMS = 0.0f;
 		TheStripGatherMS = TheStripDrawMS = 0.0f;
+		TheParticleUpdateMS = TheParticleFillMS = TheTranslucentMS = 0.0f;
+		TheTranslucentDraws = TheSortingPolygonsRefused = TheParticlesPastGroupLimit = 0;
 		QueryPerformanceCounter( (LARGE_INTEGER *)&tClientStart );
 #endif
 
@@ -2219,6 +2259,21 @@ void GameEngine::update( void )
 		fpsWinTotal += TheWindowRepaintMS;
 		fpsStripGatherTotal += TheStripGatherMS;
 		fpsStripDrawTotal += TheStripDrawMS;
+		if( theFrameTimesStarted && TheParticleSystemManager )
+		{
+			const UnsignedInt particles = TheParticleSystemManager->getParticleCount();
+			++theParticleCost.m_passes;
+			theParticleCost.m_updateMS += TheParticleUpdateMS;
+			theParticleCost.m_fillMS += TheParticleFillMS;
+			theParticleCost.m_flushMS += TheTranslucentMS - TheParticleFillMS;
+			theParticleCost.m_draws += TheTranslucentDraws;
+			theParticleCost.m_refusedPolygons += TheSortingPolygonsRefused;
+			theParticleCost.m_pastGroupLimit += TheParticlesPastGroupLimit;
+			theParticleCost.m_particles += particles;
+			theParticleCost.m_onScreen += TheParticleSystemManager->getOnScreenParticleCount();
+			if( particles > theParticleCost.m_peakParticles )
+				theParticleCost.m_peakParticles = particles;
+		}
 		if( TheClientDrawMS > fpsDrawMax ) fpsDrawMax = TheClientDrawMS;
 		fpsLogicTotal += logicMS;
 		fpsLogicTicks += logicTicks;

@@ -80,77 +80,51 @@ struct TempIndexStruct
 	float z;
 };
 
-bool operator <(const TempIndexStruct &l, const TempIndexStruct &r) { return l.z < r.z; }
-bool operator <=(const TempIndexStruct &l, const TempIndexStruct &r) { return l.z <= r.z; }
-bool operator >(const TempIndexStruct &l, const TempIndexStruct &r) { return l.z > r.z; }
-bool operator >=(const TempIndexStruct &l, const TempIndexStruct &r) { return l.z >= r.z; }
-bool operator ==(const TempIndexStruct &l, const TempIndexStruct &r) { return l.z == r.z; }
 // ----------------------------------------------------------------------------
-static
-void InsertionSort(TempIndexStruct *begin, TempIndexStruct *end)
+// The pool's entries in depth order, nearest last, as three passes of eleven bits over each depth's
+// sort key.  The quicksort that was here was a fifth of a hundred-thousand-particle frame on its
+// own, two hundred thousand triangles compared several million times.  This touches each entry four
+// times.  It is stable, so entries at exactly the same depth keep the order they were pooled in; the
+// quicksort left those in whatever order partitioning did.  Returns whichever of the two arrays
+// holds the result.
+
+static const unsigned DEPTH_RADIX_BITS=11;
+static const unsigned DEPTH_RADIX_BUCKETS=1<<DEPTH_RADIX_BITS;
+static const unsigned DEPTH_RADIX_PASSES=3;
+
+static TempIndexStruct* Sort_By_Depth(TempIndexStruct* items,TempIndexStruct* scratch,unsigned count)
 {
-	for (TempIndexStruct *iter = begin + 1; iter < end; ++iter) {
-		TempIndexStruct val = iter[0];
-		TempIndexStruct *insert = iter;
-		while (insert != begin && insert[-1] > val) {
-			insert[0] = insert[-1];
-			insert -= 1;
-		}
-		insert[0] = val;
-	}
-}
-
-// ----------------------------------------------------------------------------
-static
-void Sort(TempIndexStruct *begin, TempIndexStruct *end)
-{
-	const int diff = end - begin;
-	if (diff <= 16) {
-		// Insertion sort has less overhead for small arrays
-		InsertionSort(begin, end);
-	} else {
-		// Choose the median of begin, mid, and (end - 1) as the partitioning element.
-		// Rearrange so that *(begin + 1) <= *begin <= *(end - 1).  These will be guard
-		// elements.
-		TempIndexStruct *mid = begin + diff/2;
-		std::swap(mid[0], begin[1]);
-		if (begin[1] > end[-1]) {
-			std::swap(begin[1], end[-1]);
-		}
-		if (begin[0] > end[-1]) {
-			std::swap(begin[0], end[-1]);
-		}																// end[-1] has the largest element
-		if (begin[1] > begin[0]) {
-			std::swap(begin[1], begin[0]);
-		}																// begin[0] has the middle element and begin[1] has the smallest element
-
-		// *begin is now the partitioning element
-		TempIndexStruct *begin1 = begin + 1;	// TODO: Temp fix until I find out who is passing me NaN
-		TempIndexStruct *end1 = end - 1;			// TODO: Temp fix until I find out who is passing me NaN
-		TempIndexStruct *left = begin + 1;
-		TempIndexStruct *right = end - 1;
-		for (;;) {
-#if 0		// TODO: Temp fix until I find out who is passing me NaN.
-			do ++left; while (left[0] < begin[0]);		// Scan up to find element >= than partition
-			do --right; while (right[0] > begin[0]);	// Scan down to find element <= than partition
-#else
-			do ++left; while (left < end1 && left[0] < begin[0]);		// Scan up to find element >= than partition
-			do --right; while (right > begin1 && right[0] > begin[0]);	// Scan down to find element <= than partition
-#endif
-			if (right < left) break;									// Pointers crossed.  Partitioning completed.
-			std::swap(left[0], right[0]);							// Exchange elements.
-		}
-		std::swap(begin[0], right[0]);							// Insert partition element
-
-		// Sort the smaller subarray first then the larger
-		if (right - begin > end - (right + 1)) {
-			Sort(right + 1, end);
-			Sort(begin, right);
-		} else {
-			Sort(begin, right);
-			Sort(right + 1, end);
+	static unsigned histogram[DEPTH_RADIX_PASSES][DEPTH_RADIX_BUCKETS];
+	memset(histogram,0,sizeof(histogram));
+	for (unsigned i=0;i<count;++i) {
+		const unsigned key=SortingRendererClass::_Depth_Sort_Key(items[i].z);
+		for (unsigned pass=0;pass<DEPTH_RADIX_PASSES;++pass) {
+			++histogram[pass][(key>>(pass*DEPTH_RADIX_BITS))&(DEPTH_RADIX_BUCKETS-1)];
 		}
 	}
+
+	TempIndexStruct* from=items;
+	TempIndexStruct* to=scratch;
+	for (unsigned pass=0;pass<DEPTH_RADIX_PASSES;++pass) {
+		unsigned* buckets=histogram[pass];
+		unsigned offset=0;
+		for (unsigned b=0;b<DEPTH_RADIX_BUCKETS;++b) {
+			const unsigned in_bucket=buckets[b];
+			buckets[b]=offset;
+			offset+=in_bucket;
+		}
+
+		const unsigned shift=pass*DEPTH_RADIX_BITS;
+		for (unsigned i=0;i<count;++i) {
+			const unsigned key=SortingRendererClass::_Depth_Sort_Key(from[i].z);
+			to[buckets[(key>>shift)&(DEPTH_RADIX_BUCKETS-1)]++]=from[i];
+		}
+
+		TempIndexStruct* swap=from;
+		from=to;
+		to=swap;
+	}
+	return from;
 }
 
 // ----------------------------------------------------------------------------
@@ -169,6 +143,7 @@ public:
 	unsigned short polygon_count;			// Polygon count to process (3 indices = one polygon)
 	unsigned short min_vertex_index;		// First index used in the vb
 	unsigned short vertex_count;			// Number of vertices used in vb
+	bool quads;									// four vertices a quad, in order from min_vertex_index; the ib is not read
 };
 
 static DLListClass<SortingNodeStruct> sorted_list;
@@ -197,6 +172,7 @@ static SortingNodeStruct* Get_Sorting_Struct()
 // ----------------------------------------------------------------------------
 
 static TempIndexStruct* temp_index_array;
+static TempIndexStruct* temp_sort_scratch_array;	// the radix sort's second buffer, always the same size
 static unsigned temp_index_array_count;
 
 static TempIndexStruct* Get_Temp_Index_Array(unsigned count)
@@ -205,7 +181,9 @@ static TempIndexStruct* Get_Temp_Index_Array(unsigned count)
 		count = DEFAULT_SORTING_POLY_COUNT;
 	if (count>temp_index_array_count) {
 		delete[] temp_index_array;
+		delete[] temp_sort_scratch_array;
 		temp_index_array=W3DNEWARRAY TempIndexStruct[count];
+		temp_sort_scratch_array=W3DNEWARRAY TempIndexStruct[count];
 		temp_index_array_count=count;
 	}
 	return temp_index_array;
@@ -249,6 +227,7 @@ void SortingRendererClass::Insert_Triangles(
 	state->polygon_count=polygon_count;
 	state->min_vertex_index=min_vertex_index;
 	state->vertex_count=vertex_count;
+	state->quads=false;
 
 	SortingVertexBufferClass* vertex_buffer=static_cast<SortingVertexBufferClass*>(state->sorting_state.vertex_buffers[0]);
 	WWASSERT(vertex_buffer);
@@ -324,6 +303,46 @@ void SortingRendererClass::Insert_Triangles(
 
 // ----------------------------------------------------------------------------
 //
+// Insert quads laid out four vertices each, in order, from min_vertex_index in the vertex buffer
+// that is set.  The pool sorts and writes a quad as one piece: a billboard's four corners share one
+// depth, so its two triangles always had the same key, and a quad is four vertices and six indices
+// where two loose triangles were six and six.  No bounding information, like the call above.
+//
+// ----------------------------------------------------------------------------
+
+void SortingRendererClass::Insert_Quads(
+	unsigned short quad_count,
+	unsigned short min_vertex_index,
+	unsigned short vertex_count)
+{
+	const unsigned short polygon_count=quad_count*2;
+	if (!WW3D::Is_Sorting_Enabled()) {
+		DX8Wrapper::Draw_Triangles(0,polygon_count,min_vertex_index,vertex_count);
+		return;
+	}
+
+	DX8_RECORD_SORTING_RENDER(polygon_count,vertex_count);
+
+	SortingNodeStruct* state=Get_Sorting_Struct();
+	DX8Wrapper::Get_Render_State(state->sorting_state);
+
+ 	WWASSERT(
+		((state->sorting_state.index_buffer_type==BUFFER_TYPE_SORTING || state->sorting_state.index_buffer_type==BUFFER_TYPE_DYNAMIC_SORTING) &&
+		(state->sorting_state.vertex_buffer_types[0]==BUFFER_TYPE_SORTING || state->sorting_state.vertex_buffer_types[0]==BUFFER_TYPE_DYNAMIC_SORTING)));
+	WWASSERT(vertex_count==quad_count*4);
+
+	state->bounding_sphere=SphereClass(Vector3(0.0f,0.0f,0.0f),0.0f);
+	state->start_index=0;
+	state->polygon_count=polygon_count;
+	state->min_vertex_index=min_vertex_index;
+	state->vertex_count=vertex_count;
+	state->quads=true;
+	state->transformed_center=Vector3(0.0f,0.0f,0.0f);
+	unsorted_list.Add_Tail(state);
+}
+
+// ----------------------------------------------------------------------------
+//
 // Flush all sorting polygons.
 //
 // ----------------------------------------------------------------------------
@@ -343,38 +362,62 @@ void Release_Refs(SortingNodeStruct* state)
 }
 
 static unsigned overlapping_node_count;
-static unsigned overlapping_polygon_count;
-static unsigned overlapping_vertex_count;
+static unsigned overlapping_entry_count;	// sort entries: a triangle each, or a quad each for a quad node
 static const unsigned MAX_OVERLAPPING_NODES=4096;
-// 16 bit indices: 65535 is the last index a triangle can name, and three of them per polygon.
-static const unsigned MAX_SORTING_VERTICES=65535;
-static const unsigned MAX_SORTING_POLYGONS=65535/3;
+// One batch of the flush: a 16 bit index names 65535 vertices, and the index buffer holds 65535.
+static const unsigned MAX_BATCH_VERTICES=65535;
+static const unsigned MAX_BATCH_INDICES=65535;
+// A sort entry whose third index is this is a quad; its first index is the quad's first vertex.
+static const unsigned short QUAD_ENTRY=0xFFFF;
 static SortingNodeStruct* overlapping_nodes[MAX_OVERLAPPING_NODES];
+// Where each pooled node's first vertex sits, worked out once in the sort pass for the copy pass.
+static VertexFormatXYZNDUV2* overlapping_node_vertices[MAX_OVERLAPPING_NODES];
+// Where each pooled node's sort entries begin, worked out in order before the nodes fill them in parallel.
+static unsigned overlapping_node_entry_offsets[MAX_OVERLAPPING_NODES];
+static unsigned refused_polygon_count;
+
+unsigned SortingRendererClass::Get_Refused_Polygon_Count()
+{
+	return refused_polygon_count;
+}
+
+static SortingRendererClass::ParallelForFunc parallel_for_hook=NULL;
+
+void SortingRendererClass::Set_Parallel_For(ParallelForFunc parallel_for)
+{
+	parallel_for_hook=parallel_for;
+}
+
+static void Run_Parallel(int count,int granularity,void (*work)(int,void*),void* context)
+{
+	if (count<=0) return;
+	if (parallel_for_hook) {
+		parallel_for_hook(count,granularity,work,context);
+		return;
+	}
+	for (int i=0;i<count;++i) {
+		work(i,context);
+	}
+}
+
+// nodes a thread claims at once in the depth pass; a particle node is a few hundred quads
+static const int NODES_PER_CLAIM=4;
+// entries one job copies into a batch at once
+static const unsigned ENTRIES_PER_COPY_CHUNK=2048;
 
 // ----------------------------------------------------------------------------
 
 void SortingRendererClass::Insert_To_Sorting_Pool(SortingNodeStruct* state)
 {
 	if (overlapping_node_count>=MAX_OVERLAPPING_NODES) {
+		refused_polygon_count+=state->polygon_count;
 		Release_Refs(state);
 		WWASSERT(0);
 		return;
 	}
 
-	// The pool feeds one dynamic index buffer and one dynamic vertex buffer, and both
-	// are 16 bit. Past 65535 indices Flush_Sorting_Pool asks for a buffer that cannot
-	// exist and writes the triangles into it anyway; past 65535 vertices the per-node
-	// vertex offset stored in each triangle wraps and the geometry comes out as noise.
-	// Refuse the node instead, the way an over-full node list already does.
-	if (overlapping_polygon_count+state->polygon_count>MAX_SORTING_POLYGONS ||
-			overlapping_vertex_count+state->vertex_count>MAX_SORTING_VERTICES) {
-		Release_Refs(state);
-		return;
-	}
-
 	overlapping_nodes[overlapping_node_count]=state;
-	overlapping_vertex_count+=state->vertex_count;
-	overlapping_polygon_count+=state->polygon_count;
+	overlapping_entry_count+=state->quads ? state->polygon_count/2 : state->polygon_count;
 	overlapping_node_count++;
 }
 
@@ -432,6 +475,211 @@ static void Apply_Render_State(RenderStateStruct& render_state)
 }
 
 // ----------------------------------------------------------------------------
+// Would Apply_Render_State leave the device exactly as it is?  Byte compares on the lights and the
+// matrices can only say no to two states that are really the same, which costs a draw and nothing
+// else.
+
+static bool Same_Draw_State(const RenderStateStruct& a, const RenderStateStruct& b)
+{
+	if (a.shader.Get_Bits()!=b.shader.Get_Bits() || a.material!=b.material) return false;
+	for (int i=0;i<DX8Wrapper::Get_Current_Caps()->Get_Max_Textures_Per_Pass();++i) {
+		if (a.Textures[i]!=b.Textures[i]) return false;
+	}
+	if (memcmp(&a.world,&b.world,sizeof(a.world))!=0 || memcmp(&a.view,&b.view,sizeof(a.view))!=0) return false;
+	if (a.material && a.material->Get_Lighting()) {
+		if (memcmp(a.LightEnable,b.LightEnable,sizeof(a.LightEnable))!=0) return false;
+		if (memcmp(a.Lights,b.Lights,sizeof(a.Lights))!=0) return false;
+	}
+	return true;
+}
+
+// ----------------------------------------------------------------------------
+
+static inline bool Entry_Is_Quad(const TempIndexStruct& entry)
+{
+	return entry.tri.k==QUAD_ENTRY;
+}
+
+static inline unsigned Entry_Vertex_Count(const TempIndexStruct& entry)
+{
+	return Entry_Is_Quad(entry) ? 4 : 3;
+}
+
+static inline unsigned Entry_Index_Count(const TempIndexStruct& entry)
+{
+	return Entry_Is_Quad(entry) ? 6 : 3;
+}
+
+// Where each entry of a batch writes its vertices and indices.  Worked out in order on the render
+// thread so the copy can be split across threads; the array only grows, and only there.
+struct BatchEntryOffset
+{
+	unsigned vertex;
+	unsigned index;
+};
+
+static BatchEntryOffset* batch_offsets;
+static unsigned batch_offsets_count;
+
+static const BatchEntryOffset* Compute_Batch_Offsets(const TempIndexStruct* entries,unsigned entry_count)
+{
+	if (entry_count>batch_offsets_count) {
+		delete[] batch_offsets;
+		batch_offsets=W3DNEWARRAY BatchEntryOffset[entry_count];
+		batch_offsets_count=entry_count;
+	}
+	unsigned vertex=0;
+	unsigned index=0;
+	for (unsigned e=0;e<entry_count;++e) {
+		batch_offsets[e].vertex=vertex;
+		batch_offsets[e].index=index;
+		vertex+=Entry_Vertex_Count(entries[e]);
+		index+=Entry_Index_Count(entries[e]);
+	}
+	return batch_offsets;
+}
+
+struct BatchCopyJob
+{
+	const TempIndexStruct* entries;
+	const BatchEntryOffset* offsets;
+	unsigned entry_count;
+	VertexFormatXYZNDUV2* vertices;
+	unsigned short* indices;
+};
+
+static void Copy_Batch_Vertices(int chunk,void* context)
+{
+	const BatchCopyJob* job=(const BatchCopyJob*)context;
+	const unsigned first=(unsigned)chunk*ENTRIES_PER_COPY_CHUNK;
+	const unsigned last=MIN(first+ENTRIES_PER_COPY_CHUNK,job->entry_count);
+	for (unsigned e=first;e<last;++e) {
+		const TempIndexStruct& entry=job->entries[e];
+		const VertexFormatXYZNDUV2* src_verts=overlapping_node_vertices[entry.idx];
+		VertexFormatXYZNDUV2* dest_verts=job->vertices+job->offsets[e].vertex;
+		if (Entry_Is_Quad(entry)) {
+			memcpy(dest_verts,src_verts+entry.tri.i,sizeof(VertexFormatXYZNDUV2)*4);
+		}
+		else {
+			dest_verts[0]=src_verts[entry.tri.i];
+			dest_verts[1]=src_verts[entry.tri.j];
+			dest_verts[2]=src_verts[entry.tri.k];
+		}
+	}
+}
+
+static void Write_Batch_Indices(int chunk,void* context)
+{
+	const BatchCopyJob* job=(const BatchCopyJob*)context;
+	const unsigned first=(unsigned)chunk*ENTRIES_PER_COPY_CHUNK;
+	const unsigned last=MIN(first+ENTRIES_PER_COPY_CHUNK,job->entry_count);
+	for (unsigned e=first;e<last;++e) {
+		const unsigned short vertex=(unsigned short)job->offsets[e].vertex;
+		unsigned short* index_array=job->indices+job->offsets[e].index;
+		if (Entry_Is_Quad(job->entries[e])) {
+			index_array[0]=vertex;
+			index_array[1]=vertex+1;
+			index_array[2]=vertex+2;
+			index_array[3]=vertex+2;
+			index_array[4]=vertex+3;
+			index_array[5]=vertex;
+		}
+		else {
+			index_array[0]=vertex;
+			index_array[1]=vertex+1;
+			index_array[2]=vertex+2;
+		}
+	}
+}
+
+// Draw one batch of the sorted entries, in that order.
+//
+// Each entry's vertices are copied out of its node on their own - three for a triangle, four for a
+// quad - so a run of entries covers one contiguous stretch of the batch's vertices and indices.  A
+// quad's indices are the pattern PointGroupClass's own quad index buffers use.
+//
+// A run ends where the sorted entries move to another node, and it used to be drawn there even
+// when the next node draws with exactly the same state - thirty inferno cannons each with its own
+// fire system on the same texture, interleaved in depth, were a draw every few triangles.  A run
+// carries on across nodes whose state matches.  The order of the entries does not change, so
+// neither does the picture.
+static void Flush_Sorting_Batch(const TempIndexStruct* entries,unsigned entry_count,unsigned vertex_count,unsigned index_count)
+{
+	BatchCopyJob job;
+	job.entries=entries;
+	job.offsets=Compute_Batch_Offsets(entries,entry_count);
+	job.entry_count=entry_count;
+	job.vertices=NULL;
+	job.indices=NULL;
+	const int chunks=(int)((entry_count+ENTRIES_PER_COPY_CHUNK-1)/ENTRIES_PER_COPY_CHUNK);
+
+	DynamicVBAccessClass dyn_vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,(unsigned short)vertex_count);
+	{
+		DynamicVBAccessClass::WriteLockClass lock(&dyn_vb_access);
+
+		// If you have a crash in here and "dest_verts" points to illegal memory area,
+		// it is because D3D is in illegal state, and the only known cure is rebooting.
+		// This illegal state is usually caused by Quake3-engine powered games such as MOHAA.
+		job.vertices=(VertexFormatXYZNDUV2 *)lock.Get_Formatted_Vertex_Array();
+		Run_Parallel(chunks,1,Copy_Batch_Vertices,&job);
+	}
+
+	DynamicIBAccessClass dyn_ib_access(BUFFER_TYPE_DYNAMIC_DX8,(unsigned short)index_count);
+	{
+		DynamicIBAccessClass::WriteLockClass lock(&dyn_ib_access);
+		job.indices=lock.Get_Index_Array();
+
+		try {
+		Run_Parallel(chunks,1,Write_Batch_Indices,&job);
+		IndexBufferExceptionFunc();
+		} catch(...) {
+			IndexBufferExceptionFunc();
+		}
+	}
+
+	DX8Wrapper::Set_Index_Buffer(dyn_ib_access,0); // Override with this buffer (do something to prevent need for this!)
+	DX8Wrapper::Set_Vertex_Buffer(dyn_vb_access); // Override with this buffer (do something to prevent need for this!)
+
+	DX8Wrapper::Apply_Render_State_Changes();
+
+	unsigned run_first_index=0;
+	unsigned run_first_vertex=0;
+	unsigned run_triangles=0;
+	unsigned index_cursor=0;
+	unsigned vertex_cursor=0;
+	unsigned node_id=entries[0].idx;
+	for (unsigned e=0;e<entry_count;++e) {
+		const unsigned entry_node=entries[e].idx;
+		if (entry_node!=node_id) {
+			SortingNodeStruct* state=overlapping_nodes[node_id];
+			SortingNodeStruct* next=overlapping_nodes[entry_node];
+			if (!Same_Draw_State(state->sorting_state,next->sorting_state)) {
+				Apply_Render_State(state->sorting_state);
+				DX8Wrapper::Draw_Triangles(run_first_index,run_triangles,run_first_vertex,vertex_cursor-run_first_vertex);
+				run_first_index=index_cursor;
+				run_first_vertex=vertex_cursor;
+				run_triangles=0;
+			}
+			node_id=entry_node;
+		}
+		run_triangles+=Entry_Is_Quad(entries[e]) ? 2 : 1;
+		index_cursor+=Entry_Index_Count(entries[e]);
+		vertex_cursor+=Entry_Vertex_Count(entries[e]);
+	}
+
+	Apply_Render_State(overlapping_nodes[node_id]->sorting_state);
+	DX8Wrapper::Draw_Triangles(run_first_index,run_triangles,run_first_vertex,vertex_cursor-run_first_vertex);
+}
+
+// ----------------------------------------------------------------------------
+//
+// The pool used to go out as one dynamic vertex buffer and one 16 bit index buffer, so a node that
+// would have taken either past 65535 was refused and not drawn: a screen with a hundred thousand
+// particles on it drew about sixteen thousand of them.  EA had left the batching as a @todo right
+// here.  Every triangle is still sorted against every other, back to front, and only then written out
+// in batches, in that order.
+//
+// ----------------------------------------------------------------------------
 
 void SortingRendererClass::Flush_Sorting_Pool()
 {
@@ -439,193 +687,144 @@ void SortingRendererClass::Flush_Sorting_Pool()
 
 	SNAPSHOT_SAY(("SortingSystem - Flush \n"));
 
-	// Fill dynamic index buffer with sorting index buffer vertices
-	TempIndexStruct* tis=Get_Temp_Index_Array(overlapping_polygon_count);
+	TempIndexStruct* tis=Get_Temp_Index_Array(overlapping_entry_count);
 
-	unsigned vertexAllocCount = overlapping_vertex_count;
-	if (DynamicVBAccessClass::Get_Default_Vertex_Count() < DEFAULT_SORTING_VERTEX_COUNT)
-		vertexAllocCount = DEFAULT_SORTING_VERTEX_COUNT;	//make sure that we force the DX8 dynamic vertex buffer to maximum size
-	if (overlapping_vertex_count > vertexAllocCount)
-		vertexAllocCount = overlapping_vertex_count;
-	WWASSERT(DEFAULT_SORTING_VERTEX_COUNT == 1 || vertexAllocCount <= DEFAULT_SORTING_VERTEX_COUNT);
-	DynamicVBAccessClass dyn_vb_access(BUFFER_TYPE_DYNAMIC_DX8,dynamic_fvf_type,vertexAllocCount/*overlapping_vertex_count*/);
-	{
-		DynamicVBAccessClass::WriteLockClass lock(&dyn_vb_access);
-		VertexFormatXYZNDUV2* dest_verts=(VertexFormatXYZNDUV2 *)lock.Get_Formatted_Vertex_Array();
-
-		unsigned polygon_array_offset=0;
-		unsigned vertex_array_offset=0;
-		for (unsigned node_id=0;node_id<overlapping_node_count;++node_id) {
-			SortingNodeStruct* state=overlapping_nodes[node_id];
-			VertexFormatXYZNDUV2* src_verts=NULL;
-			SortingVertexBufferClass* vertex_buffer=static_cast<SortingVertexBufferClass*>(state->sorting_state.vertex_buffers[0]);
-			WWASSERT(vertex_buffer);
-			src_verts=vertex_buffer->VertexBuffer;
-			WWASSERT(src_verts);
-			src_verts+=state->sorting_state.vba_offset;
-			src_verts+=state->sorting_state.index_base_offset;
-			src_verts+=state->min_vertex_index;
-
-			// If you have a crash in here and "dest_verts" points to illegal memory area,
-			// it is because D3D is in illegal state, and the only known cure is rebooting.
-			// This illegal state is usually caused by Quake3-engine powered games such as MOHAA.
-			memcpy(dest_verts, src_verts, sizeof(VertexFormatXYZNDUV2)*state->vertex_count);
-			dest_verts += state->vertex_count;
-
-			D3DXMATRIX d3d_mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
-			const Matrix4x4& mtx=(const Matrix4x4&)d3d_mtx;
-
-			unsigned short* indices=NULL;
-			SortingIndexBufferClass* index_buffer=static_cast<SortingIndexBufferClass*>(state->sorting_state.index_buffer);
-			WWASSERT(index_buffer);
-			indices=index_buffer->index_buffer;
-			WWASSERT(indices);
-			indices+=state->start_index;
-			indices+=state->sorting_state.iba_offset;
-
-			if (mtx[0][2] == 0.0f && mtx[1][2] == 0.0f && mtx[3][2] == 0.0f && mtx[2][2] == 1.0f) {
-				// The common case for particle systems.
-				for (int i=0;i<state->polygon_count;++i) {
-					unsigned short idx1=indices[i*3]-state->min_vertex_index;
-					unsigned short idx2=indices[i*3+1]-state->min_vertex_index;
-					unsigned short idx3=indices[i*3+2]-state->min_vertex_index;
-					WWASSERT(idx1<state->vertex_count);
-					WWASSERT(idx2<state->vertex_count);
-					WWASSERT(idx3<state->vertex_count);
-					const VertexFormatXYZNDUV2 *v1 = src_verts + idx1;
-					const VertexFormatXYZNDUV2 *v2 = src_verts + idx2;
-					const VertexFormatXYZNDUV2 *v3 = src_verts + idx3;
-					unsigned array_index=i+polygon_array_offset;
-					WWASSERT(array_index<overlapping_polygon_count);
-					TempIndexStruct *tis_ptr = tis + array_index;
-					tis_ptr->tri.i = idx1 + vertex_array_offset;
-					tis_ptr->tri.j = idx2 + vertex_array_offset;
-					tis_ptr->tri.k = idx3 + vertex_array_offset;
-					tis_ptr->idx = node_id;
-					tis_ptr->z = (v1->z + v2->z + v3->z)/3.0f;
-					DEBUG_ASSERTCRASH((! _isnan(tis_ptr->z) && _finite(tis_ptr->z)), ("Triangle has invalid center"));
-				}
-			} else {
-				for (int i=0;i<state->polygon_count;++i) {
-					unsigned short idx1=indices[i*3]-state->min_vertex_index;
-					unsigned short idx2=indices[i*3+1]-state->min_vertex_index;
-					unsigned short idx3=indices[i*3+2]-state->min_vertex_index;
-					WWASSERT(idx1<state->vertex_count);
-					WWASSERT(idx2<state->vertex_count);
-					WWASSERT(idx3<state->vertex_count);
-					const VertexFormatXYZNDUV2 *v1 = src_verts + idx1;
-					const VertexFormatXYZNDUV2 *v2 = src_verts + idx2;
-					const VertexFormatXYZNDUV2 *v3 = src_verts + idx3;
-					unsigned array_index=i+polygon_array_offset;
-					WWASSERT(array_index<overlapping_polygon_count);
-					TempIndexStruct *tis_ptr = tis + array_index;
-					tis_ptr->tri.i = idx1 + vertex_array_offset;
-					tis_ptr->tri.j = idx2 + vertex_array_offset;
-					tis_ptr->tri.k = idx3 + vertex_array_offset;
-					tis_ptr->idx = node_id;
-					tis_ptr->z = (mtx[0][2]*(v1->x + v2->x + v3->x) +
-												mtx[1][2]*(v1->y + v2->y + v3->y) +
-												mtx[2][2]*(v1->z + v2->z + v3->z))/3.0f + mtx[3][2];
-					DEBUG_ASSERTCRASH((! _isnan(tis_ptr->z) && _finite(tis_ptr->z)), ("Triangle has invalid center"));
-				}
-			}
-
-			state->min_vertex_index=vertex_array_offset;
-
-			polygon_array_offset+=state->polygon_count;
-			vertex_array_offset+=state->vertex_count;
-		}
-	}
-
-	Sort(tis, tis + overlapping_polygon_count);
-
-/*	///@todo: Add code to break up rendering into multiple index buffer fills to allow more than 65536/3 triangles.  -MW
-	int total_overlapping_polygon_count = overlapping_polygon_count;
-	while (  > 0)
-	{
-		if ((total_overlapping_polygon_count*3) > 65535)
-		{	//overflowed the index buffer, must break into multiple batches
-			overlapping_polygon_count = 65535/3;
-		}
-		else
-			overlapping_polygon_count = total_overlapping_polygon_count;
-
-		//insert rendering code here!!
-
-		total_overlapping_polygon_count -= overlapping_polygon_count;
-	}
-*/
-	unsigned polygonAllocCount = overlapping_polygon_count;
-	if ((unsigned)(DynamicIBAccessClass::Get_Default_Index_Count()/3) < DEFAULT_SORTING_POLY_COUNT)
-		polygonAllocCount = DEFAULT_SORTING_POLY_COUNT;	//make sure that we force the DX8 index buffer to maximum size
-	if (overlapping_polygon_count > polygonAllocCount)
-		polygonAllocCount = overlapping_polygon_count;
-	WWASSERT(DEFAULT_SORTING_POLY_COUNT <= 1 || polygonAllocCount <= DEFAULT_SORTING_POLY_COUNT);
-
-	DynamicIBAccessClass dyn_ib_access(BUFFER_TYPE_DYNAMIC_DX8,polygonAllocCount*3);
-	{
-		DynamicIBAccessClass::WriteLockClass lock(&dyn_ib_access);
-		ShortVectorIStruct* sorted_polygon_index_array=(ShortVectorIStruct*)lock.Get_Index_Array();
-
-		try {
-		for (unsigned a=0;a<overlapping_polygon_count;++a) {
-			sorted_polygon_index_array[a]=tis[a].tri;
-		}
-		IndexBufferExceptionFunc();
-		} catch(...) {
-			IndexBufferExceptionFunc();
-		}
-	}
-
-	// Set index buffer and render!
-
-	DX8Wrapper::Set_Index_Buffer(dyn_ib_access,0); // Override with this buffer (do something to prevent need for this!)
-	DX8Wrapper::Set_Vertex_Buffer(dyn_vb_access); // Override with this buffer (do something to prevent need for this!)
-
-	DX8Wrapper::Apply_Render_State_Changes();
-
-	unsigned count_to_render=1;
-	unsigned start_index=0;
-	unsigned node_id=tis[0].idx;
-	for (unsigned i=1;i<overlapping_polygon_count;++i) {
-		if (node_id!=tis[i].idx) {
-			SortingNodeStruct* state=overlapping_nodes[node_id];
-			Apply_Render_State(state->sorting_state);
-
-			DX8Wrapper::Draw_Triangles(
-				start_index*3,
-				count_to_render,
-				state->min_vertex_index,
-				state->vertex_count);
-
-			count_to_render=0;
-			start_index=i;
-			node_id=tis[i].idx;
-		}
-		count_to_render++;	//keep track of number of polygons of same kind
-	}
-
-	// Render any remaining polygons...
-	if (count_to_render) {
+	// Every entry's depth, with its indices kept relative to its own node's first vertex.  Each node
+	// writes only its own entries, so once the offsets are known the nodes fill them in parallel.
+	struct NodeDepthJob {
+		static void Run(int node_id,void* context) {
+		TempIndexStruct* tis=(TempIndexStruct*)context;
 		SortingNodeStruct* state=overlapping_nodes[node_id];
-		Apply_Render_State(state->sorting_state);
+		const VertexFormatXYZNDUV2* src_verts=overlapping_node_vertices[node_id];
+		const unsigned polygon_array_offset=overlapping_node_entry_offsets[node_id];
 
-		DX8Wrapper::Draw_Triangles(
-			start_index*3,
-			count_to_render,
-			state->min_vertex_index,
-			state->vertex_count);
+		D3DXMATRIX d3d_mtx=(D3DXMATRIX&)state->sorting_state.world*(D3DXMATRIX&)state->sorting_state.view;
+		const Matrix4x4& mtx=(const Matrix4x4&)d3d_mtx;
+		const bool camera_space=(mtx[0][2] == 0.0f && mtx[1][2] == 0.0f && mtx[3][2] == 0.0f && mtx[2][2] == 1.0f);
+
+		if (state->quads) {
+			const int quad_count=state->polygon_count/2;
+			for (int q=0;q<quad_count;++q) {
+				const VertexFormatXYZNDUV2 *v = src_verts + q*4;
+				TempIndexStruct *tis_ptr = tis + polygon_array_offset + q;
+				tis_ptr->tri.i = (unsigned short)(q*4);
+				tis_ptr->tri.j = 0;
+				tis_ptr->tri.k = QUAD_ENTRY;
+				tis_ptr->idx = node_id;
+				if (camera_space) {
+					tis_ptr->z = (v[0].z + v[1].z + v[2].z + v[3].z)*0.25f;
+				} else {
+					tis_ptr->z = (mtx[0][2]*(v[0].x + v[1].x + v[2].x + v[3].x) +
+												mtx[1][2]*(v[0].y + v[1].y + v[2].y + v[3].y) +
+												mtx[2][2]*(v[0].z + v[1].z + v[2].z + v[3].z))*0.25f + mtx[3][2];
+				}
+				DEBUG_ASSERTCRASH((! _isnan(tis_ptr->z) && _finite(tis_ptr->z)), ("Quad has invalid center"));
+			}
+			return;
+		}
+
+		unsigned short* indices=NULL;
+		SortingIndexBufferClass* index_buffer=static_cast<SortingIndexBufferClass*>(state->sorting_state.index_buffer);
+		WWASSERT(index_buffer);
+		indices=index_buffer->index_buffer;
+		WWASSERT(indices);
+		indices+=state->start_index;
+		indices+=state->sorting_state.iba_offset;
+
+		if (camera_space) {
+			// The common case for particle systems.
+			for (int i=0;i<state->polygon_count;++i) {
+				unsigned short idx1=indices[i*3]-state->min_vertex_index;
+				unsigned short idx2=indices[i*3+1]-state->min_vertex_index;
+				unsigned short idx3=indices[i*3+2]-state->min_vertex_index;
+				WWASSERT(idx1<state->vertex_count);
+				WWASSERT(idx2<state->vertex_count);
+				WWASSERT(idx3<state->vertex_count);
+				const VertexFormatXYZNDUV2 *v1 = src_verts + idx1;
+				const VertexFormatXYZNDUV2 *v2 = src_verts + idx2;
+				const VertexFormatXYZNDUV2 *v3 = src_verts + idx3;
+				unsigned array_index=i+polygon_array_offset;
+				WWASSERT(array_index<overlapping_entry_count);
+				TempIndexStruct *tis_ptr = tis + array_index;
+				tis_ptr->tri.i = idx1;
+				tis_ptr->tri.j = idx2;
+				tis_ptr->tri.k = idx3;
+				tis_ptr->idx = node_id;
+				tis_ptr->z = (v1->z + v2->z + v3->z)/3.0f;
+				DEBUG_ASSERTCRASH((! _isnan(tis_ptr->z) && _finite(tis_ptr->z)), ("Triangle has invalid center"));
+			}
+		} else {
+			for (int i=0;i<state->polygon_count;++i) {
+				unsigned short idx1=indices[i*3]-state->min_vertex_index;
+				unsigned short idx2=indices[i*3+1]-state->min_vertex_index;
+				unsigned short idx3=indices[i*3+2]-state->min_vertex_index;
+				WWASSERT(idx1<state->vertex_count);
+				WWASSERT(idx2<state->vertex_count);
+				WWASSERT(idx3<state->vertex_count);
+				const VertexFormatXYZNDUV2 *v1 = src_verts + idx1;
+				const VertexFormatXYZNDUV2 *v2 = src_verts + idx2;
+				const VertexFormatXYZNDUV2 *v3 = src_verts + idx3;
+				unsigned array_index=i+polygon_array_offset;
+				WWASSERT(array_index<overlapping_entry_count);
+				TempIndexStruct *tis_ptr = tis + array_index;
+				tis_ptr->tri.i = idx1;
+				tis_ptr->tri.j = idx2;
+				tis_ptr->tri.k = idx3;
+				tis_ptr->idx = node_id;
+				tis_ptr->z = (mtx[0][2]*(v1->x + v2->x + v3->x) +
+											mtx[1][2]*(v1->y + v2->y + v3->y) +
+											mtx[2][2]*(v1->z + v2->z + v3->z))/3.0f + mtx[3][2];
+				DEBUG_ASSERTCRASH((! _isnan(tis_ptr->z) && _finite(tis_ptr->z)), ("Triangle has invalid center"));
+			}
+		}
+		}
+	};
+
+	unsigned entry_offset=0;
+	for (unsigned node_id=0;node_id<overlapping_node_count;++node_id) {
+		SortingNodeStruct* state=overlapping_nodes[node_id];
+		SortingVertexBufferClass* vertex_buffer=static_cast<SortingVertexBufferClass*>(state->sorting_state.vertex_buffers[0]);
+		WWASSERT(vertex_buffer);
+		VertexFormatXYZNDUV2* src_verts=vertex_buffer->VertexBuffer;
+		WWASSERT(src_verts);
+		src_verts+=state->sorting_state.vba_offset;
+		src_verts+=state->sorting_state.index_base_offset;
+		src_verts+=state->min_vertex_index;
+		overlapping_node_vertices[node_id]=src_verts;
+		overlapping_node_entry_offsets[node_id]=entry_offset;
+		entry_offset+=state->quads ? state->polygon_count/2 : state->polygon_count;
+	}
+	Run_Parallel((int)overlapping_node_count,NODES_PER_CLAIM,NodeDepthJob::Run,tis);
+
+	const TempIndexStruct* sorted=Sort_By_Depth(tis,temp_sort_scratch_array,overlapping_entry_count);
+
+	unsigned batch_start=0;
+	while (batch_start<overlapping_entry_count) {
+		unsigned batch_end=batch_start;
+		unsigned batch_vertices=0;
+		unsigned batch_indices=0;
+		while (batch_end<overlapping_entry_count) {
+			const unsigned vertices=Entry_Vertex_Count(sorted[batch_end]);
+			const unsigned indices=Entry_Index_Count(sorted[batch_end]);
+			if (batch_vertices+vertices>MAX_BATCH_VERTICES || batch_indices+indices>MAX_BATCH_INDICES) {
+				break;
+			}
+			batch_vertices+=vertices;
+			batch_indices+=indices;
+			++batch_end;
+		}
+		Flush_Sorting_Batch(sorted+batch_start,batch_end-batch_start,batch_vertices,batch_indices);
+		batch_start=batch_end;
 	}
 
 	// Release all references and return nodes back to the clean list for the frame...
-	for (node_id=0;node_id<overlapping_node_count;++node_id) {
+	for (unsigned node_id=0;node_id<overlapping_node_count;++node_id) {
 		SortingNodeStruct* state=overlapping_nodes[node_id];
 		Release_Refs(state);
 		clean_list.Add_Head(state);
 	}
 	overlapping_node_count=0;
-	overlapping_polygon_count=0;
-	overlapping_vertex_count=0;
+	overlapping_entry_count=0;
 
 	SNAPSHOT_SAY(("SortingSystem - Done flushing\n"));
 
@@ -723,7 +922,12 @@ void SortingRendererClass::Deinit()
 
 	delete[] temp_index_array;
 	temp_index_array=NULL;
+	delete[] temp_sort_scratch_array;
+	temp_sort_scratch_array=NULL;
 	temp_index_array_count=0;
+	delete[] batch_offsets;
+	batch_offsets=NULL;
+	batch_offsets_count=0;
 }
 
 
@@ -762,6 +966,7 @@ void SortingRendererClass::Insert_VolumeParticle(
 	state->min_vertex_index=min_vertex_index;
 	state->polygon_count=polygon_count * layerCount;//THIS IS VOLUME_PARTICLE SPECIFIC
 	state->vertex_count=vertex_count * layerCount;//THIS IS VOLUME_PARTICLE SPECIFIC
+	state->quads=false;
 
 	SortingVertexBufferClass* vertex_buffer=static_cast<SortingVertexBufferClass*>(state->sorting_state.vertex_buffers[0]);
 	WWASSERT(vertex_buffer);

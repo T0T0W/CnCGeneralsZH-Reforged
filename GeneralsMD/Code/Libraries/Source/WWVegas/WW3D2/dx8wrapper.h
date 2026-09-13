@@ -311,6 +311,8 @@ public:
 
 	static void Set_Vertex_Buffer(const VertexBufferClass* vb, unsigned stream=0);
 	static void Set_Vertex_Buffer(const DynamicVBAccessClass& vba);
+	/// A range of a sorting vertex array reserved earlier, bound the way a dynamic sorting access binds it
+	static void Set_Sorting_Vertex_Range(VertexBufferClass* vb, unsigned short offset, unsigned short count);
 	static void Set_Index_Buffer(const IndexBufferClass* ib,unsigned short index_base_offset);
 	static void Set_Index_Buffer(const DynamicIBAccessClass& iba,unsigned short index_base_offset);
 	static void Set_Index_Buffer_Index_Offset(unsigned offset);
@@ -484,6 +486,7 @@ public:
 	static unsigned Get_Last_Frame_Texture_Stage_State_Changes();
 	static unsigned Get_Last_Frame_DX8_Calls();
 	static unsigned Get_Last_Frame_Draw_Calls();
+	static unsigned Get_Draw_Calls() { return draw_calls; }	///< so far this frame, to count what one pass costs
 
 	static unsigned long Get_FrameCount(void);
 

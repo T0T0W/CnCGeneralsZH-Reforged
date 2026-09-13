@@ -88,6 +88,7 @@
 #include "dx8fvf.h"
 #include "d3dx9math.h"
 #include "sortingrenderer.h"
+#include <string.h>
 
 // Upgraded to DX8 2/2/01 HY
 
@@ -959,7 +960,16 @@ void PointGroupClass::Render(RenderInfoClass &rinfo)
 			DynamicVBAccessClass::WriteLockClass Lock(&PointVerts);
 			int i;
 			unsigned char *vb=(unsigned char*)Lock.Get_Formatted_Vertex_Array();			
-			const FVFInfoClass& fvfinfo=PointVerts.FVF_Info();			
+			const FVFInfoClass& fvfinfo=PointVerts.FVF_Info();
+
+			// Every vertex of a point carries that point's colour, so a colour equal to the vertex
+			// before it takes the bytes that vertex got.  Convert_Color is x87 code that saves and
+			// restores the FPU control word on every call, and a hundred thousand particles is four
+			// hundred thousand vertices a frame.
+			const unsigned default_color=DX8Wrapper::Convert_Color_Clamp(
+				Vector4(DefaultPointColor[0],DefaultPointColor[1],DefaultPointColor[2],DefaultPointAlpha));
+			const Vector4* last_diffuse=NULL;
+			unsigned last_color=default_color;
 
 			for (i = current; i < current + delta; i++)
 			{
@@ -969,12 +979,15 @@ void PointGroupClass::Render(RenderInfoClass &rinfo)
 				// Copy Locations
 				*(Vector3*)(vb+fvfinfo.Get_Location_Offset())=VertexLoc[i];
 				if (current_diffuse) {
-					unsigned color=DX8Wrapper::Convert_Color_Clamp(VertexDiffuse[i]);
-					*(unsigned int*)(vb+fvfinfo.Get_Diffuse_Offset())=color;
+					const Vector4* diffuse=&VertexDiffuse[i];
+					if (last_diffuse==NULL || memcmp(diffuse,last_diffuse,sizeof(Vector4))!=0) {
+						last_color=DX8Wrapper::Convert_Color_Clamp(*diffuse);
+						last_diffuse=diffuse;
+					}
+					*(unsigned int*)(vb+fvfinfo.Get_Diffuse_Offset())=last_color;
 				}
 				else
-					*(unsigned int*)(vb+fvfinfo.Get_Diffuse_Offset())=
-						DX8Wrapper::Convert_Color_Clamp(Vector4(DefaultPointColor[0],DefaultPointColor[1],DefaultPointColor[2],DefaultPointAlpha));
+					*(unsigned int*)(vb+fvfinfo.Get_Diffuse_Offset())=default_color;
 				*(Vector2*)(vb+fvfinfo.Get_Tex_Offset(0))=VertexUV[i];
 				vb+=fvfinfo.Get_FVF_Size();
 			}			
@@ -985,7 +998,10 @@ void PointGroupClass::Render(RenderInfoClass &rinfo)
 		
 		if ( sort ) 
 		{
-				SortingRendererClass::Insert_Triangles (0, delta / verticesperprimitive, 0, delta);
+				if (PointMode == QUADS)
+					SortingRendererClass::Insert_Quads (delta / 4, 0, delta);
+				else
+					SortingRendererClass::Insert_Triangles (0, delta / verticesperprimitive, 0, delta);
 		}
 		else
 		{
@@ -1017,6 +1033,74 @@ void PointGroupClass::Render(RenderInfoClass &rinfo)
  * HISTORY:                                                               * 
  *   11/17/1998 NH  : Created.                                            * 
  *========================================================================*/
+bool PointGroupClass::Would_Sort_Billboards(const ShaderClass &shader)
+{
+	return (shader.Get_Dst_Blend_Func() != ShaderClass::DSTBLEND_ZERO) &&
+				 (shader.Get_Alpha_Test() == ShaderClass::ALPHATEST_DISABLE) &&
+				 (WW3D::Is_Sorting_Enabled());
+}
+
+/**************************************************************************
+ * PointGroupClass::Reserve_Sorted_Billboards -- room for one system       *
+ *                                                                        *
+ * The particle fill writes every sorted billboard system on the job pool. *
+ * A sorting access can only be open one at a time and closing it moves   *
+ * the array's offset past what it handed out, so each system's range is  *
+ * opened, noted and closed here in turn; the reference taken keeps the    *
+ * array from being recycled while the jobs write into it.                 *
+ *========================================================================*/
+void PointGroupClass::Reserve_Sorted_Billboards(int quads, SortingBillboardRange *range)
+{
+	WWASSERT(quads > 0 && quads*4 <= MAX_VB_SIZE);
+
+	DynamicVBAccessClass access(BUFFER_TYPE_DYNAMIC_SORTING, dynamic_fvf_type, (unsigned short)(quads*4));
+	DynamicVBAccessClass::WriteLockClass lock(&access);
+	range->Vertices=lock.Get_Formatted_Vertex_Array();
+	range->Offset=access.Get_Vertex_Buffer_Offset();
+	range->Array=NULL;
+	REF_PTR_SET(range->Array, access.Peek_Vertex_Buffer());
+}
+
+/**************************************************************************
+ * PointGroupClass::Insert_Sorted_Billboards -- into the sorting pool      *
+ *                                                                        *
+ * The same state Render sets for a billboarded QUADS group - cull off,    *
+ * gradient modulate, identity world and view, the point material - and   *
+ * the same Insert_Quads, from a range the jobs have already written.      *
+ *========================================================================*/
+void PointGroupClass::Insert_Sorted_Billboards(SortingBillboardRange *range, int quads,
+	TextureClass *texture, const ShaderClass &shader)
+{
+	if (quads > 0)
+	{
+		WWASSERT(Would_Sort_Billboards(shader));
+
+		ShaderClass point_shader(shader);
+		point_shader.Set_Cull_Mode(ShaderClass::CULL_MODE_DISABLE);
+		point_shader.Set_Primary_Gradient(ShaderClass::GRADIENT_MODULATE);
+		point_shader.Set_Texturing(texture ? ShaderClass::TEXTURING_ENABLE : ShaderClass::TEXTURING_DISABLE);
+
+		Matrix4x4 view;
+		DX8Wrapper::Get_Transform(D3DTS_VIEW,view);
+
+		Matrix4x4 identity(true);
+		DX8Wrapper::Set_Transform(D3DTS_WORLD,identity);
+		DX8Wrapper::Set_Transform(D3DTS_VIEW,identity);
+		DX8Wrapper::Set_Material(PointMaterial);
+		DX8Wrapper::Set_Shader(point_shader);
+		DX8Wrapper::Set_Texture(0,texture);
+
+		const unsigned short vertices=(unsigned short)(quads*4);
+		DX8Wrapper::Set_Index_Buffer(SortingQuads, 0);
+		DX8Wrapper::Set_Sorting_Vertex_Range(range->Array, range->Offset, vertices);
+		SortingRendererClass::Insert_Quads((unsigned short)quads, 0, vertices);
+
+		DX8Wrapper::Set_Transform(D3DTS_VIEW,view);
+	}
+
+	REF_PTR_RELEASE(range->Array);
+}
+
 void PointGroupClass::Update_Arrays(
 	Vector3 *point_loc, 
 	Vector4 *point_diffuse,	

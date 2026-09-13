@@ -81,6 +81,21 @@ void DX11BufferTwinClass::Upload(unsigned byte_offset, unsigned byte_count, bool
 	Context->UpdateSubresource(D3D11Buffer, 0, &box, Mirror_Bytes + byte_offset, 0, 0);
 }
 
+unsigned char * DX11BufferTwinClass::Map_Write(bool discard)
+{
+	const D3D11_MAP map_type = discard ? D3D11_MAP_WRITE_DISCARD : D3D11_MAP_WRITE_NO_OVERWRITE;
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	if (FAILED(Context->Map(D3D11Buffer, 0, map_type, 0, &mapped))) {
+		return NULL;
+	}
+	return (unsigned char *)mapped.pData;
+}
+
+void DX11BufferTwinClass::Unmap()
+{
+	Context->Unmap(D3D11Buffer, 0);
+}
+
 static DX11BufferTwinClass * create(ID3D11Device * device, ID3D11DeviceContext * context,
 	unsigned byte_count, bool dynamic, bool index_buffer)
 {
@@ -117,12 +132,14 @@ DX11BufferLockClass::DX11BufferLockClass()
 	D3D9Memory(NULL),
 	ByteOffset(0),
 	ByteCount(0),
-	Discard(false)
+	Discard(false),
+	CopyToD3D9(true),
+	Mapped(false)
 {
 }
 
 void * DX11BufferLockClass::Begin(DX11BufferTwinClass * twin, void * d3d9_memory,
-	unsigned byte_offset, unsigned byte_count, unsigned lock_flags)
+	unsigned byte_offset, unsigned byte_count, unsigned lock_flags, bool copy_to_d3d9)
 {
 	Twin = twin;
 	if (Twin == NULL) {
@@ -133,6 +150,20 @@ void * DX11BufferLockClass::Begin(DX11BufferTwinClass * twin, void * d3d9_memory
 	ByteOffset = byte_offset;
 	ByteCount = byte_count == 0 ? Twin->Byte_Count() - byte_offset : byte_count;
 	Discard = (lock_flags & D3DLOCK_DISCARD) != 0;
+	CopyToD3D9 = copy_to_d3d9;
+	Mapped = false;
+
+	// Nothing reads the D3D9 copy and a dynamic buffer is written again every frame, so the write
+	// can land straight in the mapped D3D11 buffer: no mirror to fill, no copy out of it on End.  The
+	// mirror goes stale for this range, which costs nothing, because an upload only ever copies the
+	// range its own lock wrote.
+	if (!copy_to_d3d9 && Twin->Is_Dynamic()) {
+		unsigned char * mapped = Twin->Map_Write(Discard);
+		if (mapped != NULL) {
+			Mapped = true;
+			return mapped + ByteOffset;
+		}
+	}
 
 	return Twin->Mirror() + ByteOffset;
 }
@@ -143,7 +174,16 @@ void DX11BufferLockClass::End()
 		return;
 	}
 
-	memcpy(D3D9Memory, Twin->Mirror() + ByteOffset, ByteCount);
+	if (Mapped) {
+		Twin->Unmap();
+		Mapped = false;
+		Twin = NULL;
+		return;
+	}
+
+	if (CopyToD3D9) {
+		memcpy(D3D9Memory, Twin->Mirror() + ByteOffset, ByteCount);
+	}
 	Twin->Upload(ByteOffset, ByteCount, Discard);
 	Twin = NULL;
 }

@@ -51,6 +51,13 @@
 static bool _DynamicSortingIndexArrayInUse=false;
 static SortingIndexBufferClass* _DynamicSortingIndexArray;
 static unsigned short _DynamicSortingIndexArraySize=0;
+
+// Full sorting index arrays, handed out again once the flush has let go of them.  The vertex
+// arrays in dx8vertexbuffer.cpp say why: operator new[] zeroes what it allocates, and replacing a
+// full array with a freshly sized one every few particle systems was a tenth of a busy frame.
+static const unsigned short SORTING_INDEX_ARRAY_SIZE=65535;
+static const int MAX_RETIRED_SORTING_INDEX_ARRAYS=16;
+static SortingIndexBufferClass* _RetiredSortingIndexArrays[MAX_RETIRED_SORTING_INDEX_ARRAYS];
 static unsigned short _DynamicSortingIndexArrayOffset=0;	
 
 static bool _DynamicDX8IndexBufferInUse=false;
@@ -453,6 +460,9 @@ void DynamicIBAccessClass::_Deinit()
 
 	WWASSERT ((_DynamicSortingIndexArray == NULL) || (_DynamicSortingIndexArray->Num_Refs() == 1));
 	REF_PTR_RELEASE(_DynamicSortingIndexArray);
+	for (int i=0;i<MAX_RETIRED_SORTING_INDEX_ARRAYS;++i) {
+		REF_PTR_RELEASE(_RetiredSortingIndexArrays[i]);
+	}
 	_DynamicSortingIndexArrayInUse=false;
 	_DynamicSortingIndexArraySize=0;
 	_DynamicSortingIndexArrayOffset=0;	
@@ -487,7 +497,8 @@ DynamicIBAccessClass::WriteLockClass::WriteLockClass(DynamicIBAccessClass* ib_ac
 				Indices,
 				DynamicIBAccess->IndexBufferOffset*sizeof(WORD),
 				DynamicIBAccess->Get_Index_Count()*sizeof(WORD),
-				!DynamicIBAccess->IndexBufferOffset ? D3DLOCK_DISCARD : D3DLOCK_NOOVERWRITE);
+				!DynamicIBAccess->IndexBufferOffset ? D3DLOCK_DISCARD : D3DLOCK_NOOVERWRITE,
+				!Direct3D11_Present_Is_Enabled());
 			if (mirror) Indices=(unsigned short*)mirror;
 		}
 		break;
@@ -569,14 +580,32 @@ void DynamicIBAccessClass::Allocate_Sorting_Dynamic_Buffer()
 
 	unsigned new_index_count=_DynamicSortingIndexArrayOffset+IndexCount;
 	WWASSERT(new_index_count<65536);
-	if (new_index_count>_DynamicSortingIndexArraySize) {
-		REF_PTR_RELEASE(_DynamicSortingIndexArray);
-		_DynamicSortingIndexArraySize=new_index_count;
-		if (_DynamicSortingIndexArraySize<DEFAULT_IB_SIZE) _DynamicSortingIndexArraySize=DEFAULT_IB_SIZE;
+	if (_DynamicSortingIndexArray && new_index_count>_DynamicSortingIndexArraySize) {
+		int slot=0;
+		while (slot<MAX_RETIRED_SORTING_INDEX_ARRAYS && _RetiredSortingIndexArrays[slot]) {
+			++slot;
+		}
+		if (slot<MAX_RETIRED_SORTING_INDEX_ARRAYS) {
+			_RetiredSortingIndexArrays[slot]=_DynamicSortingIndexArray;
+			_DynamicSortingIndexArray=NULL;
+		}
+		else {
+			REF_PTR_RELEASE(_DynamicSortingIndexArray);
+		}
 	}
 
 	if (!_DynamicSortingIndexArray) {
-		_DynamicSortingIndexArray=NEW_REF(SortingIndexBufferClass,(_DynamicSortingIndexArraySize));
+		for (int i=0;i<MAX_RETIRED_SORTING_INDEX_ARRAYS;++i) {
+			if (_RetiredSortingIndexArrays[i] && _RetiredSortingIndexArrays[i]->Num_Refs()==1) {
+				_DynamicSortingIndexArray=_RetiredSortingIndexArrays[i];
+				_RetiredSortingIndexArrays[i]=NULL;
+				break;
+			}
+		}
+		if (!_DynamicSortingIndexArray) {
+			_DynamicSortingIndexArray=NEW_REF(SortingIndexBufferClass,(SORTING_INDEX_ARRAY_SIZE));
+		}
+		_DynamicSortingIndexArraySize=SORTING_INDEX_ARRAY_SIZE;
 		_DynamicSortingIndexArrayOffset=0;
 	}
 

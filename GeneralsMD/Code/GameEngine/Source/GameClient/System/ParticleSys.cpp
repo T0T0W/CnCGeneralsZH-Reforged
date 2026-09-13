@@ -34,6 +34,7 @@
 #include "Common/GameState.h"
 #include "Common/INI.h"
 #include "Common/PerfTimer.h"
+#include "Common/JobSystem.h"
 #include "Common/ThingFactory.h"
 #include "Common/GameLOD.h"
 #include "Common/Xfer.h"
@@ -258,7 +259,7 @@ Particle::Particle( ParticleSystem *system, const ParticleInfo *info )
 {
 	m_system = system;
 
-	m_isCulled = FALSE;
+	m_diesThisUpdate = FALSE;
 	m_accel.x = 0.0f;
 	m_accel.y = 0.0f;
 	m_accel.z = 0.0f;
@@ -343,16 +344,6 @@ Particle::~Particle()
 	TheParticleSystemManager->removeParticle(this);
 
 	//DEBUG_ASSERTLOG(!(totalParticleCount % 100 == 0), ( "TotalParticleCount = %d\n", m_totalParticleCount ));
-}
-
-// ------------------------------------------------------------------------------------------------
-/** Add the given acceleration */
-// ------------------------------------------------------------------------------------------------
-void Particle::applyForce( const Coord3D *force )
-{
-	m_accel.x += force->x;
-	m_accel.y += force->y;
-	m_accel.z += force->z;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -549,8 +540,12 @@ Bool particleGroundBounce( Coord3D *pos, Coord3D *vel, Real groundZ,
 // ------------------------------------------------------------------------------------------------
 /** Update the behavior of an individual particle */
 // ------------------------------------------------------------------------------------------------
-Bool Particle::update( void )
+Bool Particle::update( const ParticleUpdateContext &context )
 {
+	// gravity goes into the acceleration, which is zero here, so the sum is exactly the gravity
+	if (context.gravity != 0.0f)
+		m_accel.z += context.gravity;
+
 	// integrate acceleration into velocity
 	m_vel.x += m_accel.x;
 	m_vel.y += m_accel.y;
@@ -561,13 +556,13 @@ Bool Particle::update( void )
 	m_vel.z *= m_velDamping;
 
 	// integrate velocity into position
-	const Coord3D *driftVel = m_system->getDriftVelocity();
+	const Coord3D *driftVel = &context.driftVelocity;
 	m_pos.x += m_vel.x + driftVel->x;
 	m_pos.y += m_vel.y + driftVel->y;
 	m_pos.z += m_vel.z + driftVel->z;
 
 	// integrate the wind (if specified) into position
-	ParticleSystemInfo::WindMotion windMotion = m_system->getWindMotion();
+	ParticleSystemInfo::WindMotion windMotion = context.windMotion;
 
 	// see if we should even do anything
 	if( windMotion != ParticleSystemInfo::WIND_MOTION_NOT_USED )
@@ -576,13 +571,13 @@ Bool Particle::update( void )
 	// hit the ground, if this system asked to.  Only while descending, so the terrain is not
 	// sampled for every rising smoke puff in the scene.
 	// ponytail: terrain heightmap only - buildings, bridges and the water surface are not consulted
-	if( m_system->isGroundCollision() && TheTerrainLogic != NULL
+	if( context.groundCollision
 			&& (m_vel.z + driftVel->z) < 0.0f )
 	{
 		Coord3D groundNormal;
 		const Real groundZ = TheTerrainLogic->getGroundHeight( m_pos.x, m_pos.y, &groundNormal );
 		particleGroundBounce( &m_pos, &m_vel, groundZ, &groundNormal,
-												m_system->getGroundBounce(), m_system->getGroundFriction() );
+												context.groundBounce, context.groundFriction );
 	}
 
 	// update orientation
@@ -608,13 +603,13 @@ Bool Particle::update( void )
 	// Update alpha (if used)
 	//
 
-	if (m_system->getShaderType() != ParticleSystemInfo::ADDITIVE)
+	if (context.shaderType != ParticleSystemInfo::ADDITIVE)
 	{
 		m_alpha += m_alphaRate;
 
 		if (m_alphaTargetKey < MAX_KEYFRAMES && m_alphaKey[ m_alphaTargetKey ].frame)
 		{
-			if (TheGameClient->getFrame() - m_createTimestamp >= m_alphaKey[ m_alphaTargetKey ].frame)
+			if (context.clientFrame - m_createTimestamp >= m_alphaKey[ m_alphaTargetKey ].frame)
 			{
 				m_alpha = m_alphaKey[ m_alphaTargetKey ].value;
 				m_alphaTargetKey++;
@@ -640,7 +635,7 @@ Bool Particle::update( void )
 
 	if (m_colorTargetKey < MAX_KEYFRAMES && m_colorKey[ m_colorTargetKey ].frame)
 	{
-		if (TheGameClient->getFrame() - m_createTimestamp >= m_colorKey[ m_colorTargetKey ].frame)
+		if (context.clientFrame - m_createTimestamp >= m_colorKey[ m_colorTargetKey ].frame)
 		{
 			// can't set, because of colorscale
 			// m_color = m_colorKey[ m_colorTargetKey ].color;
@@ -686,7 +681,7 @@ Bool Particle::update( void )
 	DEBUG_ASSERTCRASH( m_lifetimeLeft, ( "A particle has an infinite lifetime..." ));
 
 	// if we've gone totally invisible, destroy ourselves
-	if (isInvisible())
+	if (isInvisible( context ))
 		return false;
 	return true;
 }
@@ -784,9 +779,9 @@ ParticlePriorityType Particle::getPriority( void )
 // ------------------------------------------------------------------------------------------------
 /** Return true if this particle is invisible */
 // ------------------------------------------------------------------------------------------------
-Bool Particle::isInvisible( void )
+Bool Particle::isInvisible( const ParticleUpdateContext &context )
 {
-	switch (m_system->getShaderType())
+	switch (context.shaderType)
 	{
 		case ParticleSystemInfo::ADDITIVE:
 			// if color is black, this particle is invisible
@@ -2086,10 +2081,13 @@ const ParticleInfo *ParticleSystem::generateParticleInfo( Int particleNum, Int p
 // ------------------------------------------------------------------------------------------------
 /** Update this particle system, potentially generating new particles */
 // ------------------------------------------------------------------------------------------------
-Bool ParticleSystem::update( Int localPlayerIndex  )
+Bool ParticleSystem::updateEmission( Int localPlayerIndex, Bool *keepSystem )
 {
 	if (TheGlobalData->m_useFX == FALSE)
+	{
+		*keepSystem = false;
 		return false;
+	}
 
 	// do initial delay ... note, this currently delays the lifetime
 	if (m_delayLeft)
@@ -2101,7 +2099,8 @@ Bool ParticleSystem::update( Int localPlayerIndex  )
 		if (m_delayLeft == 0)
 			m_startTimestamp = TheGameClient->getFrame();
 
-		return true;
+		*keepSystem = true;
+		return false;
 	}
 
 	// update the wind motion
@@ -2288,36 +2287,55 @@ Bool ParticleSystem::update( Int localPlayerIndex  )
 		} // end if system lifetime check
 	} // end if is destroyed
 
-	//
-	// Update all particles in the system
-	//
-	Bool castsGroundShadow = shouldCastGroundShadow();
+	// decided here, after the transform and the burst, where update() always decided it
+	m_pendingCastsGroundShadow = shouldCastGroundShadow();
+	return true;
+}
+
+// ------------------------------------------------------------------------------------------------
+/** What every particle of this system reads during this update. */
+// ------------------------------------------------------------------------------------------------
+void ParticleSystem::makeUpdateContext( ParticleUpdateContext *context ) const
+{
+	context->driftVelocity = m_driftVelocity;
+	context->gravity = m_gravity;
+	context->clientFrame = TheGameClient->getFrame();
+	context->shaderType = m_shaderType;
+	context->windMotion = m_windMotion;
+	context->groundCollision = m_groundCollision && TheTerrainLogic != NULL;
+	context->groundBounce = m_groundBounce;
+	context->groundFriction = m_groundFriction;
+}
+
+// ------------------------------------------------------------------------------------------------
+/** Update this particle system in one pass, potentially generating new particles.  The manager
+ * takes this path for a system linked to other systems, because what its particles do - die,
+ * move, emit into a slave - reaches those systems within the same frame. */
+// ------------------------------------------------------------------------------------------------
+Bool ParticleSystem::update( Int localPlayerIndex )
+{
+	Bool keepSystem = true;
+	if (!updateEmission( localPlayerIndex, &keepSystem ))
+		return keepSystem;
+
 	ParticleShadowBlob shadowBlob;
 	particleShadowBlobReset( &shadowBlob );
+
+	ParticleUpdateContext context;
+	makeUpdateContext( &context );
 
 	Particle *p = m_systemParticlesHead;
 	Particle *oldParticle;
 	while (p)
 	{
-
-		// apply 'gravity' force
-		if (m_gravity != 0.0f)
-		{
-			Coord3D force;
-			force.x = 0.0f;
-			force.y = 0.0f;
-			force.z = m_gravity;
-			p->applyForce( &force );
-		}
-
-		if (p->update() == false)
+		if (p->update( context ) == false)
 		{
 			oldParticle = p;
 			p = p->m_systemNext;
 			oldParticle->deleteInstance();
 		} else {
 			// one decal stands in for the whole cloud, so measure the survivors as we pass them
-			if (castsGroundShadow)
+			if (m_pendingCastsGroundShadow)
 			{
 				const Coord3D *ppos = p->getPosition();
 				particleShadowBlobAdd( &shadowBlob, ppos->x, ppos->y, p->getSize(), p->getAlpha() );
@@ -2326,8 +2344,81 @@ Bool ParticleSystem::update( Int localPlayerIndex  )
 		}
 	}
 
-	if (castsGroundShadow)
-		updateGroundShadow( &shadowBlob );
+	return finishUpdate( &shadowBlob );
+}
+
+// ------------------------------------------------------------------------------------------------
+/** Nothing else reads this system's particles and it writes into no other system: it is not
+ * steered by a particle, its particles steer nothing (an attached system is only ever made from
+ * the template name), and it has no master and no slave.  Such a system's particles can be
+ * integrated at the same time as any other's.  A system gains a link only when it is created, so
+ * the answer cannot change between the emission and the particles. */
+// ------------------------------------------------------------------------------------------------
+Bool ParticleSystem::isUpdateIndependent( void ) const
+{
+	return m_controlParticle == NULL && m_attachedSystemName.isEmpty()
+			&& m_slaveSystem == NULL && m_masterSystem == NULL;
+}
+
+// ------------------------------------------------------------------------------------------------
+/** The particles of update(), without removing the dead: each one is marked instead, so this reads
+ * and writes nothing but this system's particles and its pending blob.  No allocation, no random
+ * draws - the job pool's rules. */
+// ------------------------------------------------------------------------------------------------
+void ParticleSystem::updateParticlesMark( void )
+{
+	ParticleUpdateContext context;
+	makeUpdateContext( &context );
+	particleShadowBlobReset( &m_pendingShadowBlob );
+	m_pendingDeaths = 0;
+
+	for (Particle *p = m_systemParticlesHead; p; p = p->m_systemNext)
+	{
+		const Bool alive = p->update( context );
+		p->setDiesThisUpdate( !alive );
+		if (!alive)
+			++m_pendingDeaths;
+		// one decal stands in for the whole cloud, so measure the survivors as we pass them
+		if (alive && m_pendingCastsGroundShadow)
+		{
+			const Coord3D *ppos = p->getPosition();
+			particleShadowBlobAdd( &m_pendingShadowBlob, ppos->x, ppos->y, p->getSize(), p->getAlpha() );
+		}
+	}
+}
+
+// ------------------------------------------------------------------------------------------------
+/** Remove what updateParticlesMark marked, in list order, and finish the update. */
+// ------------------------------------------------------------------------------------------------
+Bool ParticleSystem::reapAndFinishUpdate( void )
+{
+	// Particles are appended as they are born and most die of age, so the dead are nearly always at
+	// the head of the list.  Walking the whole list a second time after the marking pass cost more
+	// than the marking pass saved on a single core; stopping once every marked particle is gone does
+	// not.  Everything past that point was marked alive in the same pass.
+	UnsignedInt remaining = m_pendingDeaths;
+	Particle *p = m_systemParticlesHead;
+	while (p && remaining)
+	{
+		Particle *next = p->m_systemNext;
+		if (p->diesThisUpdate())
+		{
+			p->deleteInstance();
+			--remaining;
+		}
+		p = next;
+	}
+
+	return finishUpdate( &m_pendingShadowBlob );
+}
+
+// ------------------------------------------------------------------------------------------------
+/** The ground blob and the system's lifetime, once its particles are done. */
+// ------------------------------------------------------------------------------------------------
+Bool ParticleSystem::finishUpdate( const ParticleShadowBlob *blob )
+{
+	if (m_pendingCastsGroundShadow)
+		updateGroundShadow( blob );
 	else
 		releaseGroundShadow();
 
@@ -3362,6 +3453,16 @@ void ParticleSystemManager::reset( void )
 // ------------------------------------------------------------------------------------------------
 /** Update all particle systems */
 // ------------------------------------------------------------------------------------------------
+/// systems a pool thread claims at once; a system is a few hundred particles at most
+static const Int PARTICLE_SYSTEMS_PER_CLAIM = 4;
+
+/** One independent system's particles, on the job pool. */
+static void markSystemParticles( Int index, void *context )
+{
+	ParticleSystem **systems = (ParticleSystem **)context;
+	systems[ index ]->updateParticlesMark();
+}
+
 DECLARE_PERF_TIMER(ParticleSystemManager)
 void ParticleSystemManager::update( void )
 {
@@ -3377,23 +3478,57 @@ void ParticleSystemManager::update( void )
 
 	m_groundShadowCount = 0;
 
+	// Three passes.  In list order: a system linked to others updates whole, as it always did, and
+	// every other system emits.  On the job pool: those other systems' particles.  In list order
+	// again: their dead particles, ground blobs and lifetimes.  The emissions are the only part that
+	// draws on the client's random stream and they still draw in list order, so every new particle
+	// comes out as it did.  What moved is when a dying particle leaves the manager's count: after all
+	// the emissions rather than before the next one, which only matters at the particle cap.  With a
+	// hundred thousand particles the particles were most of the update.
+	m_independentUpdates.clear();
 	for(ParticleSystemListIt it = m_allParticleSystemList.begin(); it != m_allParticleSystemList.end();)
 	{
 		sys = (*it);
+		++it;
 		if (!sys) {
 			continue;
 		}
 
-		if (sys->update(m_localPlayerIndex) == false)
+		Bool keepSystem = true;
+		if (sys->isUpdateIndependent())
 		{
-			++it;
-			sys->deleteInstance();
-		} else {
-			if (sys->hasGroundShadow())
-				++m_groundShadowCount;
-			++it;
+			if (sys->updateEmission(m_localPlayerIndex, &keepSystem))
+			{
+				m_independentUpdates.push_back( sys );
+				continue;
+			}
 		}
+		else
+		{
+			keepSystem = sys->update(m_localPlayerIndex);
+		}
+
+		if (keepSystem == false)
+			sys->deleteInstance();
+		else if (sys->hasGroundShadow())
+			++m_groundShadowCount;
 	}
+
+	if (!m_independentUpdates.empty())
+	{
+		JobSystem::parallel_for( (Int)m_independentUpdates.size(), PARTICLE_SYSTEMS_PER_CLAIM,
+			markSystemParticles, &m_independentUpdates[ 0 ] );
+	}
+
+	for (size_t i = 0; i < m_independentUpdates.size(); ++i)
+	{
+		sys = m_independentUpdates[ i ];
+		if (sys->reapAndFinishUpdate() == false)
+			sys->deleteInstance();
+		else if (sys->hasGroundShadow())
+			++m_groundShadowCount;
+	}
+	m_independentUpdates.clear();
 
 	// The one number that says what a particle switch actually did, and the only way to compare two
 	// runs at all: two launches of the same seed and the same scenario do not produce the same

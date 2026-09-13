@@ -201,7 +201,10 @@ DX11BackendClass::DX11BackendClass()
 	, ForeignPixelShader(false)
 	, ForeignVertexShader(false)
 {
-	memset(&Memo, 0, sizeof(Memo));
+	memset(Memos, 0, sizeof(Memos));
+	LastMemo = 0;
+	NextMemo = 0;
+	Forget_Last_State_Objects();
 	memset(&HeldVertexConstants, 0, sizeof(HeldVertexConstants));
 	memset(&HeldPixelConstants, 0, sizeof(HeldPixelConstants));
 	memset(HeldEngineConstants, 0, sizeof(HeldEngineConstants));
@@ -275,8 +278,13 @@ bool DX11BackendClass::Initialise(DX11DeviceClass * device)
 
 void DX11BackendClass::Release_Cached()
 {
-	// The memo holds a copy of one of these pipelines, so it goes first.
-	Memo.Valid = false;
+	// The memos hold copies of these pipelines and state objects, so they go first.
+	for (unsigned entry = 0; entry < RESOLVE_MEMO_ENTRIES; ++entry) {
+		Memos[entry].Valid = false;
+	}
+	LastMemo = 0;
+	NextMemo = 0;
+	Forget_Last_State_Objects();
 
 	for (std::map<std::string, Pipeline>::iterator entry = Pipelines.begin();
 			entry != Pipelines.end(); ++entry) {
@@ -909,19 +917,24 @@ bool DX11BackendClass::Resolve(Pipeline & pipeline)
 		return false;
 	}
 
-	// Nothing below this line runs for a draw that asks for the pipeline the last one did, which is
-	// most of them: the renderer walks its texture categories, so a category's meshes arrive in a
-	// row with the same material and the same stage state.  See ResolveMemo in the header for what
-	// building the key costs and why memcmp is safe here.
-	if (Memo.Valid
-		&& Memo.Format == VertexFormat
-		&& Memo.VertexProgram == VertexProgram
-		&& Memo.PixelProgram == PixelProgram
-		&& memcmp(&Memo.Vertex, &vertex_description, sizeof(vertex_description)) == 0
-		&& memcmp(&Memo.Combiner, &combiner_description, sizeof(combiner_description)) == 0) {
-		pipeline = Memo.Resolved;
-		++Memo.Use->Draws;
-		return true;
+	// Nothing below this line runs for a draw that asks for a pipeline one of the last few draws
+	// did, which is nearly all of them: the renderer walks its texture categories, so a category's
+	// meshes arrive in a row, and sorted particles go back and forth between a few pipelines.  See
+	// ResolveMemo in the header for what building the key costs and why memcmp is safe here.
+	for (unsigned probe = 0; probe < RESOLVE_MEMO_ENTRIES; ++probe) {
+		const unsigned entry = (LastMemo + probe) % RESOLVE_MEMO_ENTRIES;
+		ResolveMemo & memo = Memos[entry];
+		if (memo.Valid
+			&& memo.Format == VertexFormat
+			&& memo.VertexProgram == VertexProgram
+			&& memo.PixelProgram == PixelProgram
+			&& memcmp(&memo.Vertex, &vertex_description, sizeof(vertex_description)) == 0
+			&& memcmp(&memo.Combiner, &combiner_description, sizeof(combiner_description)) == 0) {
+			pipeline = memo.Resolved;
+			++memo.Use->Draws;
+			LastMemo = entry;
+			return true;
+		}
 	}
 
 	char format[32];
@@ -1030,14 +1043,17 @@ bool DX11BackendClass::Resolve(Pipeline & pipeline)
 void DX11BackendClass::Remember_Resolution(const std::string & key, const Pipeline & resolved,
 	const VertexPipelineDescription & vertex, const CombinerDescription & combiner)
 {
-	Memo.Valid = true;
-	Memo.Vertex = vertex;
-	Memo.Combiner = combiner;
-	Memo.Format = VertexFormat;
-	Memo.VertexProgram = VertexProgram;
-	Memo.PixelProgram = PixelProgram;
-	Memo.Resolved = resolved;
-	Memo.Use = Record_Use(key);
+	ResolveMemo & memo = Memos[NextMemo];
+	memo.Valid = true;
+	memo.Vertex = vertex;
+	memo.Combiner = combiner;
+	memo.Format = VertexFormat;
+	memo.VertexProgram = VertexProgram;
+	memo.PixelProgram = PixelProgram;
+	memo.Resolved = resolved;
+	memo.Use = Record_Use(key);
+	LastMemo = NextMemo;
+	NextMemo = (NextMemo + 1) % RESOLVE_MEMO_ENTRIES;
 }
 
 DX11BackendClass::PipelineUse * DX11BackendClass::Record_Use(const std::string & key)
@@ -1197,14 +1213,32 @@ void DX11BackendClass::Upload_Constants()
 	}
 }
 
+void DX11BackendClass::Forget_Last_State_Objects()
+{
+	memset(&LastBlendDescription, 0, sizeof(LastBlendDescription));
+	memset(&LastDepthStencilDescription, 0, sizeof(LastDepthStencilDescription));
+	memset(&LastRasterizerDescription, 0, sizeof(LastRasterizerDescription));
+	memset(LastSamplerDescriptions, 0, sizeof(LastSamplerDescriptions));
+	LastBlendState = NULL;
+	LastDepthStencilState = NULL;
+	LastRasterizerState = NULL;
+	memset(LastSamplerStates, 0, sizeof(LastSamplerStates));
+}
+
 ID3D11BlendState * DX11BackendClass::Blend_State()
 {
 	D3D11_BLEND_DESC description;
 	RenderStates.Build_Blend_Description(description);
+	if (LastBlendState != NULL
+		&& memcmp(&LastBlendDescription, &description, sizeof(description)) == 0) {
+		return LastBlendState;
+	}
 
 	const std::string key(reinterpret_cast<const char *>(&description), sizeof(description));
 	std::map<std::string, ID3D11BlendState *>::const_iterator existing = BlendStates.find(key);
 	if (existing != BlendStates.end()) {
+		LastBlendDescription = description;
+		LastBlendState = existing->second;
 		return existing->second;
 	}
 
@@ -1217,6 +1251,8 @@ ID3D11BlendState * DX11BackendClass::Blend_State()
 		return NULL;
 	}
 	BlendStates[key] = state;
+	LastBlendDescription = description;
+	LastBlendState = state;
 	return state;
 }
 
@@ -1224,11 +1260,17 @@ ID3D11DepthStencilState * DX11BackendClass::Depth_Stencil_State()
 {
 	D3D11_DEPTH_STENCIL_DESC description;
 	RenderStates.Build_Depth_Stencil_Description(description);
+	if (LastDepthStencilState != NULL
+		&& memcmp(&LastDepthStencilDescription, &description, sizeof(description)) == 0) {
+		return LastDepthStencilState;
+	}
 
 	const std::string key(reinterpret_cast<const char *>(&description), sizeof(description));
 	std::map<std::string, ID3D11DepthStencilState *>::const_iterator existing
 		= DepthStencilStates.find(key);
 	if (existing != DepthStencilStates.end()) {
+		LastDepthStencilDescription = description;
+		LastDepthStencilState = existing->second;
 		return existing->second;
 	}
 
@@ -1238,6 +1280,8 @@ ID3D11DepthStencilState * DX11BackendClass::Depth_Stencil_State()
 		return NULL;
 	}
 	DepthStencilStates[key] = state;
+	LastDepthStencilDescription = description;
+	LastDepthStencilState = state;
 	return state;
 }
 
@@ -1245,11 +1289,17 @@ ID3D11RasterizerState * DX11BackendClass::Rasterizer_State()
 {
 	D3D11_RASTERIZER_DESC description;
 	RenderStates.Build_Rasterizer_Description(description);
+	if (LastRasterizerState != NULL
+		&& memcmp(&LastRasterizerDescription, &description, sizeof(description)) == 0) {
+		return LastRasterizerState;
+	}
 
 	const std::string key(reinterpret_cast<const char *>(&description), sizeof(description));
 	std::map<std::string, ID3D11RasterizerState *>::const_iterator existing
 		= RasterizerStates.find(key);
 	if (existing != RasterizerStates.end()) {
+		LastRasterizerDescription = description;
+		LastRasterizerState = existing->second;
 		return existing->second;
 	}
 
@@ -1259,6 +1309,8 @@ ID3D11RasterizerState * DX11BackendClass::Rasterizer_State()
 		return NULL;
 	}
 	RasterizerStates[key] = state;
+	LastRasterizerDescription = description;
+	LastRasterizerState = state;
 	return state;
 }
 
@@ -1266,10 +1318,16 @@ ID3D11SamplerState * DX11BackendClass::Sampler_State(unsigned sampler)
 {
 	D3D11_SAMPLER_DESC description;
 	Samplers[sampler].Build_Sampler_Description(description);
+	if (LastSamplerStates[sampler] != NULL
+		&& memcmp(&LastSamplerDescriptions[sampler], &description, sizeof(description)) == 0) {
+		return LastSamplerStates[sampler];
+	}
 
 	const std::string key(reinterpret_cast<const char *>(&description), sizeof(description));
 	std::map<std::string, ID3D11SamplerState *>::const_iterator existing = SamplerStates.find(key);
 	if (existing != SamplerStates.end()) {
+		LastSamplerDescriptions[sampler] = description;
+		LastSamplerStates[sampler] = existing->second;
 		return existing->second;
 	}
 
@@ -1279,6 +1337,8 @@ ID3D11SamplerState * DX11BackendClass::Sampler_State(unsigned sampler)
 		return NULL;
 	}
 	SamplerStates[key] = state;
+	LastSamplerDescriptions[sampler] = description;
+	LastSamplerStates[sampler] = state;
 	return state;
 }
 
