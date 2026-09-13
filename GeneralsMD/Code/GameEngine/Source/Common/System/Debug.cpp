@@ -741,6 +741,8 @@ void ReleaseCrash(const char *reason)
 		if (hadPreviousCrashLog && rotated != 0)
 			fprintf(theReleaseCrashLogFile, "(the previous crash report could not be rotated aside; %s is older than it looks)\n", prevbuf);
 		fprintf(theReleaseCrashLogFile, "\nLast error:\n%s\n\nCurrent stack:\n", g_LastErrorDump.str());
+		// The stack walk below can fault, and the reason and the registers above it must survive that.
+		fflush(theReleaseCrashLogFile);
 		const int STACKTRACE_SIZE	= 12;
 		// 1, not 6: FillStackAddresses drops its own frame itself now, so 6 skipped
 		// past everything the game did and logged two ntdll frames instead.

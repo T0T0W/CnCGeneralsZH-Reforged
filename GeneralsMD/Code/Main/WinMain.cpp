@@ -51,7 +51,9 @@
 #include "Common/Debug.h"
 #include "Common/EarlyCommandLine.h"
 #include "Common/EarlyOptions.h"
+#include "Common/Errors.h"
 #include "Common/GameMemory.h"
+#include "Common/INIException.h"
 #include "Common/SafeDisc/CdaPfn.h"
 #include "Common/StackDump.h"
 #include "Common/MessageStream.h"
@@ -986,10 +988,23 @@ static CriticalSection critSec1, critSec2, critSec3, critSec4, critSec5;
 // of the engine's worker threads (WW3D's texture loader, the GameSpy threads) took the
 // process down with nothing in the log at all.  The unhandled-exception filter is
 // process-wide and is handed the same EXCEPTION_POINTERS, so it feeds the same dump.
+//
+// The dump only ever went to the log, and ReleaseCrashInfo.txt is the file the launcher sends, so a
+// worker thread's fault reached nobody unless the player saved the report by hand.  ReleaseCrash
+// writes that file and ends the process.  The dump's stack walk is guarded because it has already
+// faulted inside this filter on a player's machine; the registers are in g_LastErrorDump before it.
 static LONG WINAPI dumpUnhandledException( EXCEPTION_POINTERS *e_info )
 {
 	DEBUG_LOG(("Unhandled exception on thread %d\n", GetCurrentThreadId()));
-	DumpExceptionInfo( e_info->ExceptionRecord->ExceptionCode, e_info );
+	__try
+	{
+		DumpExceptionInfo( e_info->ExceptionRecord->ExceptionCode, e_info );
+	}
+	__except( EXCEPTION_EXECUTE_HANDLER )
+	{
+		DEBUG_LOG(("The exception dump faulted part way through\n"));
+	}
+	ReleaseCrash( "Uncaught exception on a worker thread" );
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 
@@ -1271,10 +1286,25 @@ Int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 		// BGC - shut down COM
 	//	OleUninitialize();
-	}	
-	catch (...) 
-	{ 
-	
+	}
+	/* Whatever escaped the engine used to end in an empty catch here, and WinMain returned as if the
+		 player had quit.  The CRT then ran the static destructors while WW3D's threads were still
+		 running: the thread list was destroyed first, and the mouse or texture loader thread faulted
+		 taking itself off it (Except.cpp, Unregister_Thread_ID), which is all a player's report ever
+		 showed.  Name what was thrown, and leave through ReleaseCrash's _exit so no destructor runs. */
+	catch (INIException e)
+	{
+		RELEASE_CRASH((e.mFailureMessage ? e.mFailureMessage : "Uncaught INI exception in WinMain"));
+	}
+	catch (ErrorCode ec)
+	{
+		char why[ 64 ];
+		snprintf( why, sizeof(why), "Uncaught ErrorCode 0x%08x in WinMain", (UnsignedInt)ec );
+		RELEASE_CRASH((why));
+	}
+	catch (...)
+	{
+		RELEASE_CRASH(("Uncaught exception in WinMain"));
 	}
 
 	TheUnicodeStringCriticalSection = NULL;

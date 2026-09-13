@@ -766,7 +766,12 @@ found and fixed â€” EA's own, not port damage.**
 - A log that could not be rotated says so, in the log. Rotation fails when a second copy of the game
   has the file open, and the ".prev" file next to it then holds some older run than the one before -
   which is a bug report read wrong.
-- Something going wrong now writes a readable crash report.
+- Something going wrong now writes a readable crash report. That includes the two cases that used to
+  write none: a fault in the work the game does in the background, such as moving the cursor, and an
+  error during loading that closed the game as if you had quit. The second one then set off the first
+  on its way out, so the one report a player could send described the wrong crash. When the game the
+  launcher started still closes on an error with no report, the launcher sends the exit code and the
+  log on its own.
 
 ## Units take corners wide, and drive round a jam instead of into it
 
