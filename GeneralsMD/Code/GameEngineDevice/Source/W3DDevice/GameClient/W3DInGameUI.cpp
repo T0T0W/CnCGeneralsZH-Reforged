@@ -1139,7 +1139,10 @@ void W3DInGameUI::drawOrderHints( void )
 		if( TheTacticalView->worldToScreenTriReturn( &it->to, &to ) == View::WTS_INVALID )
 			continue;
 
-		TheDisplay->drawLine( from.x, from.y, to.x, to.y, width, lineColor );
+		// Order Lines off in the options takes the lines away and leaves the markers: where a unit is
+		// going is still worth a glance when the thread across the map is not
+		if( TheGlobalData->m_showOrderLines )
+			TheDisplay->drawLine( from.x, from.y, to.x, to.y, width, lineColor );
 
 		// the marker is the plain pointer, tinted: its white body takes the order colour and the
 		// dark outline stays.  The hot spot is the pixel the player aims with, so that is the pixel

@@ -3095,14 +3095,6 @@ void InGameUI::updateOrderHints( void )
 		return;
 	}
 
-	// the player turned the lines off in the options; the formation line above is the drag itself and
-	// still draws
-	if( !TheGlobalData->m_showOrderLines )
-	{
-		m_orderHints.clear();
-		return;
-	}
-
 	// last frame's markers, kept only so this frame's can inherit their age (see addOrderHint)
 	std::vector<OrderHint> previous;
 	previous.swap( m_orderHints );
@@ -4464,6 +4456,20 @@ void InGameUI::createCommandHint( const GameMessage *msg )
 			}
 			break;
 	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Ctrl held is how the game as shipped force fired, and Legacy is that game.  Modern keeps ctrl for
+	* the shared pace on a move and force fires on the attack key alone. */
+//-------------------------------------------------------------------------------------------------
+Bool InGameUI_isForceFireOn( Bool forceAttackArmed, Bool ctrlHeld, Bool legacyInput )
+{
+	return forceAttackArmed || ( legacyInput && ctrlHeld );
+}
+
+Bool InGameUI::isForceFireOn( void ) const
+{
+	return InGameUI_isForceFireOn( m_forceAttackArmed, m_forceAttackMode, TheGlobalData->isLegacyInput() );
 }
 
 //-------------------------------------------------------------------------------------------------

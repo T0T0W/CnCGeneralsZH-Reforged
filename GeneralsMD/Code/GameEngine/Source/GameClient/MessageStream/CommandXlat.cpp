@@ -102,8 +102,9 @@
 //-------------------------------------------------------------------------------------------------
 /**
  * Is the next order click a force fire?
- * Only the attack key arms it.  Holding ctrl used to do the same, and ctrl is the "one shared pace"
- * modifier on a move (see issueMoveToLocationCommand), so a ctrl click could not ask for both.
+ * Under Modern only the attack key arms it: ctrl is the "one shared pace" modifier on a move (see
+ * issueMoveToLocationCommand), so a ctrl click could not ask for both.  Legacy's ctrl is still the
+ * game's own force fire (InGameUI::isForceFireOn).
  */
 Bool CommandXlat_isForceAttackTargeting( Bool forceAttackArmed, Bool attackMoveArmed )
 {
@@ -112,7 +113,7 @@ Bool CommandXlat_isForceAttackTargeting( Bool forceAttackArmed, Bool attackMoveA
 
 static Bool isForceAttackTargeting( void )
 {
-	return CommandXlat_isForceAttackTargeting( TheInGameUI->isForceAttackArmed(),
+	return CommandXlat_isForceAttackTargeting( TheInGameUI->isForceFireOn(),
 																						 TheInGameUI->isInAttackMoveToMode() );
 }
 

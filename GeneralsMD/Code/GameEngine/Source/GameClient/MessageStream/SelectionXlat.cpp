@@ -460,7 +460,7 @@ GameMessageDisposition SelectionTranslator::translateGameMessage(const GameMessa
 				//      when we're not in force attackable mode!
 				UnsignedInt pickType = getPickTypesForContext( true /*TheInGameUI->isInForceAttackMode()*/ );
 				
-				Drawable *underCursor = TheTacticalView->pickDrawable( &pixel, TheInGameUI->isForceAttackArmed(), (PickType) pickType );
+				Drawable *underCursor = TheTacticalView->pickDrawable( &pixel, TheInGameUI->isForceFireOn(), (PickType) pickType );
 
 				//
 				// a click on a health bar selects its owner, so the cursor has to say so before the
@@ -505,8 +505,8 @@ GameMessageDisposition SelectionTranslator::translateGameMessage(const GameMessa
 				break;
 			}
 
-			// an armed order key makes this click an order, which CommandXlat gives
-			if (TheInGameUI->isOrderKeyArmed())
+			// an armed order key, or Legacy's ctrl, makes this click an order, which CommandXlat gives
+			if (TheInGameUI->isOrderKeyArmed() || TheInGameUI->isForceFireOn())
 				break;
 
 			const IRegion2D& region = msg->getArgument(0)->pixelRegion;

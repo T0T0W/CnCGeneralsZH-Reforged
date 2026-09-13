@@ -868,6 +868,7 @@ public:  // ********************************************************************
 	void toggleForceAttackArmed( void )				{ m_forceAttackArmed = !m_forceAttackArmed; m_attackMoveToMode = FALSE; m_guardArmed = FALSE; }
 	Bool isForceAttackArmed( void ) const			{ return m_forceAttackArmed; }
 	Bool isOrderKeyArmed( void ) const				{ return m_forceAttackArmed || m_attackMoveToMode || m_guardArmed; }	///< the next left click is an attack, an attack move or a guard
+	Bool isForceFireOn( void ) const;					///< the next order click force fires: the attack key armed it, or Legacy's ctrl is held
 
 	// and the guard key arms guard the same way: the next order click posts the selection on that
 	// spot, or on that object, and a drag posts them along the line instead of stacking them all

@@ -15326,7 +15326,7 @@ GUI:OrderLines
 END
 
 TOOLTIP:OrderLines
-"Seçili her birimden gittiği yere, oradan da sıraya aldığı her noktaya bir çizgi çeker."
+"Seçili her birimden gittiği yere, oradan da sıraya aldığı her noktaya bir çizgi çeker. Kapalıyken çizgiler gider, o noktalardaki işaretler kalır."
 END
 
 GUI:PlayerColors

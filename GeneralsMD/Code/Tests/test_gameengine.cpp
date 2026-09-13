@@ -994,6 +994,22 @@ TEST(force_fire_is_the_attack_key_and_nothing_else)
 	CHECK( !CommandXlat_isForceAttackTargeting( false, true ) );
 }
 
+/* InGameUI.cpp: Legacy is the game as shipped, where holding ctrl is force fire.  Modern keeps ctrl for
+   the shared pace and force fires on the attack key alone. */
+extern Bool InGameUI_isForceFireOn( Bool forceAttackArmed, Bool ctrlHeld, Bool legacyInput );
+
+TEST(legacy_ctrl_force_fires_and_modern_ctrl_does_not)
+{
+	CHECK(  InGameUI_isForceFireOn( false, true,  true  ) );
+	CHECK( !InGameUI_isForceFireOn( false, true,  false ) );
+
+	/* the attack key arms it under either scheme */
+	CHECK(  InGameUI_isForceFireOn( true,  false, false ) );
+	CHECK(  InGameUI_isForceFireOn( true,  false, true  ) );
+
+	CHECK( !InGameUI_isForceFireOn( false, false, true  ) );
+}
+
 /* Player.cpp: the lobby's unit limit is 840 units shared out by the players who are not watching. */
 TEST(unit_limit_shares_840_between_the_players)
 {

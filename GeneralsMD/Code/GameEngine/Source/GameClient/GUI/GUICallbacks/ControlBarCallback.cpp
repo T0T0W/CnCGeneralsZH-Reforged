@@ -57,6 +57,36 @@
 //external declarations of the Gadgets the callbacks can use
 WindowLayout *popupCommunicatorLayout = NULL;
 
+// The drag message of the button whose press on the radar moved the camera, or GWM_NONE.  Dragging
+// that button on keeps the camera under the cursor; a drag that came onto the radar from the
+// battlefield, a selection box say, was never pressed here and leaves the camera alone.
+static UnsignedInt s_radarLookDrag = GWM_NONE;
+
+//-------------------------------------------------------------------------------------------------
+/** The mouse position packed into a window message, relative to that window's corner */
+//-------------------------------------------------------------------------------------------------
+static ICoord2D windowLocalMouse( GameWindow *window, WindowMsgData mData1 )
+{
+	ICoord2D screenPos;
+	window->winGetScreenPosition( &screenPos.x, &screenPos.y );
+
+	ICoord2D mouse;
+	mouse.x = (mData1 & 0xFFFF) - screenPos.x;
+	mouse.y = (mData1 >> 16) - screenPos.y;
+	return mouse;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The spot on the map under a pixel of the radar window.  FALSE off the radar's picture. */
+//-------------------------------------------------------------------------------------------------
+static Bool radarPixelToWorld( const ICoord2D *pixel, Coord3D *world )
+{
+	ICoord2D radar;
+	return (TheRadar->isRadarHidden() == FALSE || TheRadar->isRadarForced()) &&
+		TheRadar->localPixelToRadar( pixel, &radar ) &&
+		TheRadar->radarToWorld( &radar, world );
+}
+
 
 //-------------------------------------------------------------------------------------------------
 /** Input procedure for the left HUD */
@@ -96,6 +126,11 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 		case GWM_MOUSE_ENTERING:
 		case GWM_MOUSE_LEAVING:
 		{
+
+			// A left press holds the radar and never sees these until it lets go.  A right drag does,
+			// and one that leaves the radar has finished moving the camera.
+			if( msg != GWM_NONE )
+				s_radarLookDrag = GWM_NONE;
 
 			//
 			// consider changing the mouse cursor if we are not in the process of firing
@@ -221,30 +256,40 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 		// ------------------------------------------------------------------------
 		case GWM_RIGHT_UP:// Here to eat
 		case GWM_LEFT_UP:// Here to eat
+			s_radarLookDrag = GWM_NONE;
 			break;
+
+		// ------------------------------------------------------------------------
+		// Holding the button that moved the camera and dragging keeps the camera under the cursor.
+		case GWM_LEFT_DRAG:
+		case GWM_RIGHT_DRAG:
+		{
+			if( msg != s_radarLookDrag )
+				return MSG_IGNORED;
+
+			// A left press holds the radar for the whole drag, so the cursor can run off the picture.
+			// It pins to the picture's edge there and the camera stops on the map's edge, rather than
+			// wherever the last move inside the picture happened to leave it.
+			ICoord2D mouse = windowLocalMouse( window, mData1 );
+			ICoord2D size, ul, lr;
+			window->winGetSize( &size.x, &size.y );
+			TheRadar->findDrawPositions( 0, 0, size.x, size.y, &ul, &lr );
+			mouse.x = max( ul.x, min( mouse.x, lr.x - 1 ) );
+			mouse.y = max( ul.y, min( mouse.y, lr.y - 1 ) );
+
+			Coord3D world;
+			if( radarPixelToWorld( &mouse, &world ) )
+				TheTacticalView->lookAt( &world );
+			break;
+		}
 
 		case GWM_RIGHT_DOWN:
 		case GWM_LEFT_DOWN:
 		{
-			ICoord2D mouse;
-			ICoord2D radar;
-			ICoord2D size;
-			ICoord2D screenPos;
+			s_radarLookDrag = GWM_NONE;
+
+			ICoord2D mouse = windowLocalMouse( window, mData1 );
 			Coord3D world;
-
-			// get window size
-			window->winGetSize( &size.x, &size.y );
-
-			// get mouse position
-			mouse.x = mData1 & 0xFFFF;
-			mouse.y = mData1 >> 16;
-			
-			// get window screen position
-			window->winGetScreenPosition( &screenPos.x, &screenPos.y );
-
-			// set mouse position to be relative to this window
-			mouse.x -= screenPos.x;
-			mouse.y -= screenPos.y;
 
 			//
 			// translate mouse position to radar position ... we know that the mouse
@@ -252,9 +297,7 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 			// completely drawn with the radar ... so it's just a translation from
 			// our window size we're drawing into to the radar cell size
 			//
-			if( (TheRadar->isRadarHidden() == FALSE || TheRadar->isRadarForced()) &&
-					TheRadar->localPixelToRadar( &mouse, &radar ) &&
-					TheRadar->radarToWorld( &radar, &world ) )
+			if( radarPixelToWorld( &mouse, &world ) )
 			{
 
 				// No drawables, or a right click automatically means its a look at.
@@ -270,6 +313,7 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 				if( drawableList->empty() || msg == lookButton )
 				{
 					TheTacticalView->lookAt( &world );
+					s_radarLookDrag = (msg == GWM_LEFT_DOWN) ? GWM_LEFT_DRAG : GWM_RIGHT_DRAG;
 					break;
 				}
 

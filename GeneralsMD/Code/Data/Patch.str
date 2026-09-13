@@ -755,7 +755,7 @@ GUI:OrderLines
 END
 
 TOOLTIP:OrderLines
-"A line from each selected unit to where it is going, and on through every point it has queued."
+"A line from each selected unit to where it is going, and on through every point it has queued. Off, the markers on those points stay."
 END
 
 GUI:PlayerColors
