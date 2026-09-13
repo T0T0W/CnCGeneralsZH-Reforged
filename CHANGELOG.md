@@ -689,6 +689,7 @@ found and fixed â€” EA's own, not port damage.**
 - Starting a match with the Direct3D 11 picture on took the game down. Both devices were presenting into the same window, the old one lost itself, and the fog texture then locked a surface that was never made.
 - A machine whose graphics stack faults while the Direct3D 11 picture is being set up starts the game anyway, on the Direct3D 9 picture. A player's report showed the fault happening inside Windows' own graphics library, before the game got an answer back, and it ended in "Uncaught Exception during initialization". An overlay hooking the graphics calls or a stray dxgi.dll in the game folder is the usual cause. Until now the only way past it was typing -d3d9.
 - The opening movies froze on their first frame with that picture on. A movie writes a new image every frame into a texture the copy had already taken.
+- Opening Single Player could take the game down a quarter of a second in, as the buttons flashed in. The menu's animation list names a Custom Mission button that only the 1.04 patch's main menu has, and on an install whose menu lacks it, every step of the flash skipped the missing button except one, which tried to draw it. That step skips it now too.
 - Two blocks of 2003 assembly destroyed registers and took down the main menu.
 - Quitting faulted twice every time; it now takes about half a second.
 - A long chat message or an unusual map name could kill the process.

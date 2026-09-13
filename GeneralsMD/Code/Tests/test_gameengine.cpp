@@ -45,6 +45,7 @@
 #include "Common/RandomValue.h"
 #include "GameClient/ClickTolerance.h"
 #include "GameClient/KeyDownInfo.h"
+#include "GameClient/GameWindowTransitions.h"
 #include "GameLogic/ScenarioDrill.h"
 #include "Common/ControlServer.h"
 #include "GameLogic/LogicRandomValue.h"
@@ -11776,4 +11777,35 @@ TEST(key_down_info_remembers_each_modifier_combination)
 
 	info.clearModState( CTRL_MASK | SHIFT_MASK );
 	CHECK( !info.isKeyDown() );
+}
+
+/* A button flash for a button the layout does not have.
+ *
+ * WindowTransitions.ini's single player groups name MainMenu.wnd:ButtonCustomMission, and only the
+ * 1.04 patch's MainMenu.wnd carries that button, so on another install the window lookup comes
+ * back empty. Every step of the flash skipped an empty window except the pause between fading to
+ * the background and fading to the gradient, which asked to draw it anyway. A player's crash log
+ * ended there, reading address 0x1F0 inside GameWindow::winGetScreenPosition.
+ */
+class ButtonFlashWithoutWindow : public ButtonFlashTransition
+{
+public:
+	enum
+	{
+		PAUSE_FIRST_FRAME = BUTTONFLASHTRANSITION_FADE_TO_BACKGROUND_4 + 1,
+		PAUSE_LAST_FRAME = BUTTONFLASHTRANSITION_FADE_TO_GRADE_IN_1 - 1,
+		NOTHING_TO_DRAW = -1
+	};
+
+	Int drawState( void ) const { return m_drawState; }
+};
+
+TEST(button_flash_draws_nothing_for_a_button_the_layout_lacks)
+{
+	ButtonFlashWithoutWindow flash;
+	for( Int frame = ButtonFlashWithoutWindow::PAUSE_FIRST_FRAME; frame <= ButtonFlashWithoutWindow::PAUSE_LAST_FRAME; ++frame )
+	{
+		flash.update( frame );
+		CHECK_EQ( flash.drawState(), (Int)ButtonFlashWithoutWindow::NOTHING_TO_DRAW );
+	}
 }

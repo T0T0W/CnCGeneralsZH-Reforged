@@ -487,7 +487,9 @@ void ButtonFlashTransition::update( Int frame )
 		}
 		break;
 	}
-	if(frame > BUTTONFLASHTRANSITION_FADE_TO_BACKGROUND_4 && frame < BUTTONFLASHTRANSITION_FADE_TO_GRADE_IN_1)
+	// Every case above leaves a button the .wnd does not have undrawn, and so must this one: the
+	// single player groups name ButtonCustomMission, which only the 1.04 patch's MainMenu.wnd carries.
+	if(m_win && frame > BUTTONFLASHTRANSITION_FADE_TO_BACKGROUND_4 && frame < BUTTONFLASHTRANSITION_FADE_TO_GRADE_IN_1)
 		m_drawState = BUTTONFLASHTRANSITION_SHOW_BACKGROUND;
 	
 }
