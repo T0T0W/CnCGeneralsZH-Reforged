@@ -1390,7 +1390,7 @@ Int GameWindow::winDrawWindow( void )
 	* window which contains the mouse pointer.  Child windows are
 	* relative to their parents */
 //=============================================================================
-GameWindow *GameWindow::winPointInChild( Int x, Int y, Bool ignoreEnableCheck, Bool playDisabledSound )
+GameWindow *GameWindow::winPointInChild( Int x, Int y, Bool ignoreEnableCheck, Bool playDisabledSound, Bool allowDisabledCancel )
 {
 	GameWindow *parent;
 	GameWindow *child;
@@ -1419,12 +1419,13 @@ GameWindow *GameWindow::winPointInChild( Int x, Int y, Bool ignoreEnableCheck, B
 				continue;
 
 			Bool enabled = ignoreEnableCheck || BitTest( child->m_status, WIN_STATUS_ENABLED );
+			Bool cancellable = allowDisabledCancel && BitTest( child->m_status, WIN_STATUS_CANCEL_WHEN_DISABLED );
 			Bool hidden = BitTest( child->m_status, WIN_STATUS_HIDDEN );
 			if( !hidden )
 			{
-				if( enabled )
+				if( enabled || cancellable )
 				{
-					return child->winPointInChild( x, y, ignoreEnableCheck, playDisabledSound );
+					return child->winPointInChild( x, y, ignoreEnableCheck, playDisabledSound, allowDisabledCancel );
 				}
 				else if( playDisabledSound )
 				{

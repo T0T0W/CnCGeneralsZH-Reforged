@@ -267,6 +267,11 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 			if( msg != s_radarLookDrag )
 				return MSG_IGNORED;
 
+			// A left press on the radar holds it until the release, so a left drag that is not held
+			// here started somewhere else, even if the release that ended the last one never reached us
+			if( msg == GWM_LEFT_DRAG && TheWindowManager->winGetGrabWindow() != window )
+				return MSG_IGNORED;
+
 			// A left press holds the radar for the whole drag, so the cursor can run off the picture.
 			// It pins to the picture's edge there and the camera stops on the map's edge, rather than
 			// wherever the last move inside the picture happened to leave it.

@@ -107,7 +107,7 @@ static Object *resolvePlacementBuilder( void )
 }
 
 //-------------------------------------------------------------------------------------------------
-PlaceEventTranslator::PlaceEventTranslator() : m_frameOfUpButton(-1), m_stripClickTaken(FALSE)
+PlaceEventTranslator::PlaceEventTranslator() : m_frameOfUpButton(-1), m_stripClickTaken(FALSE), m_stripRightClickTaken(FALSE)
 {
 }
 
@@ -123,15 +123,43 @@ GameMessageDisposition PlaceEventTranslator::translateGameMessage(const GameMess
 {
 	GameMessageDisposition disp = KEEP_MESSAGE;
 
-	// the up that closes a click the strip took is not a selection either
-	if( m_stripClickTaken && msg->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_UP )
+	// MetaEvent runs before us and inserts a logical click after the raw release.
+	// Consume both: otherwise cancelling on the strip can also issue a world order.
+	if( m_stripClickTaken && (msg->getType() == GameMessage::MSG_MOUSE_LEFT_CLICK ||
+			msg->getType() == GameMessage::MSG_MOUSE_LEFT_DOUBLE_CLICK) )
 	{
 		m_stripClickTaken = FALSE;
 		return DESTROY_MESSAGE;
 	}
+	if( m_stripClickTaken && (msg->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_UP ||
+			msg->getType() == GameMessage::MSG_RAW_MOUSE_LEFT_DRAG) )
+		return DESTROY_MESSAGE;
+	if( m_stripRightClickTaken )
+	{
+		if( msg->getType() == GameMessage::MSG_MOUSE_RIGHT_CLICK ||
+				msg->getType() == GameMessage::MSG_MOUSE_RIGHT_DOUBLE_CLICK )
+		{
+			m_stripRightClickTaken = FALSE;
+			return DESTROY_MESSAGE;
+		}
+		if( msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_UP ||
+				msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_DRAG )
+			return DESTROY_MESSAGE;
+	}
 
 	switch(msg->getType())
 	{
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:
+		case GameMessage::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK:
+		{
+			m_stripRightClickTaken = FALSE;
+			if( TheInGameUI->handleProductionStripClick( &msg->getArgument(0)->pixel, TRUE ) )
+			{
+				m_stripRightClickTaken = TRUE;
+				return DESTROY_MESSAGE;
+			}
+			break;
+		}
 
 		//---------------------------------------------------------------------------------------------
 		//
@@ -145,10 +173,11 @@ GameMessageDisposition PlaceEventTranslator::translateGameMessage(const GameMess
 		case GameMessage::MSG_RAW_MOUSE_LEFT_BUTTON_DOWN:
 		case GameMessage::MSG_RAW_MOUSE_LEFT_DOUBLE_CLICK:
 		{
+			m_stripClickTaken = FALSE;
 			//
 			// The global production strip lies over the world rather than inside a window, so
 			// nothing above us has claimed a click on it. Take it here, before placement and long
-			// before selection turns it into a move order. Ctrl cancels the item, a plain click
+			// before selection turns it into a move order. Right-click (or Ctrl-click) cancels one, a plain click
 			// takes the camera to the building it is queued on.
 			//
 			if( TheInGameUI->handleProductionStripClick( &msg->getArgument(0)->pixel,

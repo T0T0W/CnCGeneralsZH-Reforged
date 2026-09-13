@@ -190,6 +190,8 @@ GlobalData* GlobalData::m_theOriginal = NULL;
 	{ "CameraYaw",									INI::parseReal,				NULL,			offsetof( GlobalData, m_cameraYaw ) },
 	{ "CameraHeight",								INI::parseReal,				NULL,			offsetof( GlobalData, m_cameraHeight ) },
 	{ "MaxCameraHeight",						INI::parseReal,				NULL,			offsetof( GlobalData, m_maxCameraHeight ) },
+	{ "UseCameraConstraints",				INI::parseBool,				NULL,			offsetof( GlobalData, m_useCameraConstraints ) },
+	{ "CameraBoundaryMargin",				INI::parseInt,				NULL,			offsetof( GlobalData, m_cameraBoundaryMargin ) },
 	{ "EdgeScrollInWindowedMode",	INI::parseBool,				NULL,			offsetof( GlobalData, m_edgeScrollInWindowedMode ) },
 	{ "SnapBuildPlacementTo45",		INI::parseBool,				NULL,			offsetof( GlobalData, m_snapBuildPlacementTo45 ) },
 	{ "SnapCameraRotateTo45",			INI::parseBool,				NULL,			offsetof( GlobalData, m_snapCameraRotateTo45 ) },
@@ -531,7 +533,6 @@ GlobalData* GlobalData::m_theOriginal = NULL;
 	{ "CheckMemoryLeaks", INI::parseBool, NULL, offsetof(GlobalData, m_checkForLeaks) },
 	{ "Wireframe",								INI::parseBool,				NULL,			offsetof( GlobalData, m_wireframe ) },
 	{ "StateMachineDebug",				INI::parseBool,				NULL,			offsetof( GlobalData, m_stateMachineDebug ) },
-	{ "UseCameraConstraints",				INI::parseBool,				NULL,			offsetof( GlobalData, m_useCameraConstraints ) },
 	{ "ShroudOn",										INI::parseBool,				NULL,			offsetof( GlobalData, m_shroudOn ) },
 	{ "FogOfWarOn",										INI::parseBool,				NULL,			offsetof( GlobalData, m_fogOfWarOn ) },
 	{ "ShowCollisionExtents",				INI::parseBool,				NULL,			offsetof( GlobalData, m_showCollisionExtents ) },
@@ -592,7 +593,6 @@ GlobalData::GlobalData()
 #if defined(_DEBUG) || defined(_INTERNAL)
 	m_wireframe = 0;
 	m_stateMachineDebug = FALSE;
-	m_useCameraConstraints = TRUE;
 	m_shroudOn = TRUE;
 	m_fogOfWarOn = FALSE;
 	m_jabberOn = FALSE;
@@ -1101,6 +1101,8 @@ GlobalData::GlobalData()
 	// controls that used to set them, and what is written here is what every game gets. GameData.ini
 	// remains the way to change one, because the field table above still names it.
 	//
+	m_useCameraConstraints = TRUE;
+	m_cameraBoundaryMargin = 200;
 	m_edgeScrollInWindowedMode = TRUE;
 	m_snapCameraRotateTo45 = TRUE;
 	m_zoomToCursor = TRUE;

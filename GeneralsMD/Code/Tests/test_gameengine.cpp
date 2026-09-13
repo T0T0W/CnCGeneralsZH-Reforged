@@ -11989,3 +11989,62 @@ TEST(button_flash_draws_nothing_for_a_button_the_layout_lacks)
 		CHECK_EQ( flash.drawState(), (Int)ButtonFlashWithoutWindow::NOTHING_TO_DRAW );
 	}
 }
+
+// Camera scroll timing must advance during stationary frames as well as moving frames.
+#include "GameClient/CameraScrollClock.h"
+
+TEST(camera_scroll_restarts_after_idle_without_a_jump)
+{
+	CameraScrollClock clock;
+	CHECK_NEAR(clock.sample(1000, 33), 0.0f, 0.00001f);
+	for (uint32_t now = 1016; now <= 17000; now += 16)
+		clock.sample(now, 33); // stationary render frames
+	CHECK_NEAR(clock.sample(17016, 33), 16.0f / 33.0f, 0.00001f);
+	CHECK_NEAR(clock.sample(17032, 33), 16.0f / 33.0f, 0.00001f);
+}
+
+TEST(camera_scroll_elapsed_time_is_independent_of_render_rate)
+{
+	const int rates[] = {30, 60, 144, 240};
+	for (int r = 0; r < 4; ++r)
+	{
+		CameraScrollClock clock;
+		clock.sample(1000, 33);
+		float distance = 0.0f;
+		for (int frame = 1; frame <= rates[r]; ++frame)
+			distance += clock.sample(1000 + frame * 1000 / rates[r], 33);
+		CHECK_NEAR(distance, 1000.0f / 33.0f, 0.0001f);
+	}
+}
+
+TEST(camera_scroll_clocks_are_independent_and_handle_timer_wrap)
+{
+	CameraScrollClock first, second;
+	first.sample(0xfffffff0u, 33);
+	second.sample(2000, 33);
+	CHECK_NEAR(first.sample(0u, 33), 16.0f / 33.0f, 0.00001f);
+	CHECK_NEAR(second.sample(2033, 33), 1.0f, 0.00001f);
+	CHECK_NEAR(second.sample(9000, 33), 3.0f, 0.00001f);
+}
+
+TEST(camera_preferences_default_to_a_finite_map_margin)
+{
+	CHECK(bootOnce());
+	GlobalData *saved = TheWritableGlobalData;
+	GlobalData *scratch = NEW GlobalData;
+	TheWritableGlobalData = scratch;
+	CHECK(scratch->m_useCameraConstraints);
+	CHECK_EQ(scratch->m_cameraBoundaryMargin, 200);
+	const OptionDef *bounds = findOptionDef("UseCameraConstraints");
+	CHECK(bounds != NULL);
+	if (bounds)
+	{
+		bounds->set(0);
+		CHECK(!scratch->m_useCameraConstraints);
+	}
+	TheWritableGlobalData = saved;
+	delete scratch;
+}
+#include "test_camera_behavior.inc"
+#include "test_production_input.inc"
+#include "test_minimap_input.inc"

@@ -778,6 +778,7 @@ void ControlBar::updateContextCommand( void )
 		// whatever is still running below puts its own clock back on
 		//
 		GadgetButtonClearClock( win );
+		win->winClearStatus( WIN_STATUS_CANCEL_WHEN_DISABLED );
 
 		//
 		// a unit build button wears its own queue: a radial fill over the cameo while its unit
@@ -804,6 +805,8 @@ void ControlBar::updateContextCommand( void )
 							p->getProductionObject() == command->getThingTemplate() )
 						queued++;
 				GadgetButtonSetCount( win, queued );
+				if( queued > 0 && obj->isLocallyControlled() )
+					win->winSetStatus( WIN_STATUS_CANCEL_WHEN_DISABLED );
 
 				const ProductionEntry *first = pu->firstProduction();
 				if( first && first->getProductionType() == PRODUCTION_UNIT &&

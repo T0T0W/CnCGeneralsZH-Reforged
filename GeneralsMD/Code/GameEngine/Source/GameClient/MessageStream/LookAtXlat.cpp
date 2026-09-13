@@ -82,6 +82,9 @@ void LookAtTranslator::setScrolling(Int x)
 	TheInGameUI->setScrolling( TRUE );
 	TheTacticalView->setMouseLock( TRUE );
 	m_scrollType = x;
+	// A manual pan restores map constraints widened by scripted camera paths.
+	if (TheGlobalData->m_useCameraConstraints && TheGlobalData->m_cameraBoundaryMargin > 0)
+		TheTacticalView->forceCameraConstraintRecalc();
 	if(TheStatsCollector)
 		TheStatsCollector->startScrollTime();
 }
@@ -623,10 +626,12 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				}
 
 				TheInGameUI->setScrollAmount(offset);
-				TheTacticalView->scrollBy( &offset );
 			}
 			else	//not scrolling so reset amount
 				TheInGameUI->setScrollAmount(offset);
+
+			// Advance the pan clock even while stationary, so restarting does not include idle time.
+			TheTacticalView->scrollBy( &offset );
 
 			//if (TheGlobalData->m_saveCameraInReplay /*&& TheRecorder->getMode() != RECORDERMODETYPE_PLAYBACK *//**/&& (TheGameLogic->isInSinglePlayerGame() || TheGameLogic->isInSkirmishGame())/**/)
 			//if (TheGlobalData->m_saveCameraInReplay && (TheGameLogic->isInMultiplayerGame() || TheGameLogic->isInSinglePlayerGame() || TheGameLogic->isInSkirmishGame()))

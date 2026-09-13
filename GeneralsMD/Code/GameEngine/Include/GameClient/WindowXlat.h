@@ -36,7 +36,7 @@
 class WindowTranslator : public GameMessageTranslator                          
 {
 private:
-	// nothing
+	Bool m_rightClickTaken;	///< a GUI right press owns its drag/release even outside the window
 public:
 	WindowTranslator();
 	~WindowTranslator();

@@ -184,6 +184,7 @@ enum
 	WIN_STATUS_ALWAYS_COLOR				= 0x01000000,		// Never render these buttons using greyscale renderer when button disabled.
 	WIN_STATUS_ON_MOUSE_DOWN			= 0x02000000,		// Pushbutton triggers on mouse down.
 	WIN_STATUS_SHORTCUT_BUTTON		= 0x04000000,   // Oh god... this is a total hack for shortcut buttons to handle rendering text top left corner...
+	WIN_STATUS_CANCEL_WHEN_DISABLED = 0x08000000,  // Queued production may still receive right clicks while buying is disabled.
 	// when you edit this, remember to edit WindowStatusNames[]
 
 };
@@ -361,7 +362,7 @@ public:
 	/** given a piont, return the child window which contains the mouse pointer,
 	if the point is not in a chilc, the function returns the 'window' paramater
 	back to the caller */
-	GameWindow *winPointInChild( Int x, Int y, Bool ignoreEnableCheck = FALSE, Bool playDisabledSound = FALSE );
+	GameWindow *winPointInChild( Int x, Int y, Bool ignoreEnableCheck = FALSE, Bool playDisabledSound = FALSE, Bool allowDisabledCancel = FALSE );
 	/** finds the child which contains the mouse pointer - reguardless of
 	the enabled status of the child */
 	GameWindow *winPointInAnyChild( Int x, Int y, Bool ignoreHidden, Bool ignoreEnableCheck = FALSE );

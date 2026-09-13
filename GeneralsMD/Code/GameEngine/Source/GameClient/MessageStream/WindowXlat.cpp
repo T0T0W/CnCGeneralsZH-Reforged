@@ -50,6 +50,7 @@
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/MessageStream.h"
+#include "Common/Radar.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/WindowXlat.h"
 #include "GameClient/Shell.h"
@@ -157,7 +158,7 @@ static GameWindowMessage rawMouseToWindowMessage( const GameMessage *msg )
 ///////////////////////////////////////////////////////////////////////////////
 
 //=============================================================================
-WindowTranslator::WindowTranslator()
+WindowTranslator::WindowTranslator() : m_rightClickTaken(FALSE)
 {
 }
 
@@ -175,8 +176,29 @@ GameMessageDisposition WindowTranslator::translateGameMessage(const GameMessage 
 	GameMessageDisposition disp = KEEP_MESSAGE;
 	Bool forceKeepMessage = FALSE;
 	WinInputReturnCode returnCode = WIN_INPUT_NOT_USED;
+	if( msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN ||
+			msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK )
+		m_rightClickTaken = FALSE;
+	if( m_rightClickTaken && msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_DRAG )
+		return DESTROY_MESSAGE;
+	if( m_rightClickTaken && msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_UP )
+	{
+		m_rightClickTaken = FALSE;
+		// Update the button's visual state, then swallow the release before MetaEvent can
+		// turn it into a world click if the cursor moved away from the cancellation button.
+		if( TheWindowManager )
+		{
+			ICoord2D mousePos = msg->getArgument(0)->pixel;
+			TheWindowManager->winProcessMouseEvent(GWM_RIGHT_UP, &mousePos, NULL);
+		}
+		return DESTROY_MESSAGE;
+	}
 
-	if (TheTacticalView && TheTacticalView->isMouseLocked())
+	// A minimap press already owns its drag and its release, even if keyboard scrolling has locked
+	// the tactical view's mouse input in the meantime.
+	const Bool minimapGrab = TheWindowManager && TheRadar &&
+		TheRadar->isRadarWindow( TheWindowManager->winGetGrabWindow() );
+	if (TheTacticalView && TheTacticalView->isMouseLocked() && !minimapGrab)
 	{
 		//Kris: Aug 15, 2003
 		//Added the scrolling check that will not return KEEP_MESSAGE if we happen
@@ -366,6 +388,9 @@ GameMessageDisposition WindowTranslator::translateGameMessage(const GameMessage 
 	// If TheShell doesn't exist, then well, we're not in RTS, we're in GUIEdit
 	if( returnCode == WIN_INPUT_USED && !forceKeepMessage )// || (TheShell && TheShell->isShellActive()))
 	{
+		if( msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN ||
+				msg->getType() == GameMessage::MSG_RAW_MOUSE_RIGHT_DOUBLE_CLICK )
+			m_rightClickTaken = TRUE;
 		disp = DESTROY_MESSAGE;
 	}
 

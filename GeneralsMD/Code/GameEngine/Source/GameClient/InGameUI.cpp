@@ -7384,7 +7384,7 @@ void InGameUI::drawHudOverlay( void )
 // PRODUCTION_STRIP_ROW_MAX cameos and closes with a sixth cell wearing a "+N" for whatever else is
 // queued. Units and upgrades wear the same two border colours the command bar uses. The item a
 // building is actually working on wears a radial fill. A click takes the camera to the building an
-// item is queued on; ctrl-click cancels it.
+// item is queued on; right-click (or Ctrl-click) cancels one queued item.
 //-------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------
