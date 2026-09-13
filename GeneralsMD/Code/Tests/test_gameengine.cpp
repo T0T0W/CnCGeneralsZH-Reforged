@@ -11859,3 +11859,4 @@ TEST(button_flash_draws_nothing_for_a_button_the_layout_lacks)
 		CHECK_EQ( flash.drawState(), (Int)ButtonFlashWithoutWindow::NOTHING_TO_DRAW );
 	}
 }
+#include "test_minimap_input.inc"

@@ -50,6 +50,7 @@
 
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/MessageStream.h"
+#include "Common/Radar.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/WindowXlat.h"
 #include "GameClient/Shell.h"
@@ -176,7 +177,11 @@ GameMessageDisposition WindowTranslator::translateGameMessage(const GameMessage 
 	Bool forceKeepMessage = FALSE;
 	WinInputReturnCode returnCode = WIN_INPUT_NOT_USED;
 
-	if (TheTacticalView && TheTacticalView->isMouseLocked())
+	// A minimap press already owns its drag/release, even if keyboard scrolling
+	// has locked the tactical view's mouse input in the meantime.
+	Bool minimapGrab = TheWindowManager && TheRadar &&
+		TheRadar->isRadarWindow(TheWindowManager->winGetGrabWindow());
+	if (TheTacticalView && TheTacticalView->isMouseLocked() && !minimapGrab)
 	{
 		//Kris: Aug 15, 2003
 		//Added the scrolling check that will not return KEEP_MESSAGE if we happen

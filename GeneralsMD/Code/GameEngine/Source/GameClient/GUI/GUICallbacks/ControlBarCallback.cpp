@@ -223,6 +223,13 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 		case GWM_LEFT_UP:// Here to eat
 			break;
 
+		case GWM_LEFT_DRAG:
+			// Only continue a press owned by this HUD. A world selection dragged onto
+			// the minimap must not move the camera. The manager retains the grab until
+			// release, including when the pointer leaves and reenters the map.
+			if( TheWindowManager->winGetGrabWindow() != window )
+				return MSG_HANDLED;
+			// FALL THROUGH: update the view at the current minimap position.
 		case GWM_RIGHT_DOWN:
 		case GWM_LEFT_DOWN:
 		{
@@ -266,7 +273,7 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 				// see if the user wants to move the tactical view
 				// Left on the radar looks, right on the radar orders - the same division the world
 				// has.  It used to depend on UseAlternateMouse, which no longer exists.
-				if( drawableList->empty() || msg == GWM_LEFT_DOWN )
+				if( drawableList->empty() || msg != GWM_RIGHT_DOWN )
 				{
 					TheTacticalView->lookAt( &world );
 					break;
