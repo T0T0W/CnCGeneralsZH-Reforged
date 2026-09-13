@@ -3095,6 +3095,14 @@ void InGameUI::updateOrderHints( void )
 		return;
 	}
 
+	// the player turned the lines off in the options; the formation line above is the drag itself and
+	// still draws
+	if( !TheGlobalData->m_showOrderLines )
+	{
+		m_orderHints.clear();
+		return;
+	}
+
 	// last frame's markers, kept only so this frame's can inherit their age (see addOrderHint)
 	std::vector<OrderHint> previous;
 	previous.swap( m_orderHints );

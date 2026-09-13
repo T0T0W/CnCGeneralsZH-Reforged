@@ -30,6 +30,7 @@
 #ifndef _H_MetaEvent
 #define _H_MetaEvent
 
+#include "Common/GlobalData.h"
 #include "Common/SubsystemInterface.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/KeyDownInfo.h"
@@ -365,14 +366,15 @@ class MetaMap : public SubsystemInterface
 	friend class MetaEventTranslator;
 
 private:
-	MetaMapRec *m_metaMaps;
+	MetaMapRec *m_metaMaps[ INPUT_SCHEME_COUNT ];		///< one list of bindings per InputSchemeType
+	Int m_parseScheme;															///< the list parseMetaMap is filling
 
 protected:
 	GameMessage::Type findGameMessageMetaType(const char* name);
 	MetaMapRec *getMetaMapRec(GameMessage::Type t);
 
 public:
-	
+
 	MetaMap();
 	~MetaMap();
 
@@ -381,7 +383,15 @@ public:
 	void update() { }
 
 	static void parseMetaMap(INI* ini);
-	const MetaMapRec *getFirstMetaMapRec() const { return m_metaMaps; }
+
+	/** Fill the Legacy list from the language's CommandMap.ini alone, which is the game's own map out
+		* of its own archives.  Everything this fork binds is in Data\INI\CommandMap.ini, and only the
+		* Modern list reads that. */
+	void loadLegacyBindings( const AsciiString& languageMapFile );
+
+	/// the bindings the player's InputScheme answers to
+	const MetaMapRec *getFirstMetaMapRec() const;
+	const MetaMapRec *getFirstMetaMapRec( Int scheme ) const { return m_metaMaps[ scheme ]; }
 };
 
 extern MetaMap *TheMetaMap;

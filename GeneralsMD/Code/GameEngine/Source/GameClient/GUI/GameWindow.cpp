@@ -50,6 +50,7 @@
 // USER INCLUDES //////////////////////////////////////////////////////////////
 #include "Common/AudioEventRTS.h"
 #include "Common/Language.h"
+#include "GameClient/ControlBar.h"
 #include "GameClient/WindowLayout.h"
 #include "GameClient/GameWindow.h"
 #include "GameClient/GameWindowManager.h"
@@ -1413,6 +1414,10 @@ GameWindow *GameWindow::winPointInChild( Int x, Int y, Bool ignoreEnableCheck, B
 		if( x >= origin.x && x <= origin.x + child->m_size.x &&
 				y >= origin.y && y <= origin.y + child->m_size.y )
 		{
+			// the command bar's panes are rectangles over plates that are not
+			if( TheControlBar && TheControlBar->letsClickThrough( child, x, y ) )
+				continue;
+
 			Bool enabled = ignoreEnableCheck || BitTest( child->m_status, WIN_STATUS_ENABLED );
 			Bool hidden = BitTest( child->m_status, WIN_STATUS_HIDDEN );
 			if( !hidden )

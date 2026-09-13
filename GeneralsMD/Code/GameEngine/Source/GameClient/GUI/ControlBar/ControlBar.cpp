@@ -38,6 +38,8 @@
 #define DEFINE_RADIUSCURSOR_NAMES
 
 #include "Common/ActionManager.h"
+#include "Common/file.h"
+#include "Common/FileSystem.h"
 #include "Common/GameAudio.h"
 #include "Common/GameType.h"
 #include "Common/MultiplayerSettings.h"
@@ -1628,6 +1630,165 @@ static const char *shortWindowName( GameWindow *win )
 }
 
 //-------------------------------------------------------------------------------------------------
+// Where a plate is transparent ---------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
+
+static const Int TARGA_HEADER_SIZE = 18;
+static const UnsignedByte TARGA_TRUE_COLOR = 2;
+static const UnsignedByte TARGA_TRUE_COLOR_RLE = 10;
+static const UnsignedByte TARGA_BITS_PER_PIXEL = 32;
+static const UnsignedByte TARGA_TOP_ORIGIN = 0x20;
+static const UnsignedByte TARGA_RLE_REPEAT = 0x80;
+static const UnsignedByte TARGA_RLE_COUNT = 0x7f;
+static const Int TARGA_BYTES_PER_PIXEL = 4;
+static const Int TARGA_ALPHA_OFFSET = 3;
+
+/// half-covered or more catches a click; the soft rim of a sloped edge below that lets it through
+static const UnsignedByte PLATE_SOLID_ALPHA = 128;
+
+//-------------------------------------------------------------------------------------------------
+Bool ControlBarPlateMaskFromTarga( const UnsignedByte *data, Int length, Int artW, Int artH,
+																	 std::vector<UnsignedByte> &mask )
+{
+	if( data == NULL || length < TARGA_HEADER_SIZE || artW <= 0 || artH <= 0 )
+		return FALSE;
+
+	const UnsignedByte imageType = data[ 2 ];
+	const Int width = data[ 12 ] | ( data[ 13 ] << 8 );
+	const Int height = data[ 14 ] | ( data[ 15 ] << 8 );
+	if( data[ 1 ] != 0 || ( imageType != TARGA_TRUE_COLOR && imageType != TARGA_TRUE_COLOR_RLE ) )
+		return FALSE;
+	if( data[ 16 ] != TARGA_BITS_PER_PIXEL || width < artW || height < artH )
+		return FALSE;
+	const Bool topOrigin = ( data[ 17 ] & TARGA_TOP_ORIGIN ) != 0;
+
+	mask.assign( artW * artH, 0 );
+	Int cursor = TARGA_HEADER_SIZE + data[ 0 ];
+	const Int pixelCount = width * height;
+	Int pixel = 0;
+	UnsignedByte alpha = 0;
+	while( pixel < pixelCount )
+	{
+		Int run = 1;
+		Bool repeated = FALSE;
+		if( imageType == TARGA_TRUE_COLOR_RLE )
+		{
+			if( cursor >= length )
+				return FALSE;
+			const UnsignedByte packet = data[ cursor++ ];
+			repeated = ( packet & TARGA_RLE_REPEAT ) != 0;
+			run = ( packet & TARGA_RLE_COUNT ) + 1;
+		}
+
+		for( Int i = 0; i < run && pixel < pixelCount; i++, pixel++ )
+		{
+			if( repeated == FALSE || i == 0 )
+			{
+				if( cursor + TARGA_BYTES_PER_PIXEL > length )
+					return FALSE;
+				alpha = data[ cursor + TARGA_ALPHA_OFFSET ];
+				cursor += TARGA_BYTES_PER_PIXEL;
+			}
+
+			const Int x = pixel % width;
+			const Int fileRow = pixel / width;
+			const Int y = topOrigin ? fileRow : height - 1 - fileRow;
+			if( x < artW && y < artH )
+				mask[ y * artW + x ] = alpha >= PLATE_SOLID_ALPHA;
+		}
+	}
+	return TRUE;
+}
+
+//
+// A plate's mask is read off its targa the first time a click lands on one of its panes, and kept for
+// the session.  A targa that does not read leaves the mask empty, and an empty mask counts as solid
+// everywhere, so that pane goes back to catching every click over its rectangle.
+//
+typedef std::map< const ControlBarPlate *, std::vector<UnsignedByte> > ControlBarPlateMaskMap;
+static ControlBarPlateMaskMap thePlateMasks;
+
+static const std::vector<UnsignedByte> &plateMask( const ControlBarPlate *plate )
+{
+	ControlBarPlateMaskMap::iterator it = thePlateMasks.find( plate );
+	if( it != thePlateMasks.end() )
+		return it->second;
+
+	std::vector<UnsignedByte> &mask = thePlateMasks[ plate ];
+	AsciiString path;
+	path.format( "Art\\Textures\\%s", plate->filename );
+	File *file = TheFileSystem ? TheFileSystem->openFile( path.str(), File::READ | File::BINARY ) : NULL;
+	if( file == NULL )
+	{
+		DEBUG_LOG(( "CONTROLBAR PLATE MASK %s did not open, its panes catch every click\n", path.str() ));
+		return mask;
+	}
+
+	const Int length = file->size();
+	char *bytes = file->readEntireAndClose();
+	if( ControlBarPlateMaskFromTarga( (const UnsignedByte *)bytes, length, plate->artW, plate->artH, mask ) == FALSE )
+	{
+		DEBUG_LOG(( "CONTROLBAR PLATE MASK %s is not a 32-bit targa of at least %dx%d, its panes catch every click\n",
+								path.str(), plate->artW, plate->artH ));
+		mask.clear();
+	}
+	delete [] bytes;
+	return mask;
+}
+
+//-------------------------------------------------------------------------------------------------
+Bool ControlBar::letsClickThrough( GameWindow *window, Int x, Int y )
+{
+	GameWindow *frame = window->winGetParent();
+	if( frame == NULL || m_controlBarSchemeManager == NULL || TheDisplay == NULL )
+		return FALSE;
+	if( frame->winGetWindowId() != (Int)TheNameKeyGenerator->nameToKey( "ControlBar.wnd:ControlBarParent" ) )
+		return FALSE;
+
+	const char *shortName = shortWindowName( window );
+	if( shortName[ 0 ] != 0 && strcmp( shortName, "CenterBackground" ) != 0 )
+		return FALSE;
+
+	// a command button or anything else inside the pane is its own window and keeps its click
+	if( window->winPointInChild( x, y, TRUE ) != window )
+		return FALSE;
+
+	// the plates are drawn from design rectangles and travel with the frame and the slide, the same
+	// arithmetic W3DCommandBarBackgroundDraw paints them with
+	ICoord2D now;
+	frame->winGetScreenPosition( &now.x, &now.y );
+	for( Int p = 0; p < CB_PANEL_COUNT; p++ )
+	{
+		if( m_panelHidden[ p ] )
+			continue;
+
+		const ControlBarPlate *plate = ControlBarPlateForSide( m_controlBarSchemeManager->getCurrentSide(), p );
+		if( plate == NULL )
+			plate = ControlBarPlateForSide( m_controlBarSchemeManager->getCurrentArtTwinSide(), p );
+		IRegion2D rect;
+		if( plate == NULL ||
+				ControlBarPanelDesignToScreen( p, &plate->design, TheDisplay->getWidth(), TheDisplay->getHeight(), &rect ) == FALSE )
+			continue;
+
+		const Int left = rect.lo.x + now.x - m_panelOrigin.x;
+		const Int top = rect.lo.y + now.y - m_panelOrigin.y + getPanelSlideOffset( p );
+		const Int width = rect.width();
+		const Int height = rect.height();
+		if( width <= 0 || height <= 0 || x < left || y < top || x >= left + width || y >= top + height )
+			continue;
+
+		const std::vector<UnsignedByte> &mask = plateMask( plate );
+		if( mask.empty() )
+			return FALSE;
+		const Int texelX = ( x - left ) * plate->artW / width;
+		const Int texelY = ( y - top ) * plate->artH / height;
+		if( mask[ texelY * plate->artW + texelX ] )
+			return FALSE;
+	}
+	return TRUE;
+}
+
+//-------------------------------------------------------------------------------------------------
 /** Place 'win' and everything under it inside 'panel'.  Positions are relative to the parent, so
 	* both the parent's old and new screen origins travel down the recursion: the old one to work out
 	* where the window was, the new one to say where to put it. */
@@ -2121,6 +2282,10 @@ void ControlBar::layoutPanels( void )
 		REAL_TO_INT_FLOOR( dispH - ( CONTROL_BAR_DESIGN_H - CONTROL_BAR_DESIGN_TOP ) * s );
 	parent->winSetPosition( 0, parentTop );
 	parent->winSetSize( REAL_TO_INT_CEIL( dispW ), REAL_TO_INT_CEIL( dispH ) - parentTop );
+
+	// A click that passes a transparent part of a plate lands on the frame, and a unit under it can
+	// only be picked if the frame says it can be seen through; see letsClickThrough.
+	parent->winSetStatus( WIN_STATUS_SEE_THRU );
 
 	// the plates are drawn from design rectangles rather than from a window, so they need to be told
 	// where the frame they belong to started out - see getPanelOrigin
@@ -4434,6 +4599,25 @@ static UnicodeString getGridHotKeyLabel( Int slot )
 }
 
 //-------------------------------------------------------------------------------------------------
+/** The letter a button's label marks with '&', in capitals: the key HotKeyManager presses that
+	* button with under Legacy input.  Read from the untranslated label, because a translation marks
+	* letters of its own - the Turkish one marks every label's first letter, which put K on three
+	* GLA structures and S on five. */
+//-------------------------------------------------------------------------------------------------
+static UnicodeString getLabelHotKeyLabel( const AsciiString& textLabel )
+{
+	UnicodeString label;
+	const UnicodeString text = TheGameText->fetchUntranslated( textLabel.str() );
+	const WideChar *marker = wcschr( text.str(), L'&' );
+	if( marker && marker[ 1 ] )
+	{
+		const WideChar letter[ 2 ] = { (WideChar)towupper( marker[ 1 ] ), 0 };
+		label.set( letter );
+	}
+	return label;
+}
+
+//-------------------------------------------------------------------------------------------------
 void ControlBar::setControlCommand( GameWindow *button, const CommandButton *commandButton )
 {
 
@@ -4521,20 +4705,32 @@ void ControlBar::setControlCommand( GameWindow *button, const CommandButton *com
 	// The '&' letter buried in each localized button label and the grid keys are two rival input
 	// schemes for the same buttons: the letter fires on KEY_UP out of HotKeyTranslator, the grid
 	// keys on KEY_DOWN out of MetaEventTranslator, so leaving both live makes one keystroke do two
-	// things.  The grid is the scheme, and the letters are not registered at all.
+	// things.  Modern is the grid and registers no letters.  Legacy is the letters, which is what the
+	// game shipped with, and each button wears its own letter the way a Modern one wears its grid key.
 	//
-	// paint the grid letter in the button's top left corner.  Only the real command bar
-	// slots get one - the communicator, options and science buttons are not on the grid.
+	const Bool legacyInput = TheGlobalData->isLegacyInput();
+	if( legacyInput && TheHotKeyManager )
+	{
+		AsciiString hotKey = TheHotKeyManager->searchHotKey(
+			TheGameText->fetchUntranslated( commandButton->getTextLabel().str() ) );
+		if( hotKey.isNotEmpty() )
+			TheHotKeyManager->addHotKey( button, hotKey );
+	}
+
+	// paint the key in the button's top left corner.  Only the real command bar slots get one -
+	// the communicator, options and science buttons are not on the grid.
 	for( Int slot = 0; slot < MAX_COMMANDS_PER_SET; slot++ )
 	{
 		if( m_commandWindows[ slot ] != button )
 			continue;
 
-		UnicodeString label = getGridHotKeyLabel( slot );
+		UnicodeString label = legacyInput ? getLabelHotKeyLabel( commandButton->getTextLabel() )
+																			: getGridHotKeyLabel( slot );
 
 		// structures are reached by a chord: Q or W picks the group (columns 1-4 or 5-7), then
 		// the key of the cell's own position inside that group - paint both, "QQ", "QZ", "WQ" ...
-		if( commandButton->getCommandType() == GUI_COMMAND_DOZER_CONSTRUCT && !label.isEmpty() )
+		// Legacy has no chords, and a structure is its one letter.
+		if( commandButton->getCommandType() == GUI_COMMAND_DOZER_CONSTRUCT && !label.isEmpty() && !legacyInput )
 		{
 			Int base = ( slot < CHORD_GROUP_SIZE ) ? 0 : CHORD_GROUP_SIZE;
 			UnicodeString chord = getGridHotKeyLabel( base == 0 ? CHORD_SLOT_Q : CHORD_SLOT_W );
@@ -4557,7 +4753,8 @@ void ControlBar::setControlCommand( GameWindow *button, const CommandButton *com
 	//
 	if( commandButton->getCommandType() == GUI_COMMAND_STOP )
 	{
-		UnicodeString stopKey = getMetaKeyLabel( GameMessage::MSG_META_STOP );
+		UnicodeString stopKey = legacyInput ? getLabelHotKeyLabel( commandButton->getTextLabel() )
+																				: getMetaKeyLabel( GameMessage::MSG_META_STOP );
 
 		if( stopKey.isEmpty() )
 			button->winClearStatus( WIN_STATUS_SHORTCUT_BUTTON );
@@ -5196,8 +5393,10 @@ void ControlBar::updatePurchaseScienceHotKeys( void )
 	{
 		GameWindow *candidate = purchaseScienceCandidate( column );
 
+		// Legacy's number keys pick groups, as they did in the game as shipped, so its columns wear no key
 		UnicodeString label;
-		if( m_purchaseScienceColumn < 0 || m_purchaseScienceColumn == column )
+		if( !TheGlobalData->isLegacyInput() &&
+				( m_purchaseScienceColumn < 0 || m_purchaseScienceColumn == column ) )
 			label = getMetaKeyLabel( (GameMessage::Type)( GameMessage::MSG_META_SELECT_TEAM1 + column ) );
 
 		for( Int depth = 0; depth < PURCHASE_SCIENCE_COLUMN_DEPTH; depth++ )
@@ -6139,7 +6338,8 @@ void ControlBar::drawSpecialPowerShortcutMultiplierText()
 		else if( i / SPECIAL_POWER_SHORTCUT_COLS == m_specialPowerShortcutRow )
 			keySlot = i % SPECIAL_POWER_SHORTCUT_COLS;
 
-		if( keySlot >= 0 && keySlot < MAX_SPECIAL_POWER_SHORTCUTS )
+		// the power keys are this fork's; Legacy's powers are clicked, and wear only their ready count
+		if( keySlot >= 0 && keySlot < MAX_SPECIAL_POWER_SHORTCUTS && !TheGlobalData->isLegacyInput() )
 			text = getMetaKeyLabel( (GameMessage::Type)(GameMessage::MSG_META_SHORTCUT_SLOT01 + keySlot) );
 
 		const SpecialPowerTemplate *spTemplate = command->getSpecialPowerTemplate();

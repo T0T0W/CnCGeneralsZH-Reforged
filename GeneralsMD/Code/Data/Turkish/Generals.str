@@ -15301,6 +15301,34 @@ TOOLTIP:HealthBars
 "Akıllı; hasar almış her şeyin, seçili birliklerin ve imlecin altındakinin üzerinde çubuk gösterir. Yalnızca seçili, orijinal oyunun davranışıdır."
 END
 
+GUI:OptionsGroupInput
+"Kontrol Düzeni"
+END
+
+GUI:InputScheme
+"Fare ve Klavye"
+END
+
+GUI:InputScheme0
+"Modern"
+END
+
+GUI:InputScheme1
+"Legacy"
+END
+
+TOOLTIP:InputScheme
+"Modern: sol tık seçer, sağ tık emir verir, orta tuş kamerayı gezdirir, komut çubuğu ızgara tuşlarıyla kullanılır. Legacy: oyunun çıktığı hâldeki fare ve tuşlar, sonradan eklenenlerin hiçbiri olmadan."
+END
+
+GUI:OrderLines
+"Emir Çizgileri"
+END
+
+TOOLTIP:OrderLines
+"Seçili her birimden gittiği yere, oradan da sıraya aldığı her noktaya bir çizgi çeker."
+END
+
 GUI:PlayerColors
 "Oyuncu Renkleri"
 END

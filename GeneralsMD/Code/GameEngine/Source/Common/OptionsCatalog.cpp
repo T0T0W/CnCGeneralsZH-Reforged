@@ -57,6 +57,8 @@ OPTION_BOOL_ACCESSORS( m_vsync )
 OPTION_INT_ACCESSORS( m_healthBarMode )
 OPTION_INT_ACCESSORS( m_playerColorScheme )
 OPTION_INT_ACCESSORS( m_textLanguage )
+OPTION_INT_ACCESSORS( m_inputScheme )
+OPTION_BOOL_ACCESSORS( m_showOrderLines )
 
 //-----------------------------------------------------------------------------
 static const unsigned TheMsaaSamples[ OPTION_MSAA_LEVEL_COUNT ] = { 0, 2, 4, 8, 16 };
@@ -268,6 +270,20 @@ const OptionDef TheOptionCatalog[] =
 	{ "PlayerColors",							OPT_WND( "ComboBoxPlayerColors" ), "GUI:PlayerColors",
 		OPTION_ENUM, APPLY_LIVE, 0, PLAYER_COLOR_SCHEME_COUNT - 1,
 		get_m_playerColorScheme, set_m_playerColorScheme },
+
+	// Modern or Legacy.  Legacy is the mouse and the keys the game shipped with and switches off what
+	// this fork added to both.  Every click and key asks, so it changes the moment Accept is pressed,
+	// and it is local: two players in one match can give orders two different ways.
+	// The line from each selected unit to where it is going, with every point of a shift queue after
+	// it.  The list is rebuilt from the units every frame, so turning it off takes the lines away at
+	// once and turning it back on shows the orders already given.
+	{ "OrderLines",								OPT_WND( "CheckOrderLines" ), "GUI:OrderLines",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_showOrderLines, set_m_showOrderLines },
+
+	{ "InputScheme",							OPT_WND( "ComboBoxInputScheme" ), "GUI:InputScheme",
+		OPTION_ENUM, APPLY_LIVE, 0, INPUT_SCHEME_COUNT - 1,
+		get_m_inputScheme, set_m_inputScheme },
 
 	// Which language the words are in.  English is the string table the game shipped with, and every
 	// other entry is a translation laid over it, so a line the translation lacks stays English.  The

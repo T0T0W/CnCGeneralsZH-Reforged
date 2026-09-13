@@ -68,14 +68,15 @@ private:
 	{
 		MAX_VIEW_LOCS = 8
 	};
-	// The right button used to be in here as SCROLL_RMB.  It is not any more: the right button
-	// gives orders now, and the camera drag lives on the middle one.
+	// Modern drags the camera with the middle button and gives orders with the right one; Legacy
+	// drags it with the right button, the way the game shipped.
 	enum
 	{
 		SCROLL_NONE = 0,
 		SCROLL_KEY,
 		SCROLL_SCREENEDGE,
-		SCROLL_MMB				// middle-button drag pan
+		SCROLL_MMB,				// middle-button drag pan, Modern
+		SCROLL_RMB				// right-button drag pan, Legacy
 	};
 	ICoord2D m_anchor;
 	ICoord2D m_originalAnchor;

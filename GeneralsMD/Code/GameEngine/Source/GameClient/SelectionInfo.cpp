@@ -28,6 +28,7 @@
 #include "GameLogic/Module/ContainModule.h"
 
 #include "Common/ActionManager.h"
+#include "Common/GlobalData.h"
 #include "Common/ThingTemplate.h"
 #include "Common/PlayerList.h"
 #include "Common/Player.h"
@@ -37,6 +38,7 @@
 #include "GameClient/ControlBar.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/Drawable.h"
+#include "GameClient/InGameUI.h"
 #include "GameClient/KeyDefs.h"
 
 #ifdef _INTERNAL
@@ -195,11 +197,60 @@ extern Bool contextCommandForNewSelection(const DrawableList *currentlySelectedD
 		return FALSE;
 	}
 
-	// Everything below this line used to work out whether a left click on an enemy, an ally, a
-	// garrisonable building or a crate should command instead of select.  It cannot any more: the
-	// left button selects and the right button orders, so the answer is always no.  The counting
-	// above is still wanted - the caller reads the counts for the cursor and the selection filters.
-	return FALSE;
+	// In Modern the left button selects and the right button orders, so a left click never commands.
+	// The counting above is still wanted - the caller reads the counts for the cursor and the
+	// selection filters.
+	if (!TheGlobalData->isLegacyInput()) {
+		return FALSE;
+	}
+
+	// In Legacy the left button is both, and this is the game's own rule for which one a click on an
+	// enemy, an ally, a garrisonable building or a crate is.
+	if (outSelectionInfo->currentCountMine > 0) {
+		if (outSelectionInfo->newCountEnemies > 0) {
+			if (outSelectionInfo->newCountEnemies == 1 && selectionIsPoint) {
+				return TheGameClient->evaluateContextCommand(newEnemy, newEnemy->getPosition(), CommandTranslator::EVALUATE_ONLY) != GameMessage::MSG_INVALID;
+			}
+
+			return selectionIsPoint;
+		}
+
+		if (outSelectionInfo->newCountMine > 0) {
+			if (outSelectionInfo->newCountMine == 1 && selectionIsPoint && !TheInGameUI->isInPreferSelectionMode()) {
+				return TheGameClient->evaluateContextCommand(newMine, newMine->getPosition(), CommandTranslator::EVALUATE_ONLY) != GameMessage::MSG_INVALID;
+			}
+
+			return FALSE;
+		}
+
+		if (outSelectionInfo->newCountFriends > 0) {
+			if (outSelectionInfo->newCountFriends == 1 && selectionIsPoint) {
+				return TheGameClient->evaluateContextCommand(newFriendly, newFriendly->getPosition(), CommandTranslator::EVALUATE_ONLY) != GameMessage::MSG_INVALID;
+			}
+			return FALSE;
+		}
+
+		if (outSelectionInfo->currentCountMineInfantry > 0 && outSelectionInfo->newCountGarrisonableBuildings == 1) {
+			return TRUE;
+		}
+
+		if (outSelectionInfo->newCountCivilians > 0) {
+			if (outSelectionInfo->newCountCivilians == 1 && selectionIsPoint) {
+				return TheGameClient->evaluateContextCommand(newCivilian, newCivilian->getPosition(), CommandTranslator::EVALUATE_ONLY) != GameMessage::MSG_INVALID;
+			}
+			return FALSE;
+		}
+
+		if (outSelectionInfo->newCountCrates > 0) {
+			return (outSelectionInfo->newCountCrates == 1 && selectionIsPoint);
+		}
+	}
+
+	if (outSelectionInfo->currentCountMine == 0) {
+		return FALSE;
+	}
+
+	return selectionIsPoint;
 }
 
 //-------------------------------------------------------------------------------------------------

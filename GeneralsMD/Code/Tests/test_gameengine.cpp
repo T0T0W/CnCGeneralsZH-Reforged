@@ -9645,6 +9645,66 @@ TEST(the_options_menu_buttons_all_wear_one_font)
 	CHECK_EQ( agreed, found );
 }
 
+TEST(a_plates_mask_is_solid_under_its_windows_and_open_where_it_paints_nothing)
+{
+	/* A click on the bar reaches the world where the plate is transparent, and the mask saying where
+		 that is comes out of the targa.  So every tracked targa has to decode, the windows a player
+		 clicks have to stand on solid art, and every plate has to have some open texels - a mask read
+		 off the wrong channel or upside down fails one of those three. */
+	struct Seated { Int panel; Int x, y; };
+	static const Seated seated[] =
+	{
+		{ ControlBar::CB_PANEL_LEFT,		 90, 519 },		// radar
+		{ ControlBar::CB_PANEL_CENTER,	413, 541 },		// command grid
+		{ ControlBar::CB_PANEL_RIGHT,		690, 537 },		// selection portrait
+		{ -1, 0, 0 }
+	};
+	static const char *const sides[] = { "America", "China", "GLA", NULL };
+
+	for( const char *const *s = sides; *s; s++ )
+		for( Int p = 0; p < ControlBar::CB_PANEL_COUNT; p++ )
+		{
+			const ControlBarPlate *plate = ControlBarPlateForSide( AsciiString( *s ), p );
+			CHECK( plate != NULL );
+
+			char path[ _MAX_PATH ];
+			sprintf( path, "%s/%s", PLATE_TEXTURE_DIR, plate->filename );
+			FILE *fp = fopen( path, "rb" );
+			CHECK( fp != NULL );
+			if( fp == NULL )
+				continue;
+			std::vector<UnsignedByte> bytes;
+			UnsignedByte chunk[ 4096 ];
+			for( size_t got; ( got = fread( chunk, 1, sizeof( chunk ), fp ) ) > 0; )
+				bytes.insert( bytes.end(), chunk, chunk + got );
+			fclose( fp );
+
+			std::vector<UnsignedByte> mask;
+			CHECK( ControlBarPlateMaskFromTarga( &bytes[ 0 ], (Int)bytes.size(), plate->artW, plate->artH, mask ) );
+			if( (Int)mask.size() != plate->artW * plate->artH )
+				continue;
+
+			Int open = 0;
+			for( size_t i = 0; i < mask.size(); i++ )
+				open += mask[ i ] ? 0 : 1;
+			CHECK( open > 0 );
+			CHECK( open < (Int)mask.size() );
+
+			for( const Seated *w = seated; w->panel >= 0; w++ )
+			{
+				if( w->panel != p )
+					continue;
+				const Int texelX = ( w->x - plate->design.lo.x ) * plate->artW / plate->design.width();
+				const Int texelY = ( w->y - plate->design.lo.y ) * plate->artH / plate->design.height();
+				CHECK( mask[ texelY * plate->artW + texelX ] != 0 );
+			}
+
+			// and a file cut short is refused rather than read past its end
+			std::vector<UnsignedByte> scratch;
+			CHECK( ControlBarPlateMaskFromTarga( &bytes[ 0 ], (Int)bytes.size() / 2, plate->artW, plate->artH, scratch ) == FALSE );
+		}
+}
+
 TEST(every_plate_that_touches_a_design_edge_touches_the_screen_edge)
 {
 	/* The plate rectangles were measured against the paintings, and a painting stops a pixel or two
@@ -9945,6 +10005,60 @@ TEST(gameplay_conveniences_are_forced_on_and_left_the_catalog)
 		CHECK( def != NULL );
 		CHECK( def->widgetName == NULL || def->widgetName[ 0 ] == '\0' );
 	}
+
+	TheWritableGlobalData = saved;
+	delete scratch;
+}
+
+TEST(the_input_scheme_is_a_live_menu_choice_that_starts_modern)
+{
+	/* Legacy is read on every click and key, so the row has to say APPLY_LIVE - a restart note on a
+		 setting that already took would send the player looking for a change that is not coming.  A
+		 player who never opens the menu keeps the game they already had. */
+	const OptionDef *def = findOptionDef( "InputScheme" );
+	CHECK( def != NULL );
+	if( def == NULL )
+		return;
+	CHECK_EQ( def->kind, OPTION_ENUM );
+	CHECK_EQ( def->apply, APPLY_LIVE );
+	CHECK_EQ( def->lo, 0 );
+	CHECK_EQ( def->hi, (Int)INPUT_SCHEME_COUNT - 1 );
+	CHECK( def->widgetName != NULL && def->widgetName[ 0 ] != '\0' );
+
+	GlobalData *saved = TheWritableGlobalData;
+	GlobalData *scratch = NEW GlobalData;
+	TheWritableGlobalData = scratch;
+
+	CHECK_EQ( scratch->m_inputScheme, (Int)INPUT_SCHEME_MODERN );
+	CHECK( !scratch->isLegacyInput() );
+	def->set( INPUT_SCHEME_LEGACY );
+	CHECK( scratch->isLegacyInput() );
+	CHECK_EQ( def->get(), (Int)INPUT_SCHEME_LEGACY );
+
+	TheWritableGlobalData = saved;
+	delete scratch;
+}
+
+TEST(order_lines_are_a_live_check_box_that_starts_on)
+{
+	/* The lines are rebuilt from the units every frame, so the box takes effect at Accept, and a player
+		 who never opens the menu keeps the lines the game has drawn since they were added. */
+	const OptionDef *def = findOptionDef( "OrderLines" );
+	CHECK( def != NULL );
+	if( def == NULL )
+		return;
+	CHECK_EQ( def->kind, OPTION_BOOL );
+	CHECK_EQ( def->apply, APPLY_LIVE );
+	CHECK( def->widgetName != NULL && def->widgetName[ 0 ] != '\0' );
+
+	GlobalData *saved = TheWritableGlobalData;
+	GlobalData *scratch = NEW GlobalData;
+	TheWritableGlobalData = scratch;
+
+	CHECK( scratch->m_showOrderLines );
+	def->set( 0 );
+	CHECK( !scratch->m_showOrderLines );
+	CHECK_EQ( def->get(), 0 );
 
 	TheWritableGlobalData = saved;
 	delete scratch;

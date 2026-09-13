@@ -264,9 +264,10 @@ WindowMsgHandledType LeftHUDInput( GameWindow *window, UnsignedInt msg,
 				const DrawableList *drawableList = TheInGameUI->getAllSelectedLocalDrawables(); // locally-owned only
 				
 				// see if the user wants to move the tactical view
-				// Left on the radar looks, right on the radar orders - the same division the world
-				// has.  It used to depend on UseAlternateMouse, which no longer exists.
-				if( drawableList->empty() || msg == GWM_LEFT_DOWN )
+				// Left on the radar looks and right orders, the same division the world has.  Legacy
+				// divides the world the other way round, and so did the radar in the game as shipped.
+				const UnsignedInt lookButton = TheGlobalData->isLegacyInput() ? GWM_RIGHT_DOWN : GWM_LEFT_DOWN;
+				if( drawableList->empty() || msg == lookButton )
 				{
 					TheTacticalView->lookAt( &world );
 					break;

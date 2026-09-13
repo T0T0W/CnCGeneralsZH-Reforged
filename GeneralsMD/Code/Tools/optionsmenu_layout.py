@@ -105,7 +105,8 @@ NAME_THE_UNNAMED = [
 ]
 
 # Controls that are in the shipped file and are not wanted at all.  CheckAlternateMouse chose
-# between the classic mouse and the alternate one; there is one mouse now, so the choice is gone.
+# between the classic mouse and the alternate one; ComboBoxInputScheme is that choice now, and it
+# takes the keyboard along with the mouse.
 DELETE = ["CheckAlternateMouse"]
 
 # The templates new controls are cloned from, and whose lettering the moved ones take.
@@ -133,6 +134,9 @@ NEW_CONTROLS = [
     (COMBO,  "ComboBoxPlayerColors",   None),
     (LABEL,  "LabelLanguage",          "GUI:Language"),
     (COMBO,  "ComboBoxLanguage",       None),
+    (CHECK,  "CheckOrderLines",        "GUI:OrderLines"),
+    (LABEL,  "LabelInputScheme",       "GUI:InputScheme"),
+    (COMBO,  "ComboBoxInputScheme",    None),
 ]
 
 # A slider on its own says nothing about where it stands, so each one has a readout beside it that
@@ -215,10 +219,13 @@ GROUP_LAYOUT = [
     ("PageControls", 1, "GUI:OptionsGroupOrders", [
         ("check", "Retaliation"),
         ("check", "CheckDoubleClickAttackMove")]),
+    ("PageControls", 2, "GUI:OptionsGroupInput", [
+        setting("LabelInputScheme", "ComboBoxInputScheme")]),
 
     ("PageGameplay", 0, "GUI:OptionsGroupBattlefield", [
         setting("LabelHealthBars", "ComboBoxHealthBars"),
-        setting("LabelPlayerColors", "ComboBoxPlayerColors")]),
+        setting("LabelPlayerColors", "ComboBoxPlayerColors"),
+        ("check", "CheckOrderLines")]),
     ("PageGameplay", 1, "GUI:OptionsGroupLanguage", [
         setting("LabelLanguage", "ComboBoxLanguage")]),
 

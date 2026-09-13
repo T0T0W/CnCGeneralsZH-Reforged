@@ -42,6 +42,7 @@
 #include "Common/Registry.h"
 #include "Common/Version.h"
 
+#include "GameClient/ControlBar.h"
 #include "GameClient/GameClient.h"
 #include "GameClient/InGameUI.h"
 #include "GameClient/WindowLayout.h"
@@ -2654,6 +2655,11 @@ WindowMsgHandledType OptionsMenuSystem( GameWindow *window, UnsignedInt msg,
 			else if (controlID == buttonAccept )
 			{
 				saveOptions();
+
+				// the command bar's hot keys belong to the input scheme, so it rebuilds them on its next
+				// update: grid letters for Modern, the labels' own letters for Legacy
+				if( TheControlBar )
+					TheControlBar->markUIDirty();
 
 				if (pref)
 				{

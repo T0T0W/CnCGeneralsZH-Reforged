@@ -53,6 +53,12 @@ private:
 	ICoord2D m_selectFeedbackAnchor;		// Note: Used for drawing feedback only.
 	Bool m_displayedMaxWarning;	// did we already display a warning about selecting too many units?
 
+	// where and when the right button went down, and where the camera was, so a Legacy release can
+	// tell a click, which deselects, from the drag that scrolled the camera
+	ICoord2D m_rightDownPixel;
+	UnsignedInt m_rightDownTime;
+	Coord3D m_rightDownCamera;
+
 	SelectCountMap m_selectCountMap;
 
 	Bool selectFriends( Drawable *draw, GameMessage *createTeamMsg, Bool dragSelecting );

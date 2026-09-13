@@ -730,6 +730,34 @@ TOOLTIP:HealthBars
 "Smart shows a bar over anything hurt, plus the selection and whatever is under the cursor. Selection only is what retail did."
 END
 
+GUI:OptionsGroupInput
+"Input"
+END
+
+GUI:InputScheme
+"Mouse and Keyboard"
+END
+
+GUI:InputScheme0
+"Modern"
+END
+
+GUI:InputScheme1
+"Legacy"
+END
+
+TOOLTIP:InputScheme
+"Modern: left selects, right orders, the middle button moves the camera and the grid keys run the command bar. Legacy: the mouse and keys the game shipped with, without any of the additions."
+END
+
+GUI:OrderLines
+"Order Lines"
+END
+
+TOOLTIP:OrderLines
+"A line from each selected unit to where it is going, and on through every point it has queued."
+END
+
 GUI:PlayerColors
 "Player Colors"
 END

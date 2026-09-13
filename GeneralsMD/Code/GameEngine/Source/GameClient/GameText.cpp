@@ -151,6 +151,7 @@ class GameTextManager : public GameTextInterface
 
 		virtual UnicodeString fetch( const Char *label, Bool *exists = NULL );		///< Returns the associated labeled unicode text
 		virtual UnicodeString fetch( AsciiString label, Bool *exists = NULL );		///< Returns the associated labeled unicode text
+		virtual UnicodeString fetchUntranslated( const Char *label );
 		virtual AsciiStringVec& getStringsWithLabelPrefix(AsciiString label);
 
 		virtual void					initMapStringFile( const AsciiString& filename );
@@ -158,6 +159,7 @@ class GameTextManager : public GameTextInterface
 	protected:
 
 		Int							m_textCount;
+		Int							m_untranslatedCount;	///< entries at the front of m_stringInfo that came before the language overlay
 		Int							m_maxLabelLen;
 		Char						m_buffer[MAX_UITEXT_LENGTH];
 		Char						m_buffer2[MAX_UITEXT_LENGTH];
@@ -251,6 +253,7 @@ GameTextInterface* CreateGameTextInterface( void )
 
 GameTextManager::GameTextManager()
 :	m_textCount(0),
+	m_untranslatedCount(0),
 	m_maxLabelLen(0),
 	m_stringInfo(NULL),
 	m_stringLUT(NULL),
@@ -393,6 +396,7 @@ void GameTextManager::init( void )
 	// the tail in turn and restore afterwards.
 	StringInfo *wholeTable = m_stringInfo;
 	Int filled = mainCount;
+	m_untranslatedCount = mainCount;
 	for ( Int overlay = 0; overlay < OVERLAY_COUNT; ++overlay )
 	{
 		if ( overlayCounts[ overlay ] == 0 )
@@ -403,6 +407,11 @@ void GameTextManager::init( void )
 		if ( parseStringFile( overlays[ overlay ] ) )
 		{
 			filled += overlayCounts[ overlay ];
+			// Patch.str is English; everything from the next overlay on is the translation
+			if ( overlay == 0 )
+			{
+				m_untranslatedCount = filled;
+			}
 		}
 	}
 	m_stringInfo = wholeTable;
@@ -1408,6 +1417,26 @@ UnicodeString GameTextManager::fetch( const Char *label, Bool *exists )
 UnicodeString GameTextManager::fetch( AsciiString label, Bool *exists )
 {
 	return fetch(label.str(), exists);
+}
+
+//============================================================================
+// *GameTextManager::fetchUntranslated
+//============================================================================
+
+UnicodeString GameTextManager::fetchUntranslated( const Char *label )
+{
+	// The lookup table keeps only the winning copy of a label, but the table under it keeps every
+	// file's copy in load order, so the last one ahead of the language overlay is the English.
+	// ponytail: a linear scan, fine for the command bar's handful of labels a selection; build a
+	// second lookup table if anything ever asks this every frame.
+	for ( Int i = ( m_stringInfo != NULL ) ? m_untranslatedCount - 1 : -1; i >= 0; --i )
+	{
+		if ( m_stringInfo[i].label.compareNoCase( label ) == 0 )
+		{
+			return m_stringInfo[i].text;
+		}
+	}
+	return fetch( label );
 }
 
 //============================================================================

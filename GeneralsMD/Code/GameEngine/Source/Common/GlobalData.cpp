@@ -916,6 +916,10 @@ GlobalData::GlobalData()
 	m_playerColorScheme = PLAYER_COLORS_ORIGINAL;
 	// the words the game shipped with until somebody picks a translation
 	m_textLanguage = TEXT_LANGUAGE_ENGLISH;
+	// the mouse and keys this fork plays with until somebody asks for the ones the game shipped with
+	m_inputScheme = INPUT_SCHEME_MODERN;
+	// the lines have been on since they were added, so nobody loses them until they say so
+	m_showOrderLines = TRUE;
 
 	m_particleEdit = FALSE;
 

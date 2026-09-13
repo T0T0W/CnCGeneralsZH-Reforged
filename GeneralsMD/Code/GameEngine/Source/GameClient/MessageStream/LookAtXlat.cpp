@@ -139,7 +139,7 @@ LookAtTranslator::~LookAtTranslator()
 
 const ICoord2D* LookAtTranslator::getScrollAnchor(void)
 {
-	if (m_isScrolling && m_scrollType == SCROLL_MMB)
+	if (m_isScrolling && (m_scrollType == SCROLL_MMB || m_scrollType == SCROLL_RMB))
 	{
 		return &m_anchor;
 	}
@@ -285,13 +285,32 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 		}
 
 		//-----------------------------------------------------------------------------
-		// The right button belongs to the order layer now - a click commands, a drag draws a
-		// formation line - so nothing here touches the camera.  Both cases stay only to keep the
-		// idle timer honest: a player who is right-clicking is not away from the keyboard.
+		// Modern's right button belongs to the order layer - a click commands, a drag draws a
+		// formation line - so here it only keeps the idle timer honest: a player who is
+		// right-clicking is not away from the keyboard.  Legacy's right drag scrolls the camera, as
+		// the game shipped.
 		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_DOWN:
+		{
+			m_lastMouseMoveFrame = TheGameLogic->getFrame();
+
+			if (TheGlobalData->isLegacyInput())
+			{
+				m_anchor = msg->getArgument( 0 )->pixel;
+				m_currentPos = msg->getArgument( 0 )->pixel;
+
+				if (!TheInGameUI->isSelecting() && !m_isScrolling)
+					setScrolling(SCROLL_RMB);
+			}
+			break;
+		}
+
+		//-----------------------------------------------------------------------------
 		case GameMessage::MSG_RAW_MOUSE_RIGHT_BUTTON_UP:
 		{
 			m_lastMouseMoveFrame = TheGameLogic->getFrame();
+
+			if (m_scrollType == SCROLL_RMB)
+				stopScrolling();
 			break;
 		}
 
@@ -309,8 +328,9 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			// the drag turns the camera instead.  It used to be the other way round, with a
 			// MiddleMousePans switch in Options.ini deciding; there is no switch now because the
 			// right button no longer scrolls anything and the pan has to live somewhere.  The
-			// click-to-reset below works either way.
-			if( !TheKeyboard->isCtrl() )
+			// click-to-reset below works either way.  Legacy's middle drag only ever turns the camera,
+			// because its right button is the one that scrolls.
+			if( !TheKeyboard->isCtrl() && !TheGlobalData->isLegacyInput() )
 			{
 				m_isRotating = false;
 				if (!TheInGameUI->isSelecting() && !m_isScrolling)
@@ -403,7 +423,7 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 
 				Real angle = FACTOR * (m_currentPos.x - m_anchor.x);
 
-				if (TheGlobalData->m_snapCameraRotateTo45)
+				if (TheGlobalData->m_snapCameraRotateTo45 && !TheGlobalData->isLegacyInput())
 				{
 					// discrete heading: the drag turns an angle we keep to ourselves and the camera
 					// jumps to the eighth it is nearest, as the mouse crosses each halfway point.
@@ -459,7 +479,8 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			//
 			// Whole notches only: half a touchpad swipe is not a 45 degree turn.
 			const Int rotateSteps = (Int)spin;
-			if (TheKeyboard->isCtrl() && rotateSteps != 0 && TheInGameUI->rotatePendingPlacement( rotateSteps ))
+			if (!TheGlobalData->isLegacyInput() && TheKeyboard->isCtrl() && rotateSteps != 0 &&
+					TheInGameUI->rotatePendingPlacement( rotateSteps ))
 				return DESTROY_MESSAGE;
 
 			//
@@ -472,7 +493,7 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			// updateZoomToCursor() for as long as that easing lasts, which also keeps it correct
 			// whatever the pitch and the field of view are.
 			//
-			if (TheGlobalData->m_zoomToCursor && TheInGameUI->getInputEnabled())
+			if (TheGlobalData->m_zoomToCursor && !TheGlobalData->isLegacyInput() && TheInGameUI->getInputEnabled())
 			{
 				m_zoomAnchorPixel = msg->getArgument( 0 )->pixel;
 				m_zoomAnchorWorld.zero();
@@ -523,6 +544,7 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			{
 				switch (m_scrollType)
 				{
+				case SCROLL_RMB:
 				case SCROLL_MMB:
 					{
 						// The anchor stays where the button went down and the camera runs away from it,

@@ -170,6 +170,10 @@ SignalKind Command_signalKindForMeta( GameMessage::Type meta )
 
 static Bool isFormationDragArmed( void )
 {
+	// a Legacy right drag is the camera scroll it always was
+	if( TheGlobalData->isLegacyInput() )
+		return FALSE;
+
 	return Command_formationDragArmed( TheGlobalData->m_formationDrag,
 																		 TheInGameUI->getSelectCount() > 0
 																			&& TheInGameUI->areSelectedObjectsControllable(),
@@ -4111,7 +4115,7 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 		//-----------------------------------------------------------------------------
 		case GameMessage::MSG_MOUSE_RIGHT_DOUBLE_CLICK:
 		{
-			if( TheGlobalData->m_doubleClickAttackMove )
+			if( TheGlobalData->m_doubleClickAttackMove && !TheGlobalData->isLegacyInput() )
 			{
 				// create the message and append arguments for a guard location
 				GameMessage *newMsg = TheMessageStream->appendMessage( GameMessage::MSG_DO_GUARD_POSITION );
@@ -4136,6 +4140,12 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 			//
 			// The one exception is the attack, attack move or guard key.  Those orders are aimed with the
 			// left button, so a right click while one is armed puts the key down and gives no order.
+			//
+			// A Legacy right button never orders at all: it scrolls and deselects, which LookAtXlat and
+			// SelectionXlat do.
+			if( TheGlobalData->isLegacyInput() )
+				break;
+
 			if( TheInGameUI->isOrderKeyArmed() )
 			{
 				TheInGameUI->clearAttackMoveToMode();
@@ -4193,9 +4203,23 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 		//-----------------------------------------------------------------------------
 		case GameMessage::MSG_MOUSE_LEFT_DOUBLE_CLICK:
 		{
-			// The double-click attack move used to sit here as well, for the classic mouse.  There is
-			// only one mouse now and its orders are on the right button, so this case does nothing of
-			// its own.
+			// Legacy's orders are on the left button, so its double-click guard is here.  Modern's is on
+			// the right button, and this case does nothing of its own.
+			if( TheGlobalData->isLegacyInput() && TheGlobalData->m_doubleClickAttackMove )
+			{
+				// create the message and append arguments for a guard location
+				GameMessage *newMsg = TheMessageStream->appendMessage( GameMessage::MSG_DO_GUARD_POSITION );
+				Coord3D pos;
+				TheTacticalView->screenToTerrain( &msg->getArgument( 0 )->pixel, &pos );
+				newMsg->appendLocationArgument(pos);
+				newMsg->appendIntegerArgument(GUARDMODE_NORMAL);
+
+				ThePlayerList->getLocalPlayer()->getAcademyStats()->recordDoubleClickAttackMoveOrderGiven();
+
+				TheInGameUI->triggerDoubleClickAttackMoveGuardHint();
+
+				break;
+			}
 			//intentional fall through
 		}
 		case GameMessage::MSG_MOUSE_LEFT_CLICK:
@@ -4225,9 +4249,10 @@ GameMessageDisposition CommandTranslator::translateGameMessage(const GameMessage
 
 			// The left button selects and nothing else.  The exceptions are a GUI command that is
 			// already armed and waiting for a target, and the attack, attack move and guard keys: all of
-			// them are aimed with the left button, because the right one cancels them.
+			// them are aimed with the left button, because the right one cancels them.  In Legacy the left
+			// button is the order button as well, as it was in the game as shipped.
 			const Bool isOrderKey = TheInGameUI->isOrderKeyArmed();
-			if( !isFiringGUICommand && !isOrderKey )
+			if( !isFiringGUICommand && !isOrderKey && !TheGlobalData->isLegacyInput() )
 				break;
 
 			Bool controllable = TheInGameUI->areSelectedObjectsControllable()
