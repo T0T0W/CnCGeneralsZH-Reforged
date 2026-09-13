@@ -2,7 +2,7 @@
 
 ### COMMAND AND CONQUER · GENERALS
 
-# ZERO HOUR: REBORN
+# ZERO HOUR: REFORGED
 
 **Zero Hour, rebuilt from the source EA opened.**
 
@@ -19,7 +19,7 @@
 EA opened the source of Generals and Zero Hour. The game itself never went away and still runs on
 Steam.
 
-**Reborn** is that source moved to Visual Studio 2022 and changed as a game: ~580 engine source
+**Reforged** is that source moved to Visual Studio 2022 and changed as a game: ~580 engine source
 files ported, and around sixty original defects found and fixed. Not port damage. EA's own, shipped
 in 2003 and never noticed.
 
@@ -27,7 +27,7 @@ You need to own the game; no game data ships here. Nothing changes unit stats, w
 
 ## Then and now
 
-| | The source EA released | Reborn |
+| | The source EA released | Reforged |
 |:--|:--|:--|
 | **Frame rate** | 33 fps, with game speed tied to it | uncapped picture, rules on their own clock |
 | **Worst logic turn** | `2,976 ms` | `243 ms` |

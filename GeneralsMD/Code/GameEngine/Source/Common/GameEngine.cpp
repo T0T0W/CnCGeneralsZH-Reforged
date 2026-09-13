@@ -822,7 +822,7 @@ void GameEngine::init( int argc, char *argv[] )
 			 loose copy of FXList.ini because a loose copy shadows the whole 190K shipped file: it goes
 			 stale against every patch, it cannot be reviewed, and - since it lands in the INI CRC below -
 			 it silently refuses every multiplayer join from a machine that does not have the same one. */
-		ini.load( AsciiString( "Data\\INI\\FXListReborn.ini" ), INI_LOAD_OVERWRITE, &xferCRC );
+		ini.load( AsciiString( "Data\\INI\\FXListReforged.ini" ), INI_LOAD_OVERWRITE, &xferCRC );
 		initSubsystem(TheWeaponStore,"TheWeaponStore", MSGNEW("GameEngineSubsystem") WeaponStore(), &xferCRC, NULL, "Data\\INI\\Weapon.ini");
 		initSubsystem(TheObjectCreationListStore,"TheObjectCreationListStore", MSGNEW("GameEngineSubsystem") ObjectCreationListStore(), &xferCRC, "Data\\INI\\Default\\ObjectCreationList.ini", "Data\\INI\\ObjectCreationList.ini");
 		initSubsystem(TheLocomotorStore,"TheLocomotorStore", MSGNEW("GameEngineSubsystem") LocomotorStore(), &xferCRC, NULL, "Data\\INI\\Locomotor.ini");

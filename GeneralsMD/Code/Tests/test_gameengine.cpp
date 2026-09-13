@@ -483,14 +483,14 @@ TEST(ini_unknown_block_aborts_the_file)
 	remove( TEST_INI );
 }
 
-/* Data\INI\FXListReborn.ini is the fork's own explosion light: 89 of EA's FXLists, each repeated
+/* Data\INI\FXListReforged.ini is the fork's own explosion light: 89 of EA's FXLists, each repeated
 	 whole with one LightPulse added.  Whole, because FXListStore::parseFXListDefinition clears an
 	 entry before re-reading it - a half-copied block does not add a light, it deletes an explosion.
 	 GameEngine::init loads the file and folds it into the multiplayer INI CRC, so both ways of
 	 getting it wrong are expensive: a malformed block throws and takes the whole startup down, and
 	 a regeneration that loses the LightPulse ships a file that lights nothing and still refuses
 	 every player who does not have that exact copy. */
-TEST(fxlist_reborn_ini_parses_and_keeps_its_light)
+TEST(fxlist_reforged_ini_parses_and_keeps_its_light)
 {
 	CHECK( bootOnce() );
 
@@ -498,7 +498,7 @@ TEST(fxlist_reborn_ini_parses_and_keeps_its_light)
 		TheFXListStore = NEW FXListStore;
 
 	/* through the game's own parser, not a lookalike */
-	CHECK( loadIni( FXLIST_REBORN_INI ) );
+	CHECK( loadIni( FXLIST_REFORGED_INI ) );
 
 	/* the blocks landed in the store, under the names the game looks them up by */
 	CHECK( TheFXListStore->findFXList( "ScudStormMissileDetonation" ) != NULL );
@@ -506,7 +506,7 @@ TEST(fxlist_reborn_ini_parses_and_keeps_its_light)
 	CHECK( TheFXListStore->findFXList( "NoSuchFXListIsDeclaredAnywhere" ) == NULL );
 
 	/* and every block in the file still carries the light it exists for */
-	FILE *fp = fopen( FXLIST_REBORN_INI, "rb" );
+	FILE *fp = fopen( FXLIST_REFORGED_INI, "rb" );
 	CHECK( fp != NULL );
 
 	Int blocks = 0, lit = 0, open = 0, hasLight = 0;

@@ -1,4 +1,4 @@
-﻿# Command and Conquer: Generals: Zero Hour: Reborn
+﻿# Command and Conquer: Generals: Zero Hour: Reforged
 
 EA opened the source of Generals and Zero Hour, the game that is still on sale and still runs on
 Steam. This build is that source with the bugs the game shipped with fixed and everything below added.
@@ -962,7 +962,7 @@ found and fixed â€” EA's own, not port damage.**
 - The main menu buttons are there when the menu is. On the first visit they used to stay hidden, pointer and all, until you nudged the mouse or pressed a key, so a freshly started game looked stuck on the background battle.
 - The zip installs itself and takes itself back off. `install.bat` asks where the game is, offering
   whatever the registry says, and copies the build there; anything it is about to write over goes
-  into a zip in `ZHReborn-Uninstall` first, and anything it adds that was not there is written down
+  into a zip in `ZHReforged-Uninstall` first, and anything it adds that was not there is written down
   so it can be deleted rather than restored. `uninstall.bat`, left in that same folder, puts the
   install back the way it found it. Installing a second time on top does not bury the first backup:
   it keeps the copy of the files as the retail game had them, not as the previous build left them.

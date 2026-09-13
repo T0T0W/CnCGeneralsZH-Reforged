@@ -744,12 +744,12 @@ target_sources(test_gameengine PRIVATE ${TESTS}/test_gameengine_stubs.cpp)
 set_target_properties(test_gameengine PROPERTIES CXX_STANDARD 17)
 # simulation_uses_no_runtime_trig reads the engine's own sources back off disk to prove nothing in
 # GameLogic or Common has gone back to calling sinf().
-# fxlist_reborn_ini_parses_and_keeps_its_light runs the fork's own FXList file through the real
+# fxlist_reforged_ini_parses_and_keeps_its_light runs the fork's own FXList file through the real
 # INI parser, so it needs the tracked master rather than whatever sits in Run/.
 # the_options_menu_buttons_all_wear_one_font reads the tracked layout master, not Run/'s copy.
 target_compile_definitions(test_gameengine PRIVATE
   GAMEENGINE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/GameEngine"
-  FXLIST_REBORN_INI="${CMAKE_CURRENT_SOURCE_DIR}/Data/INI/FXListReborn.ini"
+  FXLIST_REFORGED_INI="${CMAKE_CURRENT_SOURCE_DIR}/Data/INI/FXListReforged.ini"
   OPTIONS_MENU_WND="${CMAKE_CURRENT_SOURCE_DIR}/Data/Window/Menus/OptionsMenu.wnd")
 
 # The three hand-written self-checks predate the harness; run them from ctest

@@ -1545,7 +1545,7 @@ static const ControlBarPlateSet thePlateSets[] =
 {
 	{ "America",
 		{
-			{ "RebornBarAmericaLeft.tga",		{ {   0, 412 }, { 183, 599 } }, 0, 0, 0, 293, 301 },
+			{ "ReforgedBarAmericaLeft.tga",		{ {   0, 412 }, { 183, 599 } }, 0, 0, 0, 293, 301 },
 			/* This painting is 170 design units tall for a 180-unit slot, and it is the plate's own
 				 composition rather than a straight cut of the shipped bar: its grid field lines up with
 				 the command buttons (494-589) exactly where it stands, and its money box does not line
@@ -1572,26 +1572,26 @@ static const ControlBarPlateSet thePlateSets[] =
 				 runs 224.6 to 614.2, and the fourteen command buttons are 223 to 603: the first
 				 column overhangs the left bezel by a unit and a half while eleven units stand empty
 				 on the right.  Six to the right centres the block in the field. */
-			{ "RebornBarAmericaCenter.tga",	{ { 180, 429 }, { 623, 599 } }, 9, 10, 6, 706, 271 },
-			{ "RebornBarAmericaRight.tga",	{ { 610, 433 }, { 800, 599 } }, 0, 0, 0, 304, 268,
+			{ "ReforgedBarAmericaCenter.tga",	{ { 180, 429 }, { 623, 599 } }, 9, 10, 6, 706, 271 },
+			{ "ReforgedBarAmericaRight.tga",	{ { 610, 433 }, { 800, 599 } }, 0, 0, 0, 304, 268,
 																			{ { 648, 434 }, { 717, 460 } } },
 		}
 	},
 	{ "China",
 		{
-			{ "RebornBarChinaLeft.tga",		{ {   1, 417 }, { 196, 598 } }, 0, 0, 0, 315, 295 },
-			{ "RebornBarChinaCenter.tga",	{ { 176, 433 }, { 617, 597 } }, 0, 0, 0, 718, 269 },
-			{ "RebornBarChinaRight.tga",	{ { 611, 424 }, { 798, 598 } }, 0, 0, 0, 303, 284,
+			{ "ReforgedBarChinaLeft.tga",		{ {   1, 417 }, { 196, 598 } }, 0, 0, 0, 315, 295 },
+			{ "ReforgedBarChinaCenter.tga",	{ { 176, 433 }, { 617, 597 } }, 0, 0, 0, 718, 269 },
+			{ "ReforgedBarChinaRight.tga",	{ { 611, 424 }, { 798, 598 } }, 0, 0, 0, 303, 284,
 																		{ { 639, 430 }, { 686, 463 } } },
 		}
 	},
 	{ "GLA",
 		{
-			{ "RebornBarGLALeft.tga",		{ {   0, 416 }, { 215, 599 } }, 0, 0, 0, 345, 295 },
+			{ "ReforgedBarGLALeft.tga",		{ {   0, 416 }, { 215, 599 } }, 0, 0, 0, 345, 295 },
 			/* No shift: this plate paints its box at design 443.2 to 459.3, middle 451.3, and
 				 ControlBarScheme.ini already puts GLA's readout at 443 to 462, middle 452.5. */
-			{ "RebornBarGLACenter.tga",	{ { 168, 437 }, { 617, 599 } }, 0, 0, 0, 720, 261 },
-			{ "RebornBarGLARight.tga",	{ { 612, 423 }, { 799, 599 } }, 0, 0, 0, 300, 284,
+			{ "ReforgedBarGLACenter.tga",	{ { 168, 437 }, { 617, 599 } }, 0, 0, 0, 720, 261 },
+			{ "ReforgedBarGLARight.tga",	{ { 612, 423 }, { 799, 599 } }, 0, 0, 0, 300, 284,
 																	{ { 631, 428 }, { 705, 465 } } },
 		}
 	},
