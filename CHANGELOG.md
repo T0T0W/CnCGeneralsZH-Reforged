@@ -8,6 +8,11 @@ found and fixed â€” EA's own, not port damage.**
 
 ---
 
+## Saving after a supply center is destroyed
+
+- Destroyed supply centers could corrupt the saved supply lists and prevent the game from loading
+  that save. They are now removed from the correct list, so later saves remain readable.
+
 ## Military priority when selecting a group
 
 - Drag a box around military units and workers together and only the military units are selected,
