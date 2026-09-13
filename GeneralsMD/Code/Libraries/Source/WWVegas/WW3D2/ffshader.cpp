@@ -168,10 +168,12 @@ static bool operation_expression(DWORD operation, const std::string & argument0,
 // Both sides of that subtraction are whole levels.  Direct3D 9's alpha test compared the eight bit
 // alpha about to be written against an eight bit reference, so the comparison this replaces is an
 // integer one, and doing it in floats moves every alpha tested edge in the frame by up to half a
-// level.  On a quad whose alpha runs from nothing to full across 64 pixels, tested at reference 128,
-// Direct3D 9 keeps from column 32 and the float comparison kept from 33 - one pixel along every
+// level.  On a quad whose alpha runs from nothing to full across 64 pixels, tested at reference 64,
+// Direct3D 9 keeps from column 16 and the float comparison kept from 17 - one pixel along every
 // foliage edge there is, and the views that carry the most of them are the ones that were still
-// outside the margin.  test_pixelcentre draws exactly that quad on both runtimes.
+// outside the margin.  test_pixelcentre draws exactly that quad on both runtimes.  An alpha that
+// lands exactly on half a level is rounded whichever way the Direct3D 9 driver likes, so nothing
+// here can match every card there and the test stays off that case.
 //
 // Rounding to a level first also makes the strict comparisons and the two equalities exact.  A
 // strict greater is one whole level further along; an equality is a level either side rather than

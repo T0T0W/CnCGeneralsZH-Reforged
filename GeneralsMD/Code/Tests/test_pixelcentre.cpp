@@ -109,10 +109,17 @@ static void build_edge_quad(float screen, EdgeVertex quad[4])
 // builds carry an alpha test, and all eight are the greater-or-equal one.
 static DWORD AlphaTestReference = 128;
 
-// One knife-edge reference proves the rounding and nothing else.  A sweep proves the rule, which
-// matters because what is left of the difference between the two frames sits on thin alpha tested
-// foliage: a palm trunk a pixel wide is exactly where a threshold half a level out shows.
-static const DWORD ALPHA_REFERENCES[] = { 1, 16, 32, 64, 96, 128, 160, 192, 224, 254 };
+// A sweep proves the rule, which matters because what is left of the difference between the two
+// frames sits on thin alpha tested foliage: a palm trunk a pixel wide is exactly where a threshold
+// half a level out shows.
+//
+// Column c of this quad is sampled at alpha c * 255 / 64, and 128 is left out because column 32 lands
+// on 127.5, exactly half a level.  Which way an eight bit alpha rounds there is the Direct3D 9
+// driver's choice, not the backend's: the RTX 4060 Ti rounds it down and keeps from column 33, and the
+// same test passed against a driver that rounded it up.  A float comparison is still caught at 16,
+// 32, 64 and 96, whose first kept columns sample a little under the reference: 15.94, 31.88, 63.75
+// and 95.63 round up to it and fall short of it as fractions.
+static const DWORD ALPHA_REFERENCES[] = { 1, 16, 32, 64, 96, 160, 192, 224, 254 };
 static const unsigned ALPHA_REFERENCE_COUNT =
 	sizeof(ALPHA_REFERENCES) / sizeof(ALPHA_REFERENCES[0]);
 
