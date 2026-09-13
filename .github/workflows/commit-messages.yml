@@ -1,0 +1,35 @@
+name: Commit messages
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Every commit reads type(scope) summary
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          pattern='^((feat|fix|perf|build|refactor|test)\([a-z0-9._-]+\)|docs(\([a-z0-9._-]+\))?): [^ ]'
+          status=0
+          while IFS= read -r line; do
+            sha=${line%% *}
+            subject=${line#* }
+            if ! printf '%s' "$subject" | grep -Eq "$pattern"; then
+              echo "::error::$sha \"$subject\" should read type(scope): summary, with a type of feat, fix, perf, build, refactor, test or docs. See CONTRIBUTING.md."
+              status=1
+            elif [ ${#subject} -gt 72 ]; then
+              echo "::error::$sha \"$subject\" is ${#subject} characters; keep the first line under 72."
+              status=1
+            fi
+          done < <(git log --no-merges --format='%h %s' "$BASE..$HEAD")
+          exit $status
