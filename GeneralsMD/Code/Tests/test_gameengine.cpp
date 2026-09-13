@@ -12048,3 +12048,4 @@ TEST(camera_preferences_default_to_a_finite_map_margin)
 #include "test_camera_behavior.inc"
 #include "test_production_input.inc"
 #include "test_minimap_input.inc"
+#include "test_selection_priority.inc"

@@ -8,6 +8,11 @@ found and fixed â€” EA's own, not port damage.**
 
 ---
 
+## Military priority when selecting a group
+
+- Drag a box around military units and workers together and only the military units are selected,
+  including their support vehicles. Without military units in the box, selection works as before.
+
 ## The frame rate cap is gone
 
 - The picture now runs uncapped; the rules keep their own steady clock.
