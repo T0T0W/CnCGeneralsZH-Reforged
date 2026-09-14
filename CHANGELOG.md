@@ -8,6 +8,11 @@ found and fixed â€” EA's own, not port damage.**
 
 ---
 
+## Water stays stable while scrolling
+
+- Jagged bands of terrain no longer appear through lakes when moving the camera.
+  Water transparency is refreshed every frame so the shores stay stable while scrolling.
+
 ## The frame rate cap is gone
 
 - The picture now runs uncapped; the rules keep their own steady clock.

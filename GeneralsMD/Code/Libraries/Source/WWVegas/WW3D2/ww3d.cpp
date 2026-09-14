@@ -848,6 +848,11 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 	WWASSERT(!IsRendering);
 	IsRendering = true;
 
+	// Bind the scene target before clearing it. The Direct3D 11 post-process pass
+	// restores the back buffer at the end of each frame; clearing before Begin_Scene
+	// left the offscreen scene's shoreline alpha mask from the previous camera view.
+	DX8Wrapper::Begin_Scene();
+
 	// If we want to clear the screen, we need to set the viewport to include the entire screen:
 	if (clear || clearz) {
 		D3DVIEWPORT9 vp;
@@ -863,9 +868,6 @@ WW3DErrorType WW3D::Begin_Render(bool clear,bool clearz,const Vector3 & color, f
 		DX8Wrapper::Set_Viewport(&vp);
 		DX8Wrapper::Clear(clear, clearz, color, dest_alpha);
 	}
-
-	// Notify D3D that we are beginning to render the frame
-	DX8Wrapper::Begin_Scene();
 
 	return WW3D_ERROR_OK;
 }
