@@ -48,6 +48,7 @@ enum StaticGameLODLevel
 	STATIC_GAME_LOD_LOW,
 	STATIC_GAME_LOD_MEDIUM,
 	STATIC_GAME_LOD_HIGH,
+	STATIC_GAME_LOD_ULTRA,	//no block in GameLOD.ini; seeded from High by makeUltraStaticGameLOD
 	STATIC_GAME_LOD_CUSTOM,	//make sure this remains last!
 	STATIC_GAME_LOD_COUNT
 };
@@ -248,6 +249,10 @@ ParticlePriorityType GameLODManager::getMinDynamicParticleSkipPriority(void)
 {
 	return m_minDynamicParticleSkipPriority;
 }
+
+/** The Ultra level made from whatever GameLOD.ini says High is: every effect on, the particle limit
+	* at the top of the options slider, and no dropping detail when the frame rate dips. */
+extern StaticGameLODInfo makeUltraStaticGameLOD( const StaticGameLODInfo &high );
 
 extern GameLODManager *TheGameLODManager;
 #endif _GAME_LOD_H_

@@ -412,6 +412,26 @@ GUI:OptionsTabGraphics
 "Graphics"
 END
 
+GUI:OptionsTabEffects
+"Effects"
+END
+
+GUI:Ultra
+"Ultra"
+END
+
+GUI:TreeSway
+"Swaying Trees"
+END
+
+TOOLTIP:TreeSway
+"Trees and shrubs lean in the wind. Takes effect on the next map."
+END
+
+TOOLTIP:ExtraAnimations
+"Buildings rise inside scaffolding while they are built. Swaying trees have a box of their own."
+END
+
 GUI:TextureFilter
 "Texture Filtering"
 END
@@ -502,6 +522,22 @@ END
 
 GUI:OptionsGroupProxy
 "Proxy"
+END
+
+GUI:OptionsGroupTerrain
+"Terrain"
+END
+
+GUI:OptionsGroupShadows
+"Shadows"
+END
+
+GUI:OptionsGroupExtras
+"Extras"
+END
+
+GUI:OptionsGroupParticles
+"Smoke And Particles"
 END
 
 // ---------------------------------------------------------------------------
@@ -608,6 +644,66 @@ END
 
 TOOLTIP:VSync
 "Holds the picture to the monitor so it does not tear. Off, the picture runs as fast as the machine draws. Applied when you Accept."
+END
+
+GUI:InfantryShadows
+"Infantry Shadows"
+END
+
+TOOLTIP:InfantryShadows
+"Soldiers and the other animated models cast 3D shadows too. Needs 3D Shadows. Takes effect on the next map."
+END
+
+GUI:ProjectileShadows
+"Missile Shadows"
+END
+
+TOOLTIP:ProjectileShadows
+"Missiles and bombs the artists gave no shadow get one on the ground. Takes effect on the next map."
+END
+
+GUI:PropShadows
+"Scenery Shadows"
+END
+
+TOOLTIP:PropShadows
+"Fences, rubbish and shrubs, which the original drew with no shadow at all, get one. Takes effect on the next map."
+END
+
+GUI:ParticleShadows
+"Smoke Shadows"
+END
+
+TOOLTIP:ParticleShadows
+"Big clouds of smoke and dust lay a soft shadow on the ground under them."
+END
+
+GUI:Smoke
+"Smoke"
+END
+
+GUI:Smoke0
+"Original"
+END
+
+GUI:Smoke1
+"Thick"
+END
+
+GUI:Smoke2
+"Very Thick"
+END
+
+TOOLTIP:Smoke
+"How long smoke hangs in the air and how dense it looks. 175 of the game's 1088 effects are smoke. Very Thick cost 0.7 ms a frame over a burning column when it was measured. Takes effect the next time the game starts."
+END
+
+GUI:ParticleBounce
+"Particles Hit The Ground"
+END
+
+TOOLTIP:ParticleBounce
+"Sparks, debris and the other particles land and bounce on the terrain instead of falling through it. Takes effect the next time the game starts."
 END
 
 GUI:MiddleMousePans

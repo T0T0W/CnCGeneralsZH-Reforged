@@ -188,6 +188,9 @@ static GameWindow *   checkUnlockFps   = NULL;
 static NameKeyType    checkHeatEffectsID = NAMEKEY_INVALID;
 static GameWindow *   checkHeatEffects   = NULL;
 
+static NameKeyType    checkTreeSwayID = NAMEKEY_INVALID;
+static GameWindow *   checkTreeSway   = NULL;
+
 /*
 
 static NameKeyType    radioHighID = NAMEKEY_INVALID;
@@ -221,16 +224,17 @@ WindowLayout *OptionsLayout = NULL;
 // EA's screen was one panel with every control on it, and it was already out of room when it
 // shipped - the language filter, the keyboard button and the four camera check boxes are all still
 // in the layout, parked off the right edge with HIDDEN set because there was nowhere to put them.
-// The layout now sorts the same controls into six pages on one grid (Tools/optionsmenu_layout.py);
+// The layout now sorts the same controls into seven pages on one grid (Tools/optionsmenu_layout.py);
 // this is the two arrays that name them and the one function that decides which one you are
 // looking at.
 //-------------------------------------------------------------------------------------------------
-enum { OPTIONS_PAGE_COUNT = 6 };
+enum { OPTIONS_PAGE_COUNT = 7 };
 
 static const char *TheOptionsPageNames[ OPTIONS_PAGE_COUNT ] =
 {
 	"OptionsMenu.wnd:PageDisplay",
 	"OptionsMenu.wnd:PageGraphics",
+	"OptionsMenu.wnd:PageEffects",
 	"OptionsMenu.wnd:PageAudio",
 	"OptionsMenu.wnd:PageControls",
 	"OptionsMenu.wnd:PageGameplay",
@@ -241,6 +245,7 @@ static const char *TheOptionsTabNames[ OPTIONS_PAGE_COUNT ] =
 {
 	"OptionsMenu.wnd:TabDisplay",
 	"OptionsMenu.wnd:TabGraphics",
+	"OptionsMenu.wnd:TabEffects",
 	"OptionsMenu.wnd:TabAudio",
 	"OptionsMenu.wnd:TabControls",
 	"OptionsMenu.wnd:TabGameplay",
@@ -251,11 +256,12 @@ static GameWindow *		optionsPage[ OPTIONS_PAGE_COUNT ]	= { NULL };
 static GameWindow *		optionsTab[ OPTIONS_PAGE_COUNT ]	= { NULL };
 static NameKeyType		optionsTabID[ OPTIONS_PAGE_COUNT ] =
 {
-	NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID
+	NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID, NAMEKEY_INVALID,
+	NAMEKEY_INVALID
 };
 
 //-------------------------------------------------------------------------------------------------
-/** Show one page and hide the other four.
+/** Show one page and hide the rest.
 	*
 	* The page you are on is the disabled button, which is the one piece of tab feedback available
 	* without drawing new artwork: a pressed-looking tab would need a second image per button, and
@@ -274,7 +280,8 @@ static void showOptionsPage( Int which )
 
 enum Detail
 {
-	HIGHDETAIL = 0,
+	ULTRADETAIL = 0,
+	HIGHDETAIL,
 	MEDIUMDETAIL,
 	LOWDETAIL,
 	CUSTOMDETAIL,
@@ -664,6 +671,17 @@ Bool OptionPreferences::getExtraAnimationsDisabled(void)
 	return TRUE;
 }
 
+/** Swaying trees used to ride on ExtraAnimations, so an Options.ini written before they had a box of
+	* their own keeps doing what that setting did. */
+Bool OptionPreferences::getTreeSwayEnabled(void)
+{
+	OptionPreferences::const_iterator it = find("TreeSway");
+	if (it == end())
+		return !getExtraAnimationsDisabled();
+
+	return stricmp(it->second.str(), "yes") == 0;
+}
+
 Bool OptionPreferences::getUseHeatEffects(void)
 {
 	OptionPreferences::const_iterator it = find("HeatEffects");
@@ -854,6 +872,9 @@ static void setDefaults( void )
 		case STATIC_GAME_LOD_HIGH:
 			GadgetComboBoxSetSelectedPos(comboBoxDetail, HIGHDETAIL);
 			break;
+		case STATIC_GAME_LOD_ULTRA:
+			GadgetComboBoxSetSelectedPos(comboBoxDetail, ULTRADETAIL);
+			break;
 		case STATIC_GAME_LOD_CUSTOM:
 			GadgetComboBoxSetSelectedPos(comboBoxDetail, CUSTOMDETAIL);
 			break;
@@ -951,9 +972,10 @@ static void setDefaults( void )
 		GadgetCheckBoxSetChecked( checkSmoothWater, TheGlobalData->m_showSoftWaterEdge);
 
 		//-------------------------------------------------------------------------------------------------
- 		// Extra Animations (tree sway and buildups) checkbox
+ 		// Extra Animations (buildups) and Swaying Trees checkboxes
 		//
 		GadgetCheckBoxSetChecked( checkExtraAnimations, !TheGlobalData->m_useDrawModuleLOD);
+		GadgetCheckBoxSetChecked( checkTreeSway, TheGlobalData->m_useTreeSway);
 
 		//-------------------------------------------------------------------------------------------------
  		// DisableDynamicLOD
@@ -1208,8 +1230,10 @@ static void saveOptions( void )
 		(*pref)["ShowSoftWaterEdge"] = TheGlobalData->m_showSoftWaterEdge ? AsciiString("yes") : AsciiString("no");
 
 		TheWritableGlobalData->m_useDrawModuleLOD = !GadgetCheckBoxIsChecked( checkExtraAnimations );
-		TheWritableGlobalData->m_useTreeSway = !TheWritableGlobalData->m_useDrawModuleLOD;	//borrow same setting.
 		(*pref)["ExtraAnimations"] = TheGlobalData->m_useDrawModuleLOD ? AsciiString("no") : AsciiString("yes");
+
+		TheWritableGlobalData->m_useTreeSway = GadgetCheckBoxIsChecked( checkTreeSway );
+		(*pref)["TreeSway"] = TheGlobalData->m_useTreeSway ? AsciiString("yes") : AsciiString("no");
 
 		TheWritableGlobalData->m_enableDynamicLOD = !GadgetCheckBoxIsChecked( checkNoDynamicLod );
 		(*pref)["DynamicLOD"] = TheGlobalData->m_enableDynamicLOD ? AsciiString("yes") : AsciiString("no");
@@ -1247,6 +1271,9 @@ static void saveOptions( void )
 	GadgetComboBoxGetSelectedPos( comboBoxDetail, &index );
 	//The levels stored by the LOD Manager are inverted compared to GUI so find correct one:
 	switch (index) {
+	case ULTRADETAIL:
+		levelChanged=TheGameLODManager->setStaticLODLevel(STATIC_GAME_LOD_ULTRA);
+		break;
 	case HIGHDETAIL:
 		levelChanged=TheGameLODManager->setStaticLODLevel(STATIC_GAME_LOD_HIGH);
 		break;
@@ -1812,7 +1839,8 @@ static GameWindow **const TheGraphicsDetailControls[] =
 {
 	&sliderTextureResolution, &sliderParticleCap,
 	&check3DShadows, &check2DShadows, &checkCloudShadows, &checkGroundLighting, &checkSmoothWater,
-	&checkProps, &checkExtraAnimations, &checkHeatEffects, &checkBuildingOcclusion, &checkNoDynamicLod,
+	&checkProps, &checkExtraAnimations, &checkTreeSway, &checkHeatEffects, &checkBuildingOcclusion,
+	&checkNoDynamicLod,
 };
 enum { GRAPHICS_DETAIL_CONTROL_COUNT = sizeof( TheGraphicsDetailControls ) / sizeof( TheGraphicsDetailControls[ 0 ] ) };
 
@@ -1823,6 +1851,66 @@ static Bool isGraphicsDetailControl( const GameWindow *control )
 			return TRUE;
 
 	return FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
+// The rows of TheOptionCatalog a detail preset sets alongside its GameLOD.ini fields.  GameLOD.ini is
+// older than every one of them, so what each preset puts in them is written here, one column per
+// entry of the detail box: Ultra, High, Medium, Low.  Glow is left out: the artwork was painted
+// without it, and how much of it looks right is taste rather than detail.
+//-------------------------------------------------------------------------------------------------
+struct DetailPresetCatalogRow
+{
+	const char	*iniKey;
+	Int					values[ CUSTOMDETAIL ];
+};
+
+static const DetailPresetCatalogRow TheDetailPresetCatalogRows[] =
+{
+	{ "MSAA",											{ 3,	2,	0,	0 } },
+	{ "TextureFilter",						{ 2,	2,	1,	0 } },
+	{ "Anisotropy",								{ 16,	8,	4,	2 } },
+	{ "UseShadowVolumesForSkins",	{ 1,	1,	0,	0 } },
+	{ "ShadowsForProjectiles",		{ 1,	1,	1,	0 } },
+	{ "ShadowsForProps",					{ 1,	1,	1,	0 } },
+	{ "ShadowsForParticles",			{ 1,	1,	0,	0 } },
+	{ "Smoke",										{ 1,	0,	0,	0 } },
+	{ "ParticleBounce",						{ 1,	0,	0,	0 } },
+};
+enum { DETAIL_PRESET_CATALOG_ROW_COUNT = sizeof( TheDetailPresetCatalogRows ) / sizeof( TheDetailPresetCatalogRows[ 0 ] ) };
+
+static GameWindow *detailPresetCatalogWidget( Int row )
+{
+	return findOptionWidget( *findOptionDef( TheDetailPresetCatalogRows[ row ].iniKey ) );
+}
+
+static Bool isDetailPresetCatalogControl( const GameWindow *control )
+{
+	for( Int row = 0; row < DETAIL_PRESET_CATALOG_ROW_COUNT; ++row )
+		if( detailPresetCatalogWidget( row ) == control )
+			return TRUE;
+
+	return FALSE;
+}
+
+/** Put one value in a catalog row's control, the way fillCatalogWidgets does for the loaded one. */
+static void showCatalogValue( const OptionDef &def, Int value )
+{
+	GameWindow *widget = findOptionWidget( def );
+	switch( def.kind )
+	{
+		case OPTION_BOOL:
+			GadgetCheckBoxSetChecked( widget, value != 0 );
+			break;
+
+		case OPTION_ENUM:
+			GadgetComboBoxSetSelectedPos( widget, clampOptionValue( def, value ) - def.lo );
+			break;
+
+		case OPTION_INT:
+			GadgetSliderSetPosition( widget, clampOptionValue( def, value ) );
+			break;
+	}
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1897,14 +1985,16 @@ static void updateSliderReadouts( void )
 	}
 }
 
-/** Put a preset's values in the Graphics page's controls.  Custom leaves them as they are.  Trees and
-	* texture resolution follow the memory test the way applyStaticLODLevel does, so what the page
-	* shows is what Accept will set. */
+/** Put a preset's values in the Graphics and Effects pages' controls, the catalog rows in
+	* TheDetailPresetCatalogRows included.  Custom leaves them as they are.  Trees and texture
+	* resolution follow the memory test the way applyStaticLODLevel does, so what the pages show is
+	* what Accept will set. */
 static void showDetailPreset( Int index )
 {
 	StaticGameLODLevel level;
 	switch( index )
 	{
+		case ULTRADETAIL:		level = STATIC_GAME_LOD_ULTRA;	break;
 		case HIGHDETAIL:		level = STATIC_GAME_LOD_HIGH;		break;
 		case MEDIUMDETAIL:	level = STATIC_GAME_LOD_MEDIUM;	break;
 		case LOWDETAIL:			level = STATIC_GAME_LOD_LOW;		break;
@@ -1927,6 +2017,9 @@ static void showDetailPreset( Int index )
 	GadgetCheckBoxSetChecked( checkExtraAnimations, preset.m_useBuildupScaffolds );
 	GadgetCheckBoxSetChecked( checkHeatEffects, preset.m_useHeatEffects );
 	GadgetCheckBoxSetChecked( checkNoDynamicLod, !preset.m_enableDynamicLOD );
+	GadgetCheckBoxSetChecked( checkTreeSway, preset.m_useTreeSway );
+	for( Int row = 0; row < DETAIL_PRESET_CATALOG_ROW_COUNT; ++row )
+		showCatalogValue( *findOptionDef( TheDetailPresetCatalogRows[ row ].iniKey ), TheDetailPresetCatalogRows[ row ].values[ index ] );
 	ignoreSelected = FALSE;
 
 	updateSliderReadouts();
@@ -2039,6 +2132,9 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 
 	checkHeatEffectsID = TheNameKeyGenerator->nameToKey( AsciiString( "OptionsMenu.wnd:CheckHeatEffects" ) );
 	checkHeatEffects   = TheWindowManager->winGetWindowFromId( NULL, checkHeatEffectsID);
+
+	checkTreeSwayID = TheNameKeyGenerator->nameToKey( AsciiString( "OptionsMenu.wnd:CheckTreeSway" ) );
+	checkTreeSway   = TheWindowManager->winGetWindowFromId( NULL, checkTreeSwayID);
 
 	checkUnlockFpsID = TheNameKeyGenerator->nameToKey( AsciiString( "OptionsMenu.wnd:CheckUnlockFPS" ) );
 	checkUnlockFps   = TheWindowManager->winGetWindowFromId( NULL, checkUnlockFpsID);
@@ -2241,6 +2337,7 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 
 	// set the display detail
 	GadgetComboBoxReset(comboBoxDetail);
+	GadgetComboBoxAddEntry(comboBoxDetail, TheGameText->fetch("GUI:Ultra"), color);
 	GadgetComboBoxAddEntry(comboBoxDetail, TheGameText->fetch("GUI:High"), color);
 	GadgetComboBoxAddEntry(comboBoxDetail, TheGameText->fetch("GUI:Medium"), color);
 	GadgetComboBoxAddEntry(comboBoxDetail, TheGameText->fetch("GUI:Low"), color);
@@ -2260,6 +2357,9 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 		break;
 	case STATIC_GAME_LOD_HIGH:
 		GadgetComboBoxSetSelectedPos(comboBoxDetail, HIGHDETAIL);
+		break;
+	case STATIC_GAME_LOD_ULTRA:
+		GadgetComboBoxSetSelectedPos(comboBoxDetail, ULTRADETAIL);
 		break;
 	case STATIC_GAME_LOD_CUSTOM:
 		GadgetComboBoxSetSelectedPos(comboBoxDetail, CUSTOMDETAIL);
@@ -2283,6 +2383,8 @@ void OptionsMenuInit( WindowLayout *layout, void *userData )
 	GadgetCheckBoxSetChecked( checkSmoothWater, TheGlobalData->m_showSoftWaterEdge);
 
 	GadgetCheckBoxSetChecked( checkExtraAnimations, !TheGlobalData->m_useDrawModuleLOD);
+
+	GadgetCheckBoxSetChecked( checkTreeSway, TheGlobalData->m_useTreeSway);
 
 	GadgetCheckBoxSetChecked( checkNoDynamicLod, !TheGlobalData->m_enableDynamicLOD);
 
@@ -2597,6 +2699,10 @@ WindowMsgHandledType OptionsMenuSystem( GameWindow *window, UnsignedInt msg,
 					GadgetComboBoxGetSelectedPos( comboBoxDetail, &index );
 					showDetailPreset( index );
 				}
+				else if( isDetailPresetCatalogControl( control ) )
+				{
+					markDetailCustom();
+				}
 
 				// picking borderless greys the resolution list out, the other two hand it back
 				updateResolutionEnabled();
@@ -2611,7 +2717,7 @@ WindowMsgHandledType OptionsMenuSystem( GameWindow *window, UnsignedInt msg,
 				break;
 
 			updateSliderReadouts();
-			if( isGraphicsDetailControl( (GameWindow *)mData1 ) )
+			if( isGraphicsDetailControl( (GameWindow *)mData1 ) || isDetailPresetCatalogControl( (GameWindow *)mData1 ) )
 				markDetailCustom();
 			break;
 		}
@@ -2696,7 +2802,7 @@ WindowMsgHandledType OptionsMenuSystem( GameWindow *window, UnsignedInt msg,
 				setDefaults();
 				updateSliderReadouts();
 			}
-			else if( isGraphicsDetailControl( control ) )
+			else if( isGraphicsDetailControl( control ) || isDetailPresetCatalogControl( control ) )
 			{
 				markDetailCustom();
 			}

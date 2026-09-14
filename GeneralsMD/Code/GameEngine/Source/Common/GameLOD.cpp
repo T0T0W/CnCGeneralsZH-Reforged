@@ -82,6 +82,7 @@ static const char *StaticGameLODNames[]=
 	"Low",
 	"Medium",
 	"High",
+	"Ultra",
 	"Custom"
 };
 
@@ -274,6 +275,9 @@ void GameLODManager::init(void)
 	//Get presets for each known hardware configuration
 	ini.load( AsciiString( "Data\\INI\\GameLODPresets.ini"), INI_LOAD_OVERWRITE, NULL);
 
+	// Ultra has no block in the shipped GameLOD.ini, so it is worked out from whatever High became.
+	m_staticGameLODInfo[STATIC_GAME_LOD_ULTRA] = makeUltraStaticGameLOD( m_staticGameLODInfo[STATIC_GAME_LOD_HIGH] );
+
 	//Get Presets for custom LOD level by pulling them out of initial globaldata (which should
 	//have all settings already applied).
 	refreshCustomStaticLODLevel();
@@ -355,7 +359,7 @@ void GameLODManager::init(void)
 		TheWritableGlobalData->m_showSoftWaterEdge = optionPref.getSmoothWaterEnabled();
 		TheWritableGlobalData->m_useHeatEffects = optionPref.getUseHeatEffects();
 		TheWritableGlobalData->m_useDrawModuleLOD = optionPref.getExtraAnimationsDisabled();
-		TheWritableGlobalData->m_useTreeSway = !TheWritableGlobalData->m_useDrawModuleLOD;	//borrow same setting.
+		TheWritableGlobalData->m_useTreeSway = optionPref.getTreeSwayEnabled();
 		TheWritableGlobalData->m_useTrees = optionPref.getTreesEnabled();
 	}
 
@@ -384,7 +388,7 @@ void GameLODManager::refreshCustomStaticLODLevel(void)
 	lodInfo->m_maxTankTrackFadeDelay=TheGlobalData->m_maxTankTrackFadeDelay;
 	lodInfo->m_useBuildupScaffolds=!TheGlobalData->m_useDrawModuleLOD;
 	lodInfo->m_useHeatEffects = TheGlobalData->m_useHeatEffects;
-	lodInfo->m_useTreeSway=lodInfo->m_useBuildupScaffolds;// Borrow same setting. //TheGlobalData->m_useTreeSway;
+	lodInfo->m_useTreeSway=TheGlobalData->m_useTreeSway;
 	lodInfo->m_textureReduction=TheGlobalData->m_textureReductionFactor;
 	lodInfo->m_useFpsLimit = TheGlobalData->m_useFpsLimit;
 	lodInfo->m_enableDynamicLOD=TheGlobalData->m_enableDynamicLOD;
@@ -712,6 +716,28 @@ Int GameLODManager::getRecommendedTextureReduction(void)
 Int GameLODManager::getLevelTextureReduction(StaticGameLODLevel level)
 {
 	return m_staticGameLODInfo[level].m_textureReduction;
+}
+
+// The top of the options menu's particle slider, which is as far as a player can drag it by hand.
+enum { ULTRA_MAX_PARTICLE_COUNT = 5000 };
+
+StaticGameLODInfo makeUltraStaticGameLOD( const StaticGameLODInfo &high )
+{
+	StaticGameLODInfo ultra = high;
+	ultra.m_maxParticleCount = ULTRA_MAX_PARTICLE_COUNT;
+	ultra.m_useShadowVolumes = TRUE;
+	ultra.m_useShadowDecals = TRUE;
+	ultra.m_useCloudMap = TRUE;
+	ultra.m_useLightMap = TRUE;
+	ultra.m_showSoftWaterEdge = TRUE;
+	ultra.m_useBuildupScaffolds = TRUE;
+	ultra.m_useTreeSway = TRUE;
+	ultra.m_useHeatEffects = TRUE;
+	ultra.m_useTrees = TRUE;
+	ultra.m_textureReduction = 0;
+	// dynamic LOD is what drops effects when the frame rate dips, and Ultra is the level that asks it not to
+	ultra.m_enableDynamicLOD = FALSE;
+	return ultra;
 }
 
 Bool GameLODManager::didMemPass( void )

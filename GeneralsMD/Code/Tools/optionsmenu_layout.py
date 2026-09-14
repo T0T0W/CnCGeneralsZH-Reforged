@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Rebuild OptionsMenu.wnd as six tabbed pages on one grid.
+"""Rebuild OptionsMenu.wnd as seven tabbed pages on one grid.
 
 EA's options screen is one 800x600 panel with everything on it at once, and it was already full
 when it shipped: the language filter, the keyboard button and the four camera checkboxes are all
 still in the file, parked off the right edge with HIDDEN set, because there was nowhere left to put
 them.  Seventeen settings later there is no version of "find room" that works.
 
-So the screen becomes six pages behind six buttons: Display, Graphics, Audio, Controls, Gameplay and
-Network.  Every graphics setting is on Graphics, including the ones EA hid in a popup that only
-opened when Custom was picked from a combo box on another page.  Every page is laid out on the same
+So the screen becomes seven pages behind seven buttons: Display, Graphics, Effects, Audio, Controls,
+Gameplay and Network.  Every graphics setting is on Graphics or Effects, including the ones EA hid in
+a popup that only opened when Custom was picked from a combo box on another page.  Every page is laid out on the same
 grid of three titled groups, so a heading, a label and a box start in the same place whichever tab
 is open, and every slider has a readout beside it.  Nothing is redrawn: the controls keep the images and tooltips they
 shipped with, a label or a check box takes the lettering of the one next to it, and what is new is
@@ -44,7 +44,8 @@ from wndlayout import clone
 # 16 pixels in from the panel on both sides, is where the title, the tabs, the pages, the buttons
 # and the version line all start and stop.  The frame is as tall as the tallest group column needs -
 # Graphics' Effects column ends 308 pixels below its heading, its Image column 304 - plus the title,
-# the tabs and the buttons, and it is centred on the 600 line: 58 above it, 58 below.
+# the tabs and the buttons, and it is centred on the 600 line: 58 above it, 58 below.  Seven tabs
+# still fit the inner width at 100 pixels each.
 PANEL = (20, 58, 760, 484)          # left, top, width, height
 INNER_LEFT, INNER_WIDTH = 36, 728
 TITLE = (INNER_LEFT, 64, 400, 32)
@@ -57,6 +58,7 @@ VERSION = (INNER_LEFT, 518, INNER_WIDTH, 16)
 TABS = [
     ("PageDisplay",  "TabDisplay",  "GUI:OptionsTabDisplay"),
     ("PageGraphics", "TabGraphics", "GUI:OptionsTabGraphics"),
+    ("PageEffects",  "TabEffects",  "GUI:OptionsTabEffects"),
     ("PageAudio",    "TabAudio",    "GUI:OptionsTabAudio"),
     ("PageControls", "TabControls", "GUI:OptionsTabControls"),
     ("PageGameplay", "TabGameplay", "GUI:OptionsTabGameplay"),
@@ -82,6 +84,14 @@ GRAPHICS_CHECKS = [
 ]
 ADVANCED_KEEP = GRAPHICS_CHECKS + ["CheckUnlockFPS", "LowResSlider", "ParticleCapSlider",
                                    "LabelTextureResolution", "LabelParticleCap"]
+
+# Check boxes of the fork's that OptionsMenu.cpp fills in by name rather than through the catalog:
+# swaying trees are a GameLOD.ini field like the popup's boxes, so they save under Custom with them.
+MENU_CHECKS = ["CheckTreeSway"]
+
+# The catalog's shadow rows, which stood in GameData.ini with no control until the Effects page.
+SHADOW_CHECKS = ["Check3DShadows", "Check2DShadows", "CheckInfantryShadows",
+                 "CheckProjectileShadows", "CheckPropShadows", "CheckParticleShadows"]
 
 # The tab a page opens is already captioned with the page's name, so EA's caption inside the panel
 # says the same word a second time, and the rule under it then divides nothing from nothing.  Both
@@ -135,6 +145,15 @@ NEW_CONTROLS = [
     (LABEL,  "LabelLanguage",          "GUI:Language"),
     (COMBO,  "ComboBoxLanguage",       None),
     (CHECK,  "CheckOrderLines",        "GUI:OrderLines"),
+    (CHECK,  "CheckZoomToCursor",      "GUI:ZoomToCursor"),
+    (CHECK,  "CheckTreeSway",          "GUI:TreeSway"),
+    (CHECK,  "CheckInfantryShadows",   "GUI:InfantryShadows"),
+    (CHECK,  "CheckProjectileShadows", "GUI:ProjectileShadows"),
+    (CHECK,  "CheckPropShadows",       "GUI:PropShadows"),
+    (CHECK,  "CheckParticleShadows",   "GUI:ParticleShadows"),
+    (LABEL,  "LabelSmoke",             "GUI:Smoke"),
+    (COMBO,  "ComboBoxSmoke",          None),
+    (CHECK,  "CheckParticleBounce",    "GUI:ParticleBounce"),
     (LABEL,  "LabelInputScheme",       "GUI:InputScheme"),
     (COMBO,  "ComboBoxInputScheme",    None),
 ]
@@ -162,8 +181,8 @@ TEXT_OVERRIDES = [
 # apart, 4 in from the page edge; a group heading on 150 and its content from 182.  A setting is its
 # label over its control, pitch 56, and a slider stops at 136 with its readout beside it on the same
 # row; a check box takes 28, a button 32.  Grouping follows what a setting does rather than where EA
-# put it: on Graphics the preset and the two things it sets, then the effects it switches, then the
-# picture settings it leaves alone.
+# put it: on Graphics the preset and the two sliders it sets, the picture settings, then the terrain;
+# on Effects the shadows, the extra touches, then smoke and particles.
 COLUMNS = (40, 288, 536)
 COLUMN_WIDTH = 224
 HEADING_TOP, CONTENT_TOP = 150, 182
@@ -201,13 +220,28 @@ GROUP_LAYOUT = [
         setting("DetailLabel", "ComboBoxDetail"),
         setting("LabelTextureResolution", "LowResSlider", "ValueTextureResolution"),
         setting("LabelParticleCap", "ParticleCapSlider", "ValueParticleCap")]),
-    ("PageGraphics", 1, "GUI:OptionsGroupEffects", [("check", name) for name in GRAPHICS_CHECKS]),
-    ("PageGraphics", 2, "GUI:OptionsGroupImage", [
+    ("PageGraphics", 1, "GUI:OptionsGroupImage", [
         setting("LabelMSAA", "ComboBoxMSAA"),
         setting("LabelBloom", "ComboBoxBloom"),
         setting("LabelBloomThreshold", "ComboBoxBloomThreshold"),
         setting("LabelTextureFilter", "ComboBoxTextureFilter"),
         setting("LabelAnisotropy", "SliderAnisotropy", "ValueAnisotropy")]),
+    ("PageGraphics", 2, "GUI:OptionsGroupTerrain", [
+        ("check", "CheckCloudShadows"),
+        ("check", "CheckGroundLighting"),
+        ("check", "CheckSmoothWater"),
+        ("check", "CheckShowProps")]),
+
+    ("PageEffects",  0, "GUI:OptionsGroupShadows", [("check", name) for name in SHADOW_CHECKS]),
+    ("PageEffects",  1, "GUI:OptionsGroupExtras", [
+        ("check", "CheckExtraAnimations"),
+        ("check", "CheckTreeSway"),
+        ("check", "CheckHeatEffects"),
+        ("check", "CheckBehindBuilding")]),
+    ("PageEffects",  2, "GUI:OptionsGroupParticles", [
+        setting("LabelSmoke", "ComboBoxSmoke"),
+        ("check", "CheckParticleBounce"),
+        ("check", "CheckNoDynamicLOD")]),
 
     ("PageAudio",    0, "GUI:OptionsGroupVolume", [
         setting("MusicVolumeLabel", "SliderMusicVolume", "ValueMusicVolume"),
@@ -215,7 +249,8 @@ GROUP_LAYOUT = [
         setting("VoiceVolumeLabel", "SliderVoiceVolume", "ValueVoiceVolume")]),
 
     ("PageControls", 0, "GUI:OptionsGroupScrolling", [
-        setting("ScrollSpeedLabel", "SliderScrollSpeed", "ValueScrollSpeed")]),
+        setting("ScrollSpeedLabel", "SliderScrollSpeed", "ValueScrollSpeed"),
+        ("check", "CheckZoomToCursor")]),
     ("PageControls", 1, "GUI:OptionsGroupOrders", [
         ("check", "Retaliation"),
         ("check", "CheckDoubleClickAttackMove")]),
@@ -307,7 +342,7 @@ def make_page(video_parent, name):
 
 
 def make_tab(button_template, name, text, index):
-    """Six tabs share the inner width; the last takes the pixel the division leaves over, so the
+    """The tabs share the inner width; the last takes the pixels the division leaves over, so the
     strip ends exactly where the pages and the buttons end."""
     width = (INNER_WIDTH - (len(TABS) - 1) * TAB_GAP) // len(TABS)
     left = INNER_LEFT + index * (width + TAB_GAP)
@@ -316,6 +351,8 @@ def make_tab(button_template, name, text, index):
     tab = clone(button_template, _named(name))
     tab.place(left, TAB_TOP, width, TAB_HEIGHT)
     tab.put_prop("TEXT", '"%s"' % text)
+    # the Defaults button's tooltip came along with the clone and said "reset" over every tab
+    drop_prop(tab, "TOOLTIPTEXT")
     tab.set_prop("TEXTCOLOR", TAB_CAPTION_COLOR)
     return tab
 
@@ -605,7 +642,7 @@ def selfcheck():
         if key not in keys:
             problems.append("caption %s is not in Patch.str" % key)
 
-    for name in READOUTS + GRAPHICS_CHECKS:
+    for name in READOUTS + GRAPHICS_CHECKS + MENU_CHECKS:
         if name not in controls:
             problems.append("OptionsMenu.wnd has no %s, which OptionsMenu.cpp fills in" % name)
     if ADVANCED in controls:

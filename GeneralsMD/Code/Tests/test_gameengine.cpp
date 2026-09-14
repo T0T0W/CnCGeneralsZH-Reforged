@@ -10343,6 +10343,72 @@ TEST(high_static_lod_keeps_the_picture_settings)
 	CHECK_EQ( high.m_textureReduction, 0 );
 }
 
+/* Ultra sits between High and Custom, so a comparison against a level still reads High as the lower
+	 of the two, and Custom keeps its place as the last entry every table is sized by. */
+TEST(ultra_static_lod_is_high_with_the_ceiling_raised)
+{
+	GameLODManager manager;
+	CHECK_EQ( manager.getStaticGameLODIndex( "Ultra" ), (Int)STATIC_GAME_LOD_ULTRA );
+	CHECK_STR( manager.getStaticGameLODLevelName( STATIC_GAME_LOD_CUSTOM ), "Custom" );
+	CHECK( STATIC_GAME_LOD_HIGH < STATIC_GAME_LOD_ULTRA );
+	CHECK( STATIC_GAME_LOD_ULTRA < STATIC_GAME_LOD_CUSTOM );
+
+	StaticGameLODInfo high;
+	high.m_maxParticleCount = 3000;
+	high.m_maxTankTrackFadeDelay = 60000;
+	high.m_useHeatEffects = FALSE;
+	const StaticGameLODInfo ultra = makeUltraStaticGameLOD( high );
+	CHECK_EQ( ultra.m_maxParticleCount, 5000 );
+	CHECK_EQ( (Int)ultra.m_enableDynamicLOD, 0 );
+	CHECK_EQ( (Int)ultra.m_useHeatEffects, 1 );
+	// what Ultra has no opinion about is High's
+	CHECK_EQ( ultra.m_maxTankTrackFadeDelay, 60000 );
+}
+
+TEST(effects_page_rows_reach_the_fields_the_command_line_switches_set)
+{
+	GlobalData *saved = TheWritableGlobalData;
+	GlobalData *scratch = NEW GlobalData;
+	TheWritableGlobalData = scratch;
+
+	static const char *const shadows[] =
+	{
+		"UseShadowVolumesForSkins", "ShadowsForProjectiles", "ShadowsForProps", "ShadowsForParticles",
+	};
+	for( Int i = 0; i < (Int)( sizeof( shadows ) / sizeof( shadows[ 0 ] ) ); ++i )
+	{
+		const OptionDef *def = findOptionDef( shadows[ i ] );
+		CHECK( def != NULL );
+		CHECK_EQ( (Int)def->kind, (Int)OPTION_BOOL );
+		// on until the player says otherwise, as GameData.ini had them
+		CHECK_EQ( def->get(), 1 );
+		def->set( 0 );
+		CHECK_EQ( def->get(), 0 );
+	}
+	CHECK_EQ( (Int)scratch->m_shadowsForProps, 0 );
+
+	const OptionDef *smoke = findOptionDef( "Smoke" );
+	CHECK( smoke != NULL );
+	CHECK_EQ( (Int)smoke->apply, (Int)APPLY_RESTART );
+	CHECK_EQ( smoke->hi, SMOKE_LEVEL_COUNT - 1 );
+	CHECK_EQ( smoke->get(), 0 );
+	smoke->set( 2 );
+	CHECK_NEAR( scratch->m_smokeThickness, 4.0f, 0.001f );
+	CHECK_EQ( smoke->get(), 2 );
+	// a bare -smoke is 2, which the box shows as Thick
+	scratch->m_smokeThickness = 2.0f;
+	CHECK_EQ( smoke->get(), 1 );
+
+	const OptionDef *bounce = findOptionDef( "ParticleBounce" );
+	CHECK( bounce != NULL );
+	CHECK_EQ( (Int)bounce->apply, (Int)APPLY_RESTART );
+	bounce->set( 1 );
+	CHECK_EQ( (Int)scratch->m_particleGroundBounce, 1 );
+
+	TheWritableGlobalData = saved;
+	delete scratch;
+}
+
 TEST(window_mode_derives_the_boolean_the_device_layer_reads)
 {
 	GlobalData *saved = TheWritableGlobalData;

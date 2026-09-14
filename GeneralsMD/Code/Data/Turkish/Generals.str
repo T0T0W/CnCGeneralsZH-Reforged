@@ -9538,7 +9538,7 @@ GUI:ExtraAnimations
 END
 
 TOOLTIP:ExtraAnimations
-"Ağaçların sallanması gibi isteğe bağlı animasyonları açıp kapatır. Daha iyi performans için kapatın"
+"Binalar yapılırken iskelenin içinde yükselir. Sallanan ağaçların kendi kutusu var."
 END
 
 GUI:NoDynamicLOD
@@ -9558,11 +9558,11 @@ TOOLTIP:UnlockMaxFPS
 END
 
 GUI:TreeSway
-"Ağaç Animasyonu"
+"Sallanan Ağaçlar"
 END
 
 TOOLTIP:TreeSway
-"Ağaç animasyonlarını açıp kapatır. Daha iyi performans için kapatın"
+"Ağaçlar ve çalılar rüzgârda eğilir. Bir sonraki haritada etkinleşir."
 END
 
 GUI:TankTreads
@@ -15005,6 +15005,14 @@ GUI:OptionsTabGraphics
 "Grafik"
 END
 
+GUI:OptionsTabEffects
+"Efektler"
+END
+
+GUI:Ultra
+"Ultra"
+END
+
 GUI:TextureFilter
 "Doku Filtreleme"
 END
@@ -15097,6 +15105,22 @@ GUI:OptionsGroupProxy
 "Vekil Sunucu"
 END
 
+GUI:OptionsGroupTerrain
+"Arazi"
+END
+
+GUI:OptionsGroupShadows
+"Gölgeler"
+END
+
+GUI:OptionsGroupExtras
+"Ek Ayrıntılar"
+END
+
+GUI:OptionsGroupParticles
+"Duman ve Parçacıklar"
+END
+
 GUI:WindowMode
 "Pencere Modu"
 END
@@ -15179,6 +15203,66 @@ END
 
 TOOLTIP:VSync
 "Görüntüyü monitöre eşler, böylece ekran yırtılmaz. Kapalıyken görüntü, bilgisayarın çizebildiği kadar hızlı akar. Kabul Et'e bastığınızda uygulanır."
+END
+
+GUI:InfantryShadows
+"Piyade Gölgeleri"
+END
+
+TOOLTIP:InfantryShadows
+"Askerler ve öteki hareketli modeller de 3B gölge düşürür. 3B gölgelerin açık olması gerekir. Bir sonraki haritada etkinleşir."
+END
+
+GUI:ProjectileShadows
+"Füze Gölgeleri"
+END
+
+TOOLTIP:ProjectileShadows
+"Çizerlerin gölge vermediği füzeler ve bombalar yere bir gölge düşürür. Bir sonraki haritada etkinleşir."
+END
+
+GUI:PropShadows
+"Dekor Gölgeleri"
+END
+
+TOOLTIP:PropShadows
+"Orijinal oyunun hiç gölgesiz çizdiği çitler, çöpler ve çalılar da gölge düşürür. Bir sonraki haritada etkinleşir."
+END
+
+GUI:ParticleShadows
+"Duman Gölgeleri"
+END
+
+TOOLTIP:ParticleShadows
+"Büyük duman ve toz bulutları altlarındaki zemine yumuşak bir gölge düşürür."
+END
+
+GUI:Smoke
+"Duman"
+END
+
+GUI:Smoke0
+"Orijinal"
+END
+
+GUI:Smoke1
+"Kalın"
+END
+
+GUI:Smoke2
+"Çok Kalın"
+END
+
+TOOLTIP:Smoke
+"Dumanın havada ne kadar asılı kaldığı ve ne kadar yoğun göründüğü. Oyundaki 1088 efektin 175'i duman. Çok Kalın, ölçüldüğünde yanan bir kolonun üstünde kare başına 0,7 ms tuttu. Oyun bir sonraki açılışında etkinleşir."
+END
+
+GUI:ParticleBounce
+"Parçacıklar Yere Çarpar"
+END
+
+TOOLTIP:ParticleBounce
+"Kıvılcımlar, enkaz ve öteki parçacıklar zeminin içinden geçmek yerine yere düşüp seker. Oyun bir sonraki açılışında etkinleşir."
 END
 
 GUI:MiddleMousePans

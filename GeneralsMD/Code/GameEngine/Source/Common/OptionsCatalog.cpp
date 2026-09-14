@@ -72,6 +72,11 @@ OPTION_INT_ACCESSORS( m_playerColorScheme )
 OPTION_INT_ACCESSORS( m_textLanguage )
 OPTION_INT_ACCESSORS( m_inputScheme )
 OPTION_BOOL_ACCESSORS( m_showOrderLines )
+OPTION_BOOL_ACCESSORS( m_useShadowVolumesForSkins )
+OPTION_BOOL_ACCESSORS( m_shadowsForProjectiles )
+OPTION_BOOL_ACCESSORS( m_shadowsForProps )
+OPTION_BOOL_ACCESSORS( m_shadowsForParticles )
+OPTION_BOOL_ACCESSORS( m_particleGroundBounce )
 
 //-----------------------------------------------------------------------------
 static const unsigned TheMsaaSamples[ OPTION_MSAA_LEVEL_COUNT ] = { 0, 2, 4, 8, 16 };
@@ -130,6 +135,21 @@ static Int nearestLevel( const Int *percents, Int count, Int percent )
 			best = i;
 	}
 	return best;
+}
+
+// Bare -smoke is 2, and 4 is where the thicker smoke was measured at 0.7 ms a frame over a burning
+// column.  The switch goes to 8; a level for that would be a slider position nobody could see
+// through.
+static const Int TheSmokeThicknesses[ SMOKE_LEVEL_COUNT ] = { 0, 2, 4 };
+
+static Int get_smokeLevel( void )
+{
+	return nearestLevel( TheSmokeThicknesses, SMOKE_LEVEL_COUNT, REAL_TO_INT( TheGlobalData->m_smokeThickness ) );
+}
+
+static void set_smokeLevel( Int level )
+{
+	TheWritableGlobalData->m_smokeThickness = (Real)TheSmokeThicknesses[ clampLevel( level, SMOKE_LEVEL_COUNT ) ];
 }
 
 static Int get_bloomLevel( void )
@@ -316,6 +336,36 @@ const OptionDef TheOptionCatalog[] =
 	{ "TextLanguage",							OPT_WND( "ComboBoxLanguage" ), "GUI:Language",
 		OPTION_ENUM, APPLY_RESTART, 0, TEXT_LANGUAGE_COUNT - 1,
 		get_m_textLanguage, set_m_textLanguage },
+
+	// The Effects page.  These four sat in GameData.ini with no control, all on.  Each is read when the
+	// thing that casts the shadow is made, so a change shows on the next map rather than on the units
+	// already standing there - except smoke clouds, which ask every frame.
+	{ "UseShadowVolumesForSkins",	OPT_WND( "CheckInfantryShadows" ), "GUI:InfantryShadows",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_useShadowVolumesForSkins, set_m_useShadowVolumesForSkins },
+
+	{ "ShadowsForProjectiles",		OPT_WND( "CheckProjectileShadows" ), "GUI:ProjectileShadows",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_shadowsForProjectiles, set_m_shadowsForProjectiles },
+
+	{ "ShadowsForProps",					OPT_WND( "CheckPropShadows" ), "GUI:PropShadows",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_shadowsForProps, set_m_shadowsForProps },
+
+	{ "ShadowsForParticles",			OPT_WND( "CheckParticleShadows" ), "GUI:ParticleShadows",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_shadowsForParticles, set_m_shadowsForParticles },
+
+	// -smoke and -particlebounce as settings.  Both are spent on the particle system templates while
+	// the particle manager starts, so they wait for the next launch.  The command line is parsed after
+	// this catalog loads, so either switch still wins for the one run it is given.
+	{ "Smoke",										OPT_WND( "ComboBoxSmoke" ), "GUI:Smoke",
+		OPTION_ENUM, APPLY_RESTART, 0, SMOKE_LEVEL_COUNT - 1,
+		get_smokeLevel, set_smokeLevel },
+
+	{ "ParticleBounce",						OPT_WND( "CheckParticleBounce" ), "GUI:ParticleBounce",
+		OPTION_BOOL, APPLY_RESTART, 0, 1,
+		get_m_particleGroundBounce, set_m_particleGroundBounce },
 
 	{ NULL, NULL, NULL, OPTION_BOOL, APPLY_LIVE, 0, 0, NULL, NULL }
 };

@@ -123,6 +123,7 @@ public:
 	Bool getSmoothWaterEnabled(void);
 	Bool getTreesEnabled(void);
 	Bool getExtraAnimationsDisabled(void);
+	Bool getTreeSwayEnabled(void);
 	Bool getUseHeatEffects(void);
 	Bool getDynamicLODEnabled(void);
 	Bool getFPSLimitEnabled(void);

@@ -128,6 +128,10 @@ enum { BLOOM_THRESHOLD_LEVEL_COUNT = 3 };	///< only the brightest, bright things
 // by those names.  The number in Options.ini is the same 0..2 it was when the key had no control.
 enum { TEXTURE_FILTER_MODE_COUNT = 3 };
 
+// Smoke is the -smoke switch's thickness offered as original, thick and very thick.  Options.ini
+// stores the level; the thickness each level stands for is in OptionsCatalog.cpp.
+enum { SMOKE_LEVEL_COUNT = 3 };
+
 /** Options.ini -> TheWritableGlobalData, for every row.  A key that is absent leaves the field at
 	* whatever GlobalData's constructor put there, which is what makes an old Options.ini keep
 	* working when a row is added. */
