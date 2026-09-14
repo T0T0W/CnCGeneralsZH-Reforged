@@ -541,7 +541,6 @@ found and fixed â€” EA's own, not port damage.**
 - The colour reaches everything: the tint on the models, the radar, health bars, selection rings, the score screen, the money that floats up from a supply drop.
 - Your screen only. Nobody else in the match sees your choice, nothing about the game itself changes, and two people in the same game can run different settings. Original is the default and nothing changes until you pick something else.
 - Switch it mid-match and the map repaints itself. So does the picture when an alliance is made or broken by a map script.
-
 ## You can see where your ally is pointing
 
 - Your ally's mouse is on your map: a soft pool of their own player colour on the ground where it rests, with their name across the middle of it. No second arrow on your screen - one is confusing enough, and the name is the part that says whose it is.
@@ -1019,7 +1018,7 @@ found and fixed â€” EA's own, not port damage.**
   honoured now, so the picture holds to your monitor's refresh rate unless you turn it off.
 - No disc, no registry keys, no retail installer â€” a normal install works.
 - The startup screen is this build's own, with the Zero Hour Reforged name on it, so you can see which one you launched before the menu loads.
-- The main menu buttons are there when the menu is. On the first visit they used to stay hidden, pointer and all, until you nudged the mouse or pressed a key, so a freshly started game looked stuck on the background battle.
+- The main menu buttons are there when the menu is. On the first visit they used to stay hidden, pointer and all, until you nudged the mouse or pressed a key, so a freshly started game looked stuck on the background battle. A match started straight from the command line no longer plays those buttons sliding in over its loading screen.
 - The zip installs itself and takes itself back off. `install.bat` asks where the game is, offering
   whatever the registry says, and copies the build there; anything it is about to write over goes
   into a zip in `ZHReforged-Uninstall` first, and anything it adds that was not there is written down

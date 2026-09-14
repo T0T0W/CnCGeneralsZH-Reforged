@@ -716,6 +716,11 @@ void MainMenuShutdown( WindowLayout *layout, void *userData )
 
 	if( popImmediate )
 	{
+		// A match started with nothing clicked (-autoskirmish, -netgame) leaves while the buttons are
+		// still coming in, and the load screen runs the window manager, so they played on over it.
+		TheTransitionHandler->remove( "MainMenuDefaultMenu", TRUE );
+		TheTransitionHandler->remove( "MainMenuFade", TRUE );
+
 //		if(localAnimateWindowManager)
 //		{
 //			delete localAnimateWindowManager;
