@@ -441,10 +441,17 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 
 			if( draw )
 			{
+				// The flags are last frame's.  Customized_Render leaves an occluder, and any drawable
+				// the behind-building markers delay, for the occlusion lists to draw, and this pass
+				// fills no lists, so a stale flag keeps the object out of the mirror altogether.
+				drawInfo->m_flags = DrawableInfo::ERF_IS_NORMAL;
 				if (robj->Is_Force_Visible()) {
 					robj->Set_Visible(true);
 				} else {
-					robj->Set_Visible(draw->getDrawsInMirror() && !camera->Cull_Sphere(robj->Get_Bounding_Sphere()));
+					// The same test the main pass hides a drawable by, or a unit under the fog of war,
+					// or a building standing in for its own ghost, shows up in the water and nowhere else.
+					Bool hidden = robj->Is_Hidden() || draw->isDrawableEffectivelyHidden() || draw->getFullyObscuredByShroud();
+					robj->Set_Visible(!hidden && draw->getDrawsInMirror() && !camera->Cull_Sphere(robj->Get_Bounding_Sphere()));
 				}
 			}
 			else

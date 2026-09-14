@@ -2069,7 +2069,11 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 	if (m_treeTexture==NULL) {
 		return;
 	}
-	if (m_updateAllKeys) {
+	// The visible flags and the buffers built from them are shared by every pass.  A water mirror
+	// culling them against its own frustum left the screen drawing the mirror's trees until the
+	// next cull, and with the mirror skipping frames the trees flickered between the two sets.  The
+	// mirror draws what the screen culled, which is what stands near the water it lands on.
+	if (m_updateAllKeys && !ShaderClass::Is_Backface_Culling_Inverted()) {
 		cull(camera);
 	}
 

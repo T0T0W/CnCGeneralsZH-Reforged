@@ -64,6 +64,7 @@ TEST(engineshader_names_a_shader_by_its_file_whatever_case_the_path_is_in)
 	CHECK(EngineShader_From_File("Trees.vso") == ENGINE_SHADER_TREES);
 	CHECK(EngineShader_From_File("trapezoid water ps.1.1") == ENGINE_SHADER_WATER_TRAPEZOID);
 	CHECK(EngineShader_From_File("river water ps.1.1") == ENGINE_SHADER_WATER_RIVER);
+	CHECK(EngineShader_From_File("water reflection ps.1.1") == ENGINE_SHADER_WATER_REFLECTION);
 	CHECK(EngineShader_From_File("shaders\\terrainnoise2.pso") == ENGINE_SHADER_TERRAIN_NOISE_2);
 	CHECK(EngineShader_From_File("shaders\\fterrain0.pso") == ENGINE_SHADER_FLAT_TERRAIN_BASE);
 	CHECK(EngineShader_From_File("shaders\\roadnoise2.pso") == ENGINE_SHADER_ROAD_NOISE_2);
@@ -74,7 +75,7 @@ TEST(engineshader_names_a_shader_by_its_file_whatever_case_the_path_is_in)
 TEST(engineshader_writes_every_program_it_names)
 {
 	static const EngineShaderProgram PIXEL_PROGRAMS[] = {
-		ENGINE_SHADER_WATER_TRAPEZOID, ENGINE_SHADER_WATER_RIVER,
+		ENGINE_SHADER_WATER_TRAPEZOID, ENGINE_SHADER_WATER_RIVER, ENGINE_SHADER_WATER_REFLECTION,
 		ENGINE_SHADER_TERRAIN, ENGINE_SHADER_TERRAIN_NOISE, ENGINE_SHADER_TERRAIN_NOISE_2,
 		ENGINE_SHADER_FLAT_TERRAIN, ENGINE_SHADER_FLAT_TERRAIN_BASE,
 		ENGINE_SHADER_FLAT_TERRAIN_NOISE, ENGINE_SHADER_FLAT_TERRAIN_NOISE_2,
@@ -134,6 +135,18 @@ TEST(engineshader_darkens_only_the_river_waters_sparkles_by_the_vertex_alpha)
 	CHECK(contains(hlsl, "current.a = saturate(texel0.a * texel3.a);"));
 	CHECK(contains(hlsl, "sparkle = saturate(sparkle * input.Diffuse.a);"));
 	CHECK(contains(hlsl, "current.rgb = saturate(current.rgb + sparkle);"));
+}
+
+// mul r0.rgb, t0, t3 ; +mov r0.a, c0.  D3D9 takes the opacity from c0, which a transcribed program
+// cannot see, so the alpha has to be the texture factor W3DWater sets to the same value.  Reading
+// c0 here would come back zero and the reflection would not show at all.
+// The reflection multiplies the water, so white has to come out white or open sky tints every pool.
+TEST(engineshader_fades_the_water_reflection_towards_white_by_the_texture_factor)
+{
+	std::string hlsl;
+	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_WATER_REFLECTION, plain_pipeline(), hlsl));
+	CHECK(contains(hlsl, "float4 current = 1.0 - saturate((1.0 - texel0) * TextureFactor.a);"));
+	CHECK(!contains(hlsl, "* texel3"));
 }
 
 // D3D9 applies the alpha test and the fog around a bound pixel shader and D3D11 applies neither, so
@@ -346,4 +359,9 @@ TEST(engineshader_writes_programs_the_compiler_accepts)
 	std::string river;
 	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_WATER_RIVER, pipeline, river));
 	CHECK(compiles(compile, river, EngineShader_Name(ENGINE_SHADER_WATER_RIVER), PIXEL_PROFILE));
+
+	std::string reflection;
+	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_WATER_REFLECTION, pipeline, reflection));
+	CHECK(compiles(compile, reflection, EngineShader_Name(ENGINE_SHADER_WATER_REFLECTION),
+		PIXEL_PROFILE));
 }

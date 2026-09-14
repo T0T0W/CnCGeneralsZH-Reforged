@@ -174,6 +174,11 @@ protected:
 	Real				m_bumpFrameAccum;	///<fractional carry, so the flipbook can run slower than one frame per tick
 	Real				m_fBumpScale;	///<scales bump map uv perturbation
 	TextureClass * m_pReflectionTexture;	///<render target for reflection
+	Real m_reflectionLevel;	///<height of the water plane the reflection texture was rendered for
+	Vector2 m_reflectionAreaMin;	///<lower left of the screen area the reflection texture covers, -1 to 1
+	Vector2 m_reflectionAreaMax;	///<upper right of the same area
+	Matrix3D m_reflectionCameraTransform;	///<where the camera stood when the reflection texture was last rendered
+	Bool m_reflectionReused;	///<the frame before this one kept the previous reflection texture
 	RenderObjClass	*m_skyBox;		///<box around level
 	WaterTracksRenderSystem *m_waterTrackSystem;	///<object responsible for rendering water wakes
 
@@ -216,6 +221,7 @@ protected:
 	IDirect3DPixelShader9 *	m_waterPixelShader;		///<D3D pixel shader.
 	IDirect3DPixelShader9 *	m_riverWaterPixelShader;		///<D3D pixel shader.
 	IDirect3DPixelShader9 *	m_trapezoidWaterPixelShader;	///<D3D pixel shader
+	IDirect3DPixelShader9 *	m_reflectionPixelShader;	///<darkens water where the reflection texture holds something
 	TextureClass *m_waterSparklesTexture;
 	Real m_riverXOffset;
 	Real m_riverYOffset;
@@ -250,7 +256,8 @@ protected:
 	void renderSkyBody(Matrix3D *mat);	///<draw the sky body (sun, moon, etc.)
 	void renderWaterMesh(void);			///<draw the water surface mesh (deformed 3d mesh).
 	HRESULT initBumpMap(LPDIRECT3DTEXTURE9 *pTex, TextureClass *pBumpSource);	///<copies data into bump-map format.
-	void renderMirror(CameraClass *cam);	///< Draw reflected scene into texture
+	void renderMirror(CameraClass *cam, Real level);	///< Draw reflected scene into texture
+	void drawReflection(Int triangleCount, Int vertexCount);	///< Lay the reflection over the water just drawn
 	void drawSea(RenderInfoClass & rinfo);	///< Draw the surface of the water
 	///bounding box of frustum clipped polygon plane
 	Bool getClippedWaterPlane(CameraClass *cam, AABoxClass *box);

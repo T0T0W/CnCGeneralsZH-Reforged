@@ -2322,7 +2322,7 @@ AGAIN:
 			TheParticleUpdateMS = w3dElapsedMS( tParticleStart, tParticleEnd );
 #endif
 
-			if (TheWaterRenderObj && TheGlobalData->m_waterType == 2)
+			if (TheWaterRenderObj)
 				TheWaterRenderObj->updateRenderTargetTextures(primaryW3DView->get3DCamera());	//do a render into each texture
 
 			//Can't render into textures while rendering to screen so these textures need to be updated

@@ -97,7 +97,8 @@ CameraClass::CameraClass(void) :
 	ZFar(1000.0f),										// far clip plane distance
 	ZBufferMin(0.0f),									// smallest value we'll write into the z-buffer
 	ZBufferMax(1.0f),									// largest value we'll write into the z-buffer
-	FrustumValid(false)
+	FrustumValid(false),
+	ObliqueNearPlaneEnabled(false)
 {
 	Set_Transform(Matrix3D(1));
 	Set_View_Plane(DEG_TO_RADF(50.0f));
@@ -131,7 +132,9 @@ CameraClass::CameraClass(const CameraClass & src) :
 	CameraInvTransform(src.CameraInvTransform),
 	AspectRatio(src.AspectRatio),
 	ZBufferMin(src.ZBufferMin),
-	ZBufferMax(src.ZBufferMax)
+	ZBufferMax(src.ZBufferMax),
+	ObliqueNearPlaneEnabled(src.ObliqueNearPlaneEnabled),
+	ObliqueNearPlane(src.ObliqueNearPlane)
 {
 	// just being paraniod in case any parent class doesn't completely copy the entire state...
 	FrustumValid = false;
@@ -165,7 +168,9 @@ CameraClass & CameraClass::operator = (const CameraClass & that)
 		NearClipBBox = that.NearClipBBox;
 		ProjectionTransform = that.ProjectionTransform;
 		CameraInvTransform = that.CameraInvTransform;
-		
+		ObliqueNearPlaneEnabled = that.ObliqueNearPlaneEnabled;
+		ObliqueNearPlane = that.ObliqueNearPlane;
+
 		// just being paraniod in case any parent class doesn't completely copy the entire state...
 		FrustumValid = false;
 	}
@@ -796,6 +801,33 @@ void CameraClass::Get_D3D_Projection_Matrix(Matrix4x4 * set_tm)
 		(*set_tm)[2][3] = -ZNear * oozdiff;
 	}
 
+	if (ObliqueNearPlaneEnabled && Projection == PERSPECTIVE) {
+		/*
+		** Lengyel's oblique near plane for a 0<z<1 depth range: the depth row becomes the mirror
+		** plane in view space, scaled so the far plane still passes through the far corner of
+		** the frustum on the plane's kept side.
+		*/
+		const Matrix3D & camera_to_world = Get_Transform();
+		Vector3 view_normal;
+		Matrix3D::Inverse_Rotate_Vector(camera_to_world, ObliqueNearPlane.N, &view_normal);
+		float view_distance = Vector3::Dot_Product(ObliqueNearPlane.N, camera_to_world.Get_Translation()) - ObliqueNearPlane.D;
+
+		Matrix4x4 & projection = *set_tm;
+		float corner_x = ((view_normal.X > 0.0f ? 1.0f : -1.0f) + projection[0][2]) / projection[0][0];
+		float corner_y = ((view_normal.Y > 0.0f ? 1.0f : -1.0f) + projection[1][2]) / projection[1][1];
+		float corner_z = -1.0f;
+		float corner_w = (1.0f + projection[2][2]) / projection[2][3];
+		float scale = 1.0f / (view_normal.X * corner_x + view_normal.Y * corner_y + view_normal.Z * corner_z + view_distance * corner_w);
+		projection[2] = Vector4(view_normal.X * scale, view_normal.Y * scale, view_normal.Z * scale, view_distance * scale);
+	}
+}
+
+void CameraClass::Set_Oblique_Near_Plane(const PlaneClass * world_plane)
+{
+	ObliqueNearPlaneEnabled = (world_plane != NULL);
+	if (world_plane != NULL) {
+		ObliqueNearPlane = *world_plane;
+	}
 }
 
 void CameraClass::Get_View_Matrix(Matrix3D * set_tm)

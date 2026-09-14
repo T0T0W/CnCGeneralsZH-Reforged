@@ -182,6 +182,11 @@ public:
 	void								Get_Projection_Matrix(Matrix4x4 * set_tm);
 	void								Get_D3D_Projection_Matrix(Matrix4x4 * set_tm);
 	void								Get_View_Matrix(Matrix3D * set_tm);
+
+	// A mirror pass renders from beneath the mirror, so the near plane is swapped for the mirror
+	// plane itself and whatever lies behind it is clipped by the projection.  NULL restores the
+	// ordinary near plane.  Frustum culling does not see this; only the projection does.
+	void								Set_Oblique_Near_Plane(const PlaneClass * world_plane);
 	const Matrix4x4 &				Get_Projection_Matrix(void);
 	const Matrix3D &				Get_View_Matrix(void);
 
@@ -253,6 +258,8 @@ protected:
 	mutable OBBoxClass			NearClipBBox;					// obbox which bounds the near clip plane
 	mutable Matrix4x4				ProjectionTransform;
 	mutable Matrix3D				CameraInvTransform;
+	bool								ObliqueNearPlaneEnabled;
+	PlaneClass						ObliqueNearPlane;	// world space, kept side in front of the normal
 };
 
 
