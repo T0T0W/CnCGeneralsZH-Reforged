@@ -170,7 +170,7 @@ const OptionDef TheOptionCatalog[] =
 {
 	// iniKey, widgetName, labelKey, kind, apply, lo, hi, get, set
 
-	// The four camera and mouse habits below have no control in OptionsMenu.wnd any more.  They are
+	// The camera and mouse habits below have no control in OptionsMenu.wnd any more.  They are
 	// not gone: an empty widgetName only makes the menu passes skip the row, so Options.ini still
 	// loads, clamps and saves each one and a player who wants the old behaviour can put the key
 	// back by hand.  The defaults in GlobalData are what everybody else gets.
@@ -196,7 +196,10 @@ const OptionDef TheOptionCatalog[] =
 
 	// MiddleMousePans used to sit here.  The middle button is the only camera drag there is now, so
 	// there is nothing left to choose: it pans, and Ctrl turns the same drag into a rotate.
-	{ "ZoomToCursor",							"", "",
+
+	// Back on Options > Controls: players split on whether the wheel should chase the cursor, and
+	// Legacy zooms on the middle of the screen whatever this says.
+	{ "ZoomToCursor",							OPT_WND( "CheckZoomToCursor" ), "GUI:ZoomToCursor",
 		OPTION_BOOL, APPLY_LIVE, 0, 1,
 		get_m_zoomToCursor, set_m_zoomToCursor },
 

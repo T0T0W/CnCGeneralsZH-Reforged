@@ -10009,11 +10009,11 @@ TEST(gameplay_conveniences_are_forced_on_and_left_the_catalog)
 	CHECK( bars != NULL );
 	CHECK( bars->widgetName != NULL && bars->widgetName[ 0 ] != '\0' );
 
-	/* The four camera and mouse habits went the other way: no control, but the row stays, so an
-		 Options.ini that names one still wins over the default. */
+	/* The camera and mouse habits went the other way: no control, but the row stays, so an
+		 Options.ini that names one still wins over the default.  ZoomToCursor came back to the menu. */
 	static const char *const hidden[] =
 	{
-		"FormationDrag", "ZoomToCursor", "EdgeScrollInWindowedMode", "SnapCameraRotateTo45", NULL
+		"FormationDrag", "EdgeScrollInWindowedMode", "SnapCameraRotateTo45", NULL
 	};
 	for( Int i = 0; hidden[ i ] != NULL; ++i )
 	{

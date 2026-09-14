@@ -114,14 +114,8 @@ LookAtTranslator::LookAtTranslator() :
 	m_timestamp(0),
 	m_lastPlaneID(INVALID_DRAWABLE_ID),
 	m_lastMouseMoveFrame(0),
-	m_scrollType(SCROLL_NONE),
-	m_zoomAnchorValid(FALSE),
-	m_zoomAnchorZoom(0.0f),
-	m_zoomAnchorTicks(0)
+	m_scrollType(SCROLL_NONE)
 {
-	m_zoomAnchorPixel.x = m_zoomAnchorPixel.y = 0;
-	m_zoomAnchorWorld.zero();
-
 	//Added By Sadullah Nader
 	//Initializations misssing and needed
 	m_anchor.x = m_anchor.y = 0;
@@ -164,65 +158,6 @@ void LookAtTranslator::setCurrentPos( const ICoord2D& pos )
 {
 	m_currentPos = pos;
 }
-
-//-----------------------------------------------------------------------------
-/**
- * Keep the terrain point the wheel was spun over sitting under that same pixel while the camera
- * eases towards the zoom it was asked for. Re-measuring rather than projecting means the pin is
- * right at any pitch or field of view, and it converges: each frame's leftover error is the next
- * frame's correction. The pin ends when the zoom stops moving, when something else takes the
- * camera, or when its tick budget runs out.
- */
-void LookAtTranslator::updateZoomToCursor( void )
-{
-	if (!m_zoomAnchorValid)
-		return;
-
-	// anything that moves the camera on purpose wins over the pin
-	if (m_isScrolling || !TheInGameUI->getInputEnabled())
-	{
-		m_zoomAnchorValid = FALSE;
-		return;
-	}
-
-	const Real zoom = TheTacticalView->getZoom();
-	const Bool stillEasing = fabs( zoom - m_zoomAnchorZoom ) > 0.00001f;
-	m_zoomAnchorZoom = zoom;
-
-	Coord3D world;
-	world.zero();
-	TheTacticalView->screenToTerrain( &m_zoomAnchorPixel, &world );
-
-	//
-	// Move the camera by the world-space residual itself.  scrollBy() is not the way to do it:
-	// its delta is a *screen* delta that it pushes through Device_To_World_Space with a fixed
-	// 250 unit resolution and then scales by frame time, so a world offset handed to it comes
-	// out as some other distance entirely and the anchor never lands.  lookAt is the exact move:
-	// given a z on the ground it is a plain setPosition plus setCameraTransform, so the camera is
-	// still clamped to the map the same way scrolling is.
-	//
-	const Real shiftX = m_zoomAnchorWorld.x - world.x;
-	const Real shiftY = m_zoomAnchorWorld.y - world.y;
-	if (shiftX != 0.0f || shiftY != 0.0f)
-	{
-		Coord3D pos;
-		TheTacticalView->getPosition( &pos );
-		pos.x += shiftX;
-		pos.y += shiftY;
-		pos.z = 0.0f;
-		TheTacticalView->lookAt( &pos );
-	}
-
-	//
-	// The first few ticks are a grace period: the wheel is handled in the message stream, which
-	// runs before the view updates, so a zoom that has not started moving yet is not a zoom that
-	// has finished.
-	//
-	const Bool grace = (m_zoomAnchorTicks > ZOOM_ANCHOR_MAX_TICKS - ZOOM_ANCHOR_GRACE_TICKS);
-	if (--m_zoomAnchorTicks <= 0 || (!stillEasing && !grace))
-		m_zoomAnchorValid = FALSE;
-
-}  // end updateZoomToCursor
 
 //-----------------------------------------------------------------------------
 /**
@@ -486,25 +421,11 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 					TheInGameUI->rotatePendingPlacement( rotateSteps ))
 				return DESTROY_MESSAGE;
 
-			//
-			// ZoomToCursor: remember the world point under the cursor and keep it there while the
-			// camera moves. Measuring it again right after the zoom call - which is what this used
-			// to do - always measured a camera that had not moved yet: zoomIn()/zoomOut() only
-			// change the *desired* height above ground, and W3DView::update eases the actual zoom
-			// towards it over the frames that follow. The shift therefore came out zero every time
-			// and the feature did nothing at all. The anchor is now followed frame by frame in
-			// updateZoomToCursor() for as long as that easing lasts, which also keeps it correct
-			// whatever the pitch and the field of view are.
-			//
+			// ZoomToCursor: the view holds the ground under the cursor while the zoom eases in.  It does
+			// it inside its own update, between the zoom moving and the frame being drawn; held from
+			// here, the correction always landed a frame late.
 			if (TheGlobalData->m_zoomToCursor && !TheGlobalData->isLegacyInput() && TheInGameUI->getInputEnabled())
-			{
-				m_zoomAnchorPixel = msg->getArgument( 0 )->pixel;
-				m_zoomAnchorWorld.zero();
-				TheTacticalView->screenToTerrain( &m_zoomAnchorPixel, &m_zoomAnchorWorld );
-				m_zoomAnchorZoom = TheTacticalView->getZoom();
-				m_zoomAnchorTicks = ZOOM_ANCHOR_MAX_TICKS;
-				m_zoomAnchorValid = TRUE;
-			}
+				TheTacticalView->anchorZoomAt( &msg->getArgument( 0 )->pixel );
 
 			if (spin > 0.0f)
 				TheTacticalView->zoomIn( spin );
@@ -531,9 +452,6 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 		case GameMessage::MSG_FRAME_TICK:
 		{
 			Coord2D offset = {0, 0};
-
-			// hold whatever the wheel was spun over under the cursor while the zoom eases
-			updateZoomToCursor();
 
 			// If we've been forced to stop scrolling (script action?) then stop
 			if (m_isScrolling && !TheInGameUI->isScrolling())

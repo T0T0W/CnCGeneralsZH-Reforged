@@ -185,6 +185,7 @@ public:
 	virtual void setHeightAboveGround(Real z) { m_heightAboveGround = z; }
 	virtual void zoomIn( Real steps = 1.0f );														///< Zoom in, closer to the ground, limit to min
 	virtual void zoomOut( Real steps = 1.0f );													///< Zoom out, farther away from the ground, limit to max
+	virtual void anchorZoomAt( const ICoord2D *pixel ) { }											///< ZoomToCursor: hold the ground under this pixel there while the zoom settles
 	virtual void setZoomToDefault( void ) { }														///< Set zoom to default value
 	virtual void setZoomToMax( void ) { }																///< Set zoom as far out as the player may zoom by hand
 	virtual void setOkToAdjustHeight( Bool val ) { m_okToAdjustHeight = val; }	///< Set this to adjust camera height

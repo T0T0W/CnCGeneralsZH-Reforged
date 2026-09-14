@@ -202,6 +202,7 @@ public:
 	virtual void setZoomToDefault( void );									///< Set zoom to default value
 	virtual void setZoomToMax( void );												///< Set zoom as far out as the player may zoom by hand
 	void setZoomToHeight( Real heightAboveGround );				///< Frame the camera at this height above the terrain
+	virtual void anchorZoomAt( const ICoord2D *pixel );
 
 	virtual void setFieldOfView( Real angle );							///< Set the horizontal field of view angle
 
@@ -285,6 +286,11 @@ private:
 	Region2D m_cameraConstraint;										///< m_pos should be constrained to be within this area
 	Bool m_cameraConstraintValid;										///< if f, recalc cam constraints
 	Bool m_recalcCamera;														///< if t, rebuild the camera transform in the next render update
+
+	Bool m_zoomAnchorValid;													///< a wheel zoom is holding the ground under the cursor
+	ICoord2D m_zoomAnchorPixel;											///< the pixel the wheel was spun over
+	Coord3D m_zoomAnchorWorld;											///< the ground that has to stay under it
+	void holdZoomAnchor( Bool zoomMoved );					///< move the camera so the anchored ground is back under its pixel
 
 	Bool isDoingScriptedCamera( void ) const;				///< True while any scripted camera movement owns the view
 	void stopDoingScriptedCamera( void );						///< Hand the view back to the user, whatever the script was doing

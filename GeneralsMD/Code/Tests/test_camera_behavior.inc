@@ -56,7 +56,10 @@ public:
 	Coord3D terrainPoint = {0, 0, 0};
 	Int terrainPicks = 0;
 	Int lookAtCalls = 0;
+	Int zoomAnchors = 0;
+	ICoord2D zoomAnchor = {0, 0};
 	void lookAt(const Coord3D *pos) { ++lookAtCalls; setPosition(pos); }
+	void anchorZoomAt(const ICoord2D *pixel) { zoomAnchor = *pixel; ++zoomAnchors; }
 	void forceCameraConstraintRecalc() { ++constraintRecalcs; }
 	void scrollBy(Coord2D *delta) { last = *delta; ++samples; }
 	Drawable *pickDrawable(const ICoord2D*, Bool, PickType) { return NULL; }
@@ -183,4 +186,43 @@ TEST(camera_margin_preferences_load_and_rebuild_constraints)
 	CHECK(f.global->m_useCameraConstraints);
 	CHECK_EQ(f.global->m_cameraBoundaryMargin, 300);
 	CHECK_EQ(f.view.constraintRecalcs, 1);
+}
+
+TEST(camera_wheel_anchors_zoom_to_cursor_only_under_modern_with_the_box_ticked)
+{
+	// Pull request 5 asked for zoom to cursor to go; it stayed as a menu box instead.
+	const OptionDef *def = findOptionDef("ZoomToCursor");
+	CHECK(def != NULL);
+	if (def == NULL)
+		return;
+	CHECK(def->widgetName != NULL && def->widgetName[0] != '\0');
+	CHECK_EQ(def->apply, APPLY_LIVE);
+
+	CHECK(bootOnce());
+	CameraInputFixture f;
+	const ICoord2D cursor = {320, 240};
+	const Real zoomInOneNotch = 1.0f;
+	const auto spinWheel = [&f, &cursor, zoomInOneNotch]()
+	{
+		GameMessage *message = newInstance(GameMessage)(GameMessage::MSG_RAW_MOUSE_WHEEL);
+		message->appendPixelArgument(cursor);
+		message->appendRealArgument(zoomInOneNotch);
+		f.camera.translateGameMessage(message);
+		message->deleteInstance();
+	};
+
+	CHECK(f.global->m_zoomToCursor);
+	spinWheel();
+	CHECK_EQ(f.view.zoomAnchors, 1);
+	CHECK_EQ(f.view.zoomAnchor.x, cursor.x);
+	CHECK_EQ(f.view.zoomAnchor.y, cursor.y);
+
+	f.global->m_zoomToCursor = FALSE;
+	spinWheel();
+	CHECK_EQ(f.view.zoomAnchors, 1);
+
+	f.global->m_zoomToCursor = TRUE;
+	f.global->m_inputScheme = INPUT_SCHEME_LEGACY;
+	spinWheel();
+	CHECK_EQ(f.view.zoomAnchors, 1);
 }

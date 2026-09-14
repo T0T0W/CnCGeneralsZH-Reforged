@@ -194,6 +194,7 @@ W3DView::W3DView()
 	m_shakerAngles.Z =0.0f;
 
 	m_recalcCamera = false;
+	m_zoomAnchorValid = false;
 
 }  // end W3DView
 
@@ -1487,6 +1488,7 @@ void W3DView::update(void)
 	 */
 	m_terrainHeightUnderCamera = getHeightAroundPos(m_pos.x, m_pos.y);
 	m_currentHeightAboveGround = m_cameraOffset.z * m_zoom - m_terrainHeightUnderCamera;
+	const Real zoomBeforeSettle = m_zoom;
 	//
 	// The settle below is an exponential approach tuned for one 30Hz step. Gating it on
 	// stepTime made the zoom crawl in visible 30Hz jumps on a faster display; run it every
@@ -1538,6 +1540,8 @@ void W3DView::update(void)
 			}
 		}
 	}
+	if (m_zoomAnchorValid)
+		holdZoomAnchor( m_zoom != zoomBeforeSettle && !didScriptedMovement );
 	if (TheScriptEngine->isTimeFast()) {
 		return; // don't draw - makes it faster :) jba.
 	}
@@ -2241,6 +2245,7 @@ void W3DView::setHeightAboveGround(Real z)
 void W3DView::setZoom(Real z)
 {
 	View::setZoom(z);
+	m_zoomAnchorValid = false;	// a saved view or a script set this zoom, not the wheel
 
 	stopDoingScriptedCamera();
 	m_cameraConstraintValid = false; // recalc it.
@@ -2684,9 +2689,56 @@ void W3DView::lookAt( const Coord3D *o )
 	pos.z = 0;
 	setPosition(&pos);
 	stopDoingScriptedCamera();
+	// a jump across the map mid-zoom goes where it was sent, not back to the ground the wheel was on
+	m_zoomAnchorValid = false;
 
 	m_recalcCamera = true;
 
+}
+
+//-------------------------------------------------------------------------------------------------
+/** ZoomToCursor.  The wheel only moves the height the camera settles towards, and update() eases the
+	* real zoom there over the frames that follow, so the ground the wheel was spun over is held under
+	* its pixel by holdZoomAnchor for as long as that easing lasts.  A pixel over no ground has nothing
+	* to hold: screenToTerrain hands back the map corner for it, and holding that ran the camera off to
+	* the edge of the map. */
+//-------------------------------------------------------------------------------------------------
+void W3DView::anchorZoomAt( const ICoord2D *pixel )
+{
+	m_zoomAnchorPixel = *pixel;
+	m_zoomAnchorValid = screenToTerrain( pixel, &m_zoomAnchorWorld );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Runs inside update(), after the zoom has eased and before the frame's camera is built.  The pin
+	* used to run in the message stream, after the frame was already drawn, so every frame showed the
+	* ground sliding off the cursor and the next one pulled it back; the last correction landed after
+	* the zoom had stopped and read as a snap towards the cursor. */
+//-------------------------------------------------------------------------------------------------
+void W3DView::holdZoomAnchor( Bool zoomMoved )
+{
+	if (!zoomMoved || TheInGameUI->isScrolling())
+	{
+		m_zoomAnchorValid = false;
+		return;
+	}
+
+	// a locked view builds no camera this frame, so a measurement would read the last frame's again
+	if (m_viewLockedUntilFrame > TheGameClient->getFrame())
+		return;
+
+	setCameraTransform();
+	Coord3D world;
+	if (!screenToTerrain( &m_zoomAnchorPixel, &world ))
+	{
+		m_zoomAnchorValid = false;
+		return;
+	}
+
+	Coord3D pos = *getPosition();
+	pos.x += m_zoomAnchorWorld.x - world.x;
+	pos.y += m_zoomAnchorWorld.y - world.y;
+	setPosition( &pos );
 }
 
 //-------------------------------------------------------------------------------------------------

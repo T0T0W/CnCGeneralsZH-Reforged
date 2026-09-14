@@ -15194,7 +15194,7 @@ GUI:ZoomToCursor
 END
 
 TOOLTIP:ZoomToCursor
-"Tekerlek, ekranın ortası yerine imlecin üzerinde durduğu yere doğru yakınlaştırır."
+"Tekerlek, ekranın ortası yerine imlecin üzerinde durduğu yere doğru yakınlaştırır. Yalnızca Modern kontrollerde."
 END
 
 GUI:EdgeScrollWindowed
