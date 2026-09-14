@@ -8564,23 +8564,21 @@ TEST(every_role_commits_at_its_own_moment_and_none_of_them_is_a_bonus)
 	 itself orders.  The exemption used to be "the facing has started", a flag that is never cleared
 	 once set, so after the first turn nothing the unit did could break the capture: an AI ordering
 	 its riflemen to run from a fight left the derrick they were on flashing and sounding its
-	 capture tick with nobody there, and it changed hands anyway. */
+	 capture tick with nobody there, and it changed hands anyway.  The flag pair that followed had the
+	 same hole whenever the turn took more than a frame, so the exemption is now the AI state itself. */
 TEST(walking_away_breaks_a_capture_but_turning_towards_it_does_not)
 {
 	// standing on the building, working: nothing to break
-	CHECK( !abilityBrokenByMovement( FALSE, TRUE, TRUE, TRUE ) );
+	CHECK( !abilityBrokenByMovement( FALSE, TRUE, FALSE ) );
 
 	// the ability's own turn towards the target: moving, but not leaving
-	CHECK( !abilityBrokenByMovement( TRUE, TRUE, TRUE, FALSE ) );
+	CHECK( !abilityBrokenByMovement( TRUE, TRUE, TRUE ) );
 
-	// the turn is over and the unit is moving again: it has left, whoever ordered it
-	CHECK( abilityBrokenByMovement( TRUE, TRUE, TRUE, TRUE ) );
-
-	// an ability that never faces its target (NeedToFaceTarget = No) is broken by movement too
-	CHECK( abilityBrokenByMovement( TRUE, TRUE, FALSE, FALSE ) );
+	// a retreat order replaced the turn: it has left, whoever ordered it
+	CHECK( abilityBrokenByMovement( TRUE, TRUE, FALSE ) );
 
 	// and nothing is broken when no power is up: walking is just walking
-	CHECK( !abilityBrokenByMovement( TRUE, FALSE, TRUE, TRUE ) );
+	CHECK( !abilityBrokenByMovement( TRUE, FALSE, FALSE ) );
 }
 
 /* Every AI seat a lobby offers has to survive the trip to the other machines.  The host writes the

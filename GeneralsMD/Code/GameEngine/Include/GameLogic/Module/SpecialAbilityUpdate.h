@@ -57,11 +57,17 @@ enum SpecialPowerType;
 	* whole ability restarts - so from that frame on, nothing this unit did could break the capture.
 	* Human orders still stopped it through the command-source check, but an AI's orders look
 	* exactly like the ability's own, so a bot pulling its infantry off a derrick under fire left
-	* the building flashing and ticking with nobody on it. */
+	* the building flashing and ticking with nobody on it.
+	*
+	* The pair of flags that replaced it was no better. m_facingComplete is only set by isFacing(),
+	* which the update asks once, in the frame after the turn starts; the turn is still going then,
+	* so preparation begins and nothing asks again. Every capture that needed a real turn kept the
+	* exemption for its whole length. The AI's own state is the only record of whether the unit is
+	* turning right now, and a retreat order replaces it. */
 //-------------------------------------------------------------------------------------------------
-inline Bool abilityBrokenByMovement( Bool isMoving, Bool powerInUse, Bool facingInitiated, Bool facingComplete )
+inline Bool abilityBrokenByMovement( Bool isMoving, Bool powerInUse, Bool isTurningToFace )
 {
-	return isMoving && powerInUse && !( facingInitiated && !facingComplete );
+	return isMoving && powerInUse && !isTurningToFace;
 }
 
 //-------------------------------------------------------------------------------------------------
