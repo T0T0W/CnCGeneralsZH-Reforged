@@ -8152,10 +8152,7 @@ TEST(the_difficulty_ladder_climbs_in_every_direction_it_should)
 		CHECK( upper.m_retreatIndividualUnits >= lower.m_retreatIndividualUnits );
 		CHECK( upper.m_retreatTeams >= lower.m_retreatTeams );
 		CHECK( upper.m_useInfluenceMapForAttackLane >= lower.m_useInfluenceMapForAttackLane );
-		// ... and it is off at every rung today: measured against itself with the lane as the only
-		// difference and both seats played, it went 7-9 over 32 matches. See the note on the table
-		// in AI.cpp before switching it back on.
-		CHECK( !upper.m_useInfluenceMapForAttackLane );
+		CHECK( upper.m_economyBuildings >= lower.m_economyBuildings );
 		CHECK( upper.m_focusFire >= lower.m_focusFire );
 		CHECK( upper.m_savesSciencePoints >= lower.m_savesSciencePoints );
 		CHECK( upper.m_adaptiveHarvesters >= lower.m_adaptiveHarvesters );
@@ -8184,51 +8181,103 @@ TEST(the_difficulty_ladder_climbs_in_every_direction_it_should)
 	 tanks. */
 TEST(counter_score_answers_what_the_enemy_actually_fields)
 {
-	AIEnemyComposition allAir;
-	allAir.m_air = 1.0f;
-
-	AITeamCapability aa;      aa.m_hitsAir = TRUE;
-	AITeamCapability tanks;   tanks.m_hitsGround = TRUE; tanks.m_prefersVehicles = TRUE;
-
-	// against an all-air enemy the AA team is the answer and the tank team is not
-	CHECK_NEAR( 1.0f, aiCounterScore( allAir, aa ), 0.0001f );
-	CHECK_NEAR( 0.0f, aiCounterScore( allAir, tanks ), 0.0001f );
-
-	// against an all-armour enemy it is the other way round: anti-tank scores its share plus the
-	// quarter share every ground-capable team gets
-	AIEnemyComposition allArmour;
-	allArmour.m_armour = 1.0f;
-	CHECK_NEAR( 1.0f, aiCounterScore( allArmour, tanks ), 0.0001f );
-	CHECK_NEAR( 0.0f, aiCounterScore( allArmour, aa ), 0.0001f );
-
-	// a team that can only shoot the ground is worth something against a ground army, but far less
-	// than one built for it
-	AITeamCapability generic;  generic.m_hitsGround = TRUE;
-	CHECK_NEAR( 0.25f, aiCounterScore( allArmour, generic ), 0.0001f );
-	CHECK( aiCounterScore( allArmour, generic ) < aiCounterScore( allArmour, tanks ) );
+	// the matchups are the score: a team whose units beat the visible army money for money is the
+	// answer, and one whose units lose to it is not
+	AIEnemyComposition ground;
+	ground.m_armour = 1.0f;
+	AITeamCapability antiTank;  antiTank.m_answer = 0.9f;
+	AITeamCapability rifles;    rifles.m_answer = 0.2f;
+	CHECK_NEAR( 0.9f, aiCounterScore( ground, antiTank ), 0.0001f );
+	CHECK( aiCounterScore( ground, antiTank ) > aiCounterScore( ground, rifles ) );
 
 	// stealth is the case A1 created: the AI stopped shooting through fog, so a detector earns its
 	// place the moment the enemy fields anything that can hide
 	AIEnemyComposition halfStealth;
 	halfStealth.m_armour = 1.0f;
 	halfStealth.m_stealth = 0.5f;
-	AITeamCapability detector;  detector.m_hitsGround = TRUE; detector.m_detectsStealth = TRUE;
-	CHECK( aiCounterScore( halfStealth, detector ) > aiCounterScore( halfStealth, generic ) );
+	AITeamCapability detector = rifles;
+	detector.m_detectsStealth = TRUE;
+	CHECK( aiCounterScore( halfStealth, detector ) > aiCounterScore( halfStealth, rifles ) );
 
 	// seen nothing yet -> no opinion, whatever the team is. The static priority then decides,
 	// which is EA's behaviour and the right fallback.
 	AIEnemyComposition unknown;
-	CHECK_NEAR( 0.0f, aiCounterScore( unknown, aa ), 0.0001f );
-	CHECK_NEAR( 0.0f, aiCounterScore( unknown, tanks ), 0.0001f );
+	AITeamCapability nothingSeen;
+	CHECK_NEAR( 0.0f, aiCounterScore( unknown, nothingSeen ), 0.0001f );
 
 	// the score is a share, so it never leaves 0..1 however many terms a team answers
-	AIEnemyComposition mixed;
-	mixed.m_air = 0.4f; mixed.m_armour = 0.4f; mixed.m_infantry = 0.2f; mixed.m_stealth = 0.3f;
 	AITeamCapability everything;
-	everything.m_hitsAir = everything.m_hitsGround = everything.m_detectsStealth = TRUE;
-	everything.m_prefersVehicles = everything.m_prefersInfantry = TRUE;
-	CHECK( aiCounterScore( mixed, everything ) <= 1.0f );
-	CHECK( aiCounterScore( mixed, everything ) > aiCounterScore( mixed, generic ) );
+	everything.m_answer = 1.0f;
+	everything.m_detectsStealth = TRUE;
+	CHECK_NEAR( 1.0f, aiCounterScore( halfStealth, everything ), 0.0001f );
+}
+
+
+/** The shot arithmetic under every matchup, checked against numbers read straight out of Weapon.ini
+	 and the Object INI rather than numbers made up to fit. */
+TEST(frames_to_kill_counts_shots_delays_and_reloads)
+{
+	// Crusader on Crusader: 480 health, CrusaderTankGun does 60 a shell every 2000 ms (60 frames),
+	// no clip. Eight shells, each paying one delay.
+	AIShotPattern crusaderGun;
+	crusaderGun.m_damagePerShot = 60.0f;
+	crusaderGun.m_delayFrames = 60.0f;
+	CHECK_NEAR( 480.0f, aiFramesToKill( 480.0f, crusaderGun ), 0.001f );
+
+	// the same shell through HumanArmor's 10% on a 120-health Rebel: twenty shells, not two
+	AIShotPattern crusaderOnInfantry = crusaderGun;
+	crusaderOnInfantry.m_damagePerShot = 6.0f;
+	CHECK_NEAR( 1200.0f, aiFramesToKill( 120.0f, crusaderOnInfantry ), 0.001f );
+
+	// a clip of two with a long reload: the third shot waits for the reload, not the delay
+	AIShotPattern clip;
+	clip.m_damagePerShot = 50.0f;
+	clip.m_delayFrames = 10.0f;
+	clip.m_clipSize = 2;
+	clip.m_reloadFrames = 100.0f;
+	CHECK_NEAR( 120.0f, aiFramesToKill( 150.0f, clip ), 0.001f );
+
+	// a sniper's aim is paid once, before the first shot
+	clip.m_openingFrames = 15.0f;
+	CHECK_NEAR( 135.0f, aiFramesToKill( 150.0f, clip ), 0.001f );
+
+	// overkill is one shot, and it still pays its delay: two one-shot kills tie instead of both
+	// reading as instant
+	CHECK_NEAR( 60.0f, aiFramesToKill( 10.0f, crusaderGun ), 0.001f );
+
+	// a weapon the armour ignores never kills
+	AIShotPattern harmless;
+	harmless.m_delayFrames = 30.0f;
+	CHECK_EQ( AI_CANNOT_KILL, aiFramesToKill( 480.0f, harmless ) );
+}
+
+
+/** One pairing as a score: money for money, log scale, and the two directions of it sum to one. */
+TEST(matchup_score_is_money_for_money)
+{
+	// an even fight at an even price is an even trade
+	CHECK_NEAR( 0.5f, aiMatchupScore( 480.0f, 480.0f, 900.0f, 900.0f ), 0.0001f );
+
+	// twice as fast for the same money is better, and the other side of it is worse by the same amount
+	const Real faster = aiMatchupScore( 240.0f, 480.0f, 900.0f, 900.0f );
+	const Real slower = aiMatchupScore( 480.0f, 240.0f, 900.0f, 900.0f );
+	CHECK( faster > 0.5f );
+	CHECK_NEAR( 1.0f, faster + slower, 0.0001f );
+
+	// sixteen times better is as good as it gets
+	CHECK_NEAR( 1.0f, aiMatchupScore( 30.0f, 480.0f, 900.0f, 900.0f ), 0.0001f );
+	CHECK_NEAR( 1.0f, aiMatchupScore( 1.0f, 480.0f, 900.0f, 900.0f ), 0.0001f );
+
+	// an Overlord that kills twice as fast for twice the price is no bargain
+	CHECK_NEAR( 0.5f, aiMatchupScore( 240.0f, 480.0f, 1800.0f, 900.0f ), 0.0001f );
+
+	// a unit that cannot hurt the target answers none of it; one the target cannot hurt answers all
+	CHECK_NEAR( 0.0f, aiMatchupScore( AI_CANNOT_KILL, 480.0f, 900.0f, 900.0f ), 0.0001f );
+	CHECK_NEAR( 1.0f, aiMatchupScore( 480.0f, AI_CANNOT_KILL, 900.0f, 900.0f ), 0.0001f );
+	CHECK_NEAR( 0.0f, aiMatchupScore( AI_CANNOT_KILL, AI_CANNOT_KILL, 900.0f, 900.0f ), 0.0001f );
+
+	// a free unit has no price to weigh, so only the kill times count
+	CHECK_NEAR( faster, aiMatchupScore( 240.0f, 480.0f, 0.0f, 900.0f ), 0.0001f );
 }
 
 
@@ -8522,6 +8571,92 @@ TEST(a_cash_hoard_shortens_the_wait_but_only_so_far)
 }
 
 
+/** Faster waits do not spend a hoard when there is nothing left to build.  On Twilight Flame a
+	 brutal USA banked 117,206 with every team its script allowed already on the map: the fifth wave
+	 teams allow one copy each, so it only ever replaced losses.  A hoard buys more copies. */
+TEST(a_cash_hoard_allows_more_copies_of_a_team)
+{
+	// under two thresholds the data's limit stands
+	CHECK_EQ( 1, aiHoardAllowedTeamInstances( 1, 4000, 4000 ) );
+	CHECK_EQ( 1, aiHoardAllowedTeamInstances( 1, 7999, 4000 ) );
+
+	// one more copy per two thresholds banked
+	CHECK_EQ( 2, aiHoardAllowedTeamInstances( 1, 8000, 4000 ) );
+	CHECK_EQ( 7, aiHoardAllowedTeamInstances( 5, 16000, 4000 ) );
+
+	// and three more at most, however big the pile gets
+	CHECK_EQ( 4, aiHoardAllowedTeamInstances( 1, 24000, 4000 ) );
+	CHECK_EQ( 4, aiHoardAllowedTeamInstances( 1, 999999, 4000 ) );
+
+	// a team the data never lets the AI build stays unbuildable
+	CHECK_EQ( 0, aiHoardAllowedTeamInstances( 0, 999999, 4000 ) );
+
+	// no threshold is the bottom rung, and EA's limit
+	CHECK_EQ( 1, aiHoardAllowedTeamInstances( 1, 999999, 0 ) );
+}
+
+
+/** B4, second attempt.  The cash map aimed at the enemy's money and walked past his army, 7-9; this
+	 one counts the guns the AI knows about along each approach and takes the quietest. */
+TEST(an_attack_takes_the_least_defended_lane)
+{
+	const Real quiet[3] = { 5000.0f, 800.0f, 2400.0f };
+	CHECK_EQ( 1, aiLeastDefendedLane( quiet, 3, 0 ) );
+
+	// nothing known anywhere: the lane the script asked for
+	const Real unknown[3] = { 0.0f, 0.0f, 0.0f };
+	CHECK_EQ( 2, aiLeastDefendedLane( unknown, 3, 2 ) );
+
+	// a tie with the asked-for lane keeps it
+	const Real tie[3] = { 800.0f, 800.0f, 2400.0f };
+	CHECK_EQ( 0, aiLeastDefendedLane( tie, 3, 0 ) );
+
+	// a lane the map does not have is never taken, however quiet it reads
+	const Real missing[3] = { 3000.0f, -1.0f, 1000.0f };
+	CHECK_EQ( 2, aiLeastDefendedLane( missing, 3, 0 ) );
+
+	// ... and when the asked-for lane is the missing one, the quietest that exists
+	const Real noCenter[3] = { -1.0f, 900.0f, 400.0f };
+	CHECK_EQ( 2, aiLeastDefendedLane( noCenter, 3, 0 ) );
+
+	// no lanes at all: the script's
+	const Real none[3] = { -1.0f, -1.0f, -1.0f };
+	CHECK_EQ( 1, aiLeastDefendedLane( none, 3, 1 ) );
+
+}
+
+
+/** C2, second attempt: parked attack teams leave together once they are a wave, or once they have
+	 waited long enough - and never on a threshold measured against the enemy. */
+TEST(a_parked_wave_goes_when_it_is_worth_sending_or_has_waited_long_enough)
+{
+	const Real WAVE = 6000.0f;
+	const UnsignedInt MAX_HOLD = 2700;
+
+	// a lone artillery piece waits for company
+	CHECK( !aiReleaseWave( 900.0f, WAVE, 100, MAX_HOLD ) );
+
+	// a wave's worth goes at once
+	CHECK( aiReleaseWave( 6000.0f, WAVE, 100, MAX_HOLD ) );
+	CHECK( aiReleaseWave( 9000.0f, WAVE, 0, MAX_HOLD ) );
+
+	// and a trickle still attacks eventually
+	CHECK( aiReleaseWave( 900.0f, WAVE, MAX_HOLD, MAX_HOLD ) );
+
+	// nothing parked that can fight: nothing to send, however long
+	CHECK( !aiReleaseWave( 0.0f, WAVE, MAX_HOLD * 10, MAX_HOLD ) );
+}
+
+
+TEST(the_ladder_switches_on_reading_the_map_and_buying_at_the_top)
+{
+	TAiData data;
+	CHECK( data.m_skill[ AISKILL_BRUTAL ].m_useInfluenceMapForAttackLane );
+	CHECK( data.m_skill[ AISKILL_BRUTAL ].m_economyBuildings );
+	CHECK( !data.m_skill[ AISKILL_EASY ].m_economyBuildings );
+}
+
+
 /** D8: role is the second axis - difficulty says how well the AI plays, role says what it is
 	 trying to do.  The property that has to hold is that a role is a *preference*, not a bonus: they
 	 all spend the same money, they spend it at different moments and on different things.  If one
@@ -8564,23 +8699,21 @@ TEST(every_role_commits_at_its_own_moment_and_none_of_them_is_a_bonus)
 	 itself orders.  The exemption used to be "the facing has started", a flag that is never cleared
 	 once set, so after the first turn nothing the unit did could break the capture: an AI ordering
 	 its riflemen to run from a fight left the derrick they were on flashing and sounding its
-	 capture tick with nobody there, and it changed hands anyway. */
+	 capture tick with nobody there, and it changed hands anyway.  The flag pair that followed had the
+	 same hole whenever the turn took more than a frame, so the exemption is now the AI state itself. */
 TEST(walking_away_breaks_a_capture_but_turning_towards_it_does_not)
 {
 	// standing on the building, working: nothing to break
-	CHECK( !abilityBrokenByMovement( FALSE, TRUE, TRUE, TRUE ) );
+	CHECK( !abilityBrokenByMovement( FALSE, TRUE, FALSE ) );
 
 	// the ability's own turn towards the target: moving, but not leaving
-	CHECK( !abilityBrokenByMovement( TRUE, TRUE, TRUE, FALSE ) );
+	CHECK( !abilityBrokenByMovement( TRUE, TRUE, TRUE ) );
 
-	// the turn is over and the unit is moving again: it has left, whoever ordered it
-	CHECK( abilityBrokenByMovement( TRUE, TRUE, TRUE, TRUE ) );
-
-	// an ability that never faces its target (NeedToFaceTarget = No) is broken by movement too
-	CHECK( abilityBrokenByMovement( TRUE, TRUE, FALSE, FALSE ) );
+	// a retreat order replaced the turn: it has left, whoever ordered it
+	CHECK( abilityBrokenByMovement( TRUE, TRUE, FALSE ) );
 
 	// and nothing is broken when no power is up: walking is just walking
-	CHECK( !abilityBrokenByMovement( TRUE, FALSE, TRUE, TRUE ) );
+	CHECK( !abilityBrokenByMovement( TRUE, FALSE, FALSE ) );
 }
 
 /* Every AI seat a lobby offers has to survive the trip to the other machines.  The host writes the

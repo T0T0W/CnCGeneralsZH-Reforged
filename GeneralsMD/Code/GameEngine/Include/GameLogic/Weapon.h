@@ -437,6 +437,8 @@ public:
 	inline WeaponPrefireType getPrefireType() const { return m_prefireType; }
 	inline Bool getAutoReloadsClip() const { return m_reloadType == AUTO_RELOAD; }
 	inline Int getClipSize() const { return m_clipSize; }
+	inline Int getMinDelayBetweenShots() const { return m_minDelayBetweenShots; }	///< frames; unlike getDelayBetweenShots, draws no random number
+	inline Int getMaxDelayBetweenShots() const { return m_maxDelayBetweenShots; }
 	inline Int getContinuousFireOneShotsNeeded() const { return m_continuousFireOneShotsNeeded; }
 	inline Int getContinuousFireTwoShotsNeeded() const { return m_continuousFireTwoShotsNeeded; }
 	inline UnsignedInt getContinuousFireCoastFrames() const { return m_continuousFireCoastFrames; }

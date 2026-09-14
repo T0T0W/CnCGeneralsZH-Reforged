@@ -230,7 +230,7 @@ UpdateSleepTime SpecialAbilityUpdate::update( void )
     onExit( false );
     return calcSleepTime();
   }
-	if( abilityBrokenByMovement( ai->isMoving(), isPowerCurrentlyInUse(), m_facingInitiated, m_facingComplete ) )
+	if( abilityBrokenByMovement( ai->isMoving(), isPowerCurrentlyInUse(), ai->isTurningToFace() ) )
   {
 		// Capture is broken by movement just as if we had been given a direct command (above check).
 		// However, the time of Facing the target is considered isPowerCurrentlyInUse, but isMoving.  So let that slide.
