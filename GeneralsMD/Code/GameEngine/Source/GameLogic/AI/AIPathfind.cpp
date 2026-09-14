@@ -11302,6 +11302,11 @@ Bool Pathfinder::isAttackViewBlockedByObstacle(const Object* attacker, const Coo
 	}
 	if (w)
 	{
+		// A contact weapon needs no line of sight: a suicide bomber pressed against a building's
+		// geometry was told its view was blocked, went looking for a clear spot, and never went off.
+		if (w->isContactWeapon())
+			return false;
+
 		Bool viewBlocked;
 		if (victim)
 			viewBlocked = !w->isClearGoalFiringLineOfSightTerrain(attacker, attackerPos, victim);

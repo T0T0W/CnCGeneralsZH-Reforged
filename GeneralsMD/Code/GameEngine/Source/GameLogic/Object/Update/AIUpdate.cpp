@@ -5140,7 +5140,8 @@ void AIUpdateInterface::privateAttackPosition( const Coord3D *pos, Int maxShotsT
 	// this fixes an obscure bug with mine-clearing: if you tell someone to clear mines and put the centerpoint
 	// inside a building, the dozer/worker will just go thru the building to that spot. ick. so if you find that
 	// this clause (below) is problematic, you'll probbaly have to find another way to fix this mine-clearing bug. (srj)
-	if (weapon && weapon->isContactWeapon() && !isPathAvailable(&localPos))
+	// Already in range means there is nothing to walk to: the weapon goes off where it stands.
+	if (weapon && weapon->isContactWeapon() && !weapon->isWithinAttackRange(getObject(), &localPos) && !isPathAvailable(&localPos))
 	{
 		FindPositionOptions fpOptions;
 		fpOptions.minRadius = 0.0f;
