@@ -145,7 +145,8 @@ TEST(engineshader_fades_the_water_reflection_towards_white_by_the_texture_factor
 {
 	std::string hlsl;
 	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_WATER_REFLECTION, plain_pipeline(), hlsl));
-	CHECK(contains(hlsl, "float4 current = 1.0 - saturate((1.0 - texel0) * TextureFactor.a);"));
+	CHECK(contains(hlsl, "float coverage = saturate((1.0 - dot(texel0.rgb, float3(0.333333, 0.333333, 0.333333))) * 4.0);"));
+	CHECK(contains(hlsl, "float4 current = float4((1.0 - TextureFactor.a * coverage).xxx, TextureFactor.a);"));
 	CHECK(!contains(hlsl, "* texel3"));
 }
 

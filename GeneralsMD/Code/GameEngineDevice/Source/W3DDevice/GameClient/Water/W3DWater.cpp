@@ -100,7 +100,7 @@
 #define SEA_REFLECTION_SIZE 256		//dimensions of reflection texture
 #define WATER_REFLECTION_SIZE 512	//dimensions of the reflection texture laid over map water
 #define WATER_REFLECTION_AREA_MARGIN 0.05f	//slack around the water's screen area, so filtering at its edge reads inside it
-#define WATER_REFLECTION_STRENGTH 0.8f	//how far a reflected object darkens the water under it
+#define WATER_REFLECTION_STRENGTH 0.55f	//how far a reflected object darkens the water under it
 #define WATER_REFLECTION_SKY_COLOR Vector3(1.0f,1.0f,1.0f)	//white, so where nothing stands the water keeps its own colour
 
 #define SEA_BUMP_SCALE		(0.06f)		//scales the du/dv offsets stored in bump map (~ amount to perturb)
@@ -1060,9 +1060,15 @@ void WaterRenderObjClass::ReAcquireResources(void)
 		}
 		shader =
 			"ps.1.1\n \
+			def c1, 0.333333, 0.333333, 0.333333, 0\n\
 			tex t0 ; the mirrored scene, looked up through the projected stage, white where nothing stands\n\
-			mul r0, 1-t0, c0 ; how much of the reflection gets through\n\
-			mov r0, 1-r0 ; multiplied into the water, so white leaves it as it was\n";
+			dp3 r1.rgb, t0, c1 ; how bright the mirror is here\n\
+			mov r1.rgb, 1-r1 ; how far that is from the white it was cleared to\n\
+			add r1.rgb, r1, r1\n\
+			add r1.rgb, r1, r1 ; four times and clamped, so anything standing there counts in full whatever its colour\n\
+			mul r0.rgb, r1, c0 ; darkened by the strength\n\
+			mov r0.rgb, 1-r0 ; multiplied into the water, so white leaves it as it was\n\
+			+mov r0.a, c0\n";
 		hr = D3DXAssembleShader( shader, (UINT)strlen(shader), NULL, NULL, 0, &compiledShader, NULL);
 		if (hr==0) {
 			hr = 	DX8Wrapper::_Get_D3D_Device()->CreatePixelShader((DWORD*)compiledShader->GetBufferPointer(), &m_reflectionPixelShader);

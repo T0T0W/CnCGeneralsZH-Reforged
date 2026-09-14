@@ -2022,7 +2022,7 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	}
 
 	Int pass;
- 	for (pass=0; pass<devicePasses; pass++) {
+ 	for (pass=0; pass<devicePasses && !ShaderClass::Is_Backface_Culling_Inverted(); pass++) {	//a water mirror leaves the ground out, see the shorelines below
 #ifdef TIMING_TESTS
 #endif
 		if (!doMultiPassWireFrame)	//multi-pass wireframe doesn't use regular shaders.
@@ -2040,24 +2040,6 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			{
 				static int count = 0;
 				count++;
-				if (ShaderClass::Is_Backface_Culling_Inverted())
-				{	// The draw window reaches well past what the mirror sees, and a mirror frame has
-					// nothing else to spend on a block of ground that could never show in the water.
-					// A block split across the window's wrap seam is not worth the arithmetic and is drawn.
-					const Int cellXMin = getXWithOrigin(i*VERTEX_BUFFER_TILE_LENGTH)+m_map->getDrawOrgX()-m_map->getBorderSizeInline();
-					const Int cellXMax = getXWithOrigin((i+1)*VERTEX_BUFFER_TILE_LENGTH-1)+m_map->getDrawOrgX()+1-m_map->getBorderSizeInline();
-					const Int cellYMin = getYWithOrigin(j*VERTEX_BUFFER_TILE_LENGTH)+m_map->getDrawOrgY()-m_map->getBorderSizeInline();
-					const Int cellYMax = getYWithOrigin((j+1)*VERTEX_BUFFER_TILE_LENGTH-1)+m_map->getDrawOrgY()+1-m_map->getBorderSizeInline();
-					if (cellXMax > cellXMin && cellYMax > cellYMin)
-					{
-						AABoxClass block;
-						block.Init_Min_Max(
-							Vector3((cellXMin-1)*MAP_XY_FACTOR, (cellYMin-1)*MAP_XY_FACTOR, m_minHeight),
-							Vector3((cellXMax+1)*MAP_XY_FACTOR, (cellYMax+1)*MAP_XY_FACTOR, m_maxHeight));
-						if (rinfo.Camera.Cull_Box(block))
-							continue;
-					}
-				}
 				Int numPolys = VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2;
 				Int numVertex = (VERTEX_BUFFER_TILE_LENGTH*2)*(VERTEX_BUFFER_TILE_LENGTH*2);
 				if (HALF_RES_MESH) {
@@ -2095,12 +2077,18 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		if (pass)	//shader was applied at least once?
  			W3DShaderManager::resetShader(st);
 
-		//Draw feathered shorelines
-		renderShoreLines(&rinfo.Camera);
+		// A water mirror leaves the ground out, and everything drawn onto it.  The reflection darkens
+		// water wherever anything stands in the mirror, and the banks would lay a dark band along
+		// every shore; the ground was also most of what the mirror drew.
+		if (!ShaderClass::Is_Backface_Culling_Inverted())
+		{
+			//Draw feathered shorelines
+			renderShoreLines(&rinfo.Camera);
 
-		//Do additional pass over any tiles that have 3 textures blended together.
-		if (TheGlobalData->m_use3WayTerrainBlends)
-			renderExtraBlendTiles();
+			//Do additional pass over any tiles that have 3 textures blended together.
+			if (TheGlobalData->m_use3WayTerrainBlends)
+				renderExtraBlendTiles();
+		}
 
 		Int yCoordMin = m_map->getDrawOrgY();
 		Int yCoordMax = m_y+m_map->getDrawOrgY()-1;

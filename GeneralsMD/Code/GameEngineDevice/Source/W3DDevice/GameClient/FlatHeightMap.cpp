@@ -529,6 +529,11 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
  	if (m_disableTextures)
  		devicePasses=1;	//force to 1 lighting-only pass
 
+	// A water mirror leaves the ground out: the reflection darkens water wherever anything stands in
+	// the mirror, and the banks would lay a dark band along every shore.
+	if (ShaderClass::Is_Backface_Culling_Inverted())
+		devicePasses=0;
+
  	//Specify all textures that this shader may need.
  	W3DShaderManager::setTexture(0,m_stageZeroTexture);
 	if (m_shroud && rinfo.Additional_Pass_Count() && !m_disableTextures)
@@ -589,7 +594,8 @@ void FlatHeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 #if 1
 
 	//Draw feathered shorelines
-	renderShoreLines(&rinfo.Camera);
+	if (!ShaderClass::Is_Backface_Culling_Inverted())
+		renderShoreLines(&rinfo.Camera);
 
 #ifdef DO_ROADS
 	DX8Wrapper::Set_Texture(0,NULL);
