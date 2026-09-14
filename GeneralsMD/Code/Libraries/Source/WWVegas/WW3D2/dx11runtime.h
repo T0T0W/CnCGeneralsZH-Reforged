@@ -49,6 +49,9 @@ bool Direct3D11_Is_Enabled();
 bool Direct3D11_Create(HWND window, unsigned width, unsigned height);
 void Direct3D11_Release();
 
+// The swap chain's buffers at a new resolution.  Nothing if they already are that size.
+bool Direct3D11_Resize(unsigned width, unsigned height);
+
 // True only between a successful Create and the Release that follows it.
 bool Direct3D11_Is_Active();
 

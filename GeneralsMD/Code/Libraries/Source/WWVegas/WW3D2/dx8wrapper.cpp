@@ -521,6 +521,8 @@ bool DX8Wrapper::Init(void * hwnd, bool lite)
 	return(true);
 }
 
+static void restore_desktop_display();
+
 void DX8Wrapper::Shutdown(void)
 {
 	// Before the device goes: the inventory is read off it, and the device owns every shader the
@@ -528,6 +530,7 @@ void DX8Wrapper::Shutdown(void)
 	FixedFunctionProbe_Dump("ffprobe.txt");
 	CombinerShaderCache_Release();
 	Direct3D11_Release();
+	restore_desktop_display();
 
 	if (D3DDevice) {
 
@@ -864,6 +867,66 @@ bool DX8Wrapper::Create_Device(void)
 	*/
 	Do_Onetime_Device_Dependent_Inits();
 	return true;
+}
+
+// What the fullscreen display under the Direct3D 11 picture has changed on the desktop, so leaving
+// the game can put it back.  The gamma is the desktop's own ramp, read before the game's first one.
+static bool DisplayModeChanged = false;
+static bool DesktopGammaSaved = false;
+static bool GameGammaSet = false;
+static D3DGAMMARAMP DesktopGammaRamp;
+static D3DGAMMARAMP GameGammaRamp;
+
+static void set_desktop_gamma(D3DGAMMARAMP * ramp)
+{
+	HDC hdc = GetDC(NULL);
+	if (hdc) {
+		SetDeviceGammaRamp(hdc, ramp);
+		ReleaseDC(NULL, hdc);
+	}
+}
+
+static void restore_desktop_display()
+{
+	if (DesktopGammaSaved) {
+		set_desktop_gamma(&DesktopGammaRamp);
+	}
+	if (DisplayModeChanged) {
+		ChangeDisplaySettingsEx(NULL, NULL, NULL, 0, NULL);
+		DisplayModeChanged = false;
+	}
+}
+
+void DX8Wrapper::Apply_Fullscreen_Display(bool shown)
+{
+	const bool owns_display = !IsWindowed && Direct3D11_Present_Is_Enabled();
+	if (!owns_display || !shown) {
+		restore_desktop_display();
+		if (owns_display) {
+			::ShowWindow(_Hwnd, SW_MINIMIZE);
+		}
+		return;
+	}
+
+	DEVMODE mode;
+	ZeroMemory(&mode, sizeof(mode));
+	mode.dmSize = sizeof(mode);
+	mode.dmPelsWidth = ResolutionWidth;
+	mode.dmPelsHeight = ResolutionHeight;
+	mode.dmBitsPerPel = BitDepth;
+	mode.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL;
+	if (ChangeDisplaySettingsEx(NULL, &mode, NULL, CDS_FULLSCREEN, NULL) == DISP_CHANGE_SUCCESSFUL) {
+		DisplayModeChanged = true;
+	}
+
+	if (::IsIconic(_Hwnd)) {
+		::ShowWindow(_Hwnd, SW_RESTORE);
+	}
+	::SetWindowPos(_Hwnd, HWND_TOPMOST, 0, 0, ResolutionWidth, ResolutionHeight, SWP_SHOWWINDOW);
+
+	if (GameGammaSet) {
+		set_desktop_gamma(&GameGammaRamp);
+	}
 }
 
 bool DX8Wrapper::Reset_Device(bool reload_assets)
@@ -1221,6 +1284,23 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 #endif
 	//must be either resetting existing device or creating a new one.
 	WWASSERT(reset_device || D3DDevice == NULL);
+
+	// The Direct3D 11 device is built beside the Direct3D 9 one rather than instead of it: 236
+	// places still call the D3D9 device directly, so taking it away would be a black screen.  It
+	// is on unless -d3d9 or -headless turned it off.  It comes first, so everything the Direct3D 9
+	// device makes has a Direct3D 11 copy, and only with a new device: a device refused at startup
+	// and created on a reset (an Alt-Tab) drew every building already standing as its shadow alone.
+	if (!reset_device && Direct3D11_Is_Enabled() && !Direct3D11_Is_Active()) {
+		const bool created = Direct3D11_Create((HWND)_Hwnd, ResolutionWidth, ResolutionHeight);
+		WWDEBUG_SAY(("-dx11: Direct3D 11 device %s\n", created ? "created" : "refused"));
+	}
+
+	// While Direct3D 11 presents, the Direct3D 9 device is windowed even in a fullscreen game.  A
+	// Direct3D 9 device that owns the display refuses the Direct3D 11 swap chain its window, which
+	// kept every fullscreen game on the old picture.  The mode goes on before the device is made or
+	// reset, so it is made in the mode it will run in.
+	const bool device_windowed = IsWindowed || Direct3D11_Present_Is_Enabled();
+	Apply_Fullscreen_Display(true);
 	
 	/*
 	** Initialize values for D3DPRESENT_PARAMETERS members. 	
@@ -1229,13 +1309,13 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 
 	_PresentParameters.BackBufferWidth = ResolutionWidth;
 	_PresentParameters.BackBufferHeight = ResolutionHeight;
-	_PresentParameters.BackBufferCount = IsWindowed ? 1 : 2;
+	_PresentParameters.BackBufferCount = device_windowed ? 1 : 2;
 	
 	_PresentParameters.MultiSampleType = D3DMULTISAMPLE_NONE;
 	//I changed this to discard all the time (even when full-screen) since that the most efficient. 07-16-03 MW:
 	_PresentParameters.SwapEffect = D3DSWAPEFFECT_DISCARD;//IsWindowed ? D3DSWAPEFFECT_DISCARD : D3DSWAPEFFECT_FLIP;		// Shouldn't this be D3DSWAPEFFECT_FLIP?
 	_PresentParameters.hDeviceWindow = _Hwnd;
-	_PresentParameters.Windowed = IsWindowed;
+	_PresentParameters.Windowed = device_windowed;
 
 	_PresentParameters.EnableAutoDepthStencil = TRUE;				// Driver will attempt to match Z-buffer depth
 	_PresentParameters.Flags=0;											// We're not going to lock the backbuffer
@@ -1255,7 +1335,7 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 	** - if in windowed mode, the backbuffer must use the current display format.
 	** - the depth buffer must use 
 	*/
-	if (IsWindowed) {
+	if (device_windowed) {
 
 		D3DDISPLAYMODE desktop_mode;
 		::ZeroMemory(&desktop_mode, sizeof(D3DDISPLAYMODE));
@@ -1362,18 +1442,7 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 
 	WWDEBUG_SAY(("Reset/Create_Device done, reset_device=%d, restore_assets=%d\n", reset_device, restore_assets));
 
-	// The Direct3D 11 device is built beside the Direct3D 9 one rather than instead of it: 236
-	// places still call the D3D9 device directly, so taking it away would be a black screen.  It
-	// is on unless -d3d9 or -headless turned it off.  Only a new device gets one: a buffer or texture
-	// made before this point has no Direct3D 11 copy, so a device that was refused at startup and
-	// then created on a reset (an Alt-Tab out of fullscreen) drew every building already standing
-	// as nothing but its shadow.
-	if (!reset_device && Direct3D11_Is_Enabled() && !Direct3D11_Is_Active()) {
-		const bool created = Direct3D11_Create((HWND)_Hwnd,
-			_PresentParameters.BackBufferWidth, _PresentParameters.BackBufferHeight);
-		WWDEBUG_SAY(("-dx11: Direct3D 11 device %s\n", created ? "created" : "refused"));
-	}
-
+	Direct3D11_Resize(ResolutionWidth, ResolutionHeight);
 	return ret;
 }
 
@@ -1539,7 +1608,10 @@ bool DX8Wrapper::Set_Device_Resolution(int width,int height,int bits,int windowe
 			}
 		}
 #pragma message("TODO: support changing windowed status and changing the bit depth")
-		return Reset_Device();
+		Apply_Fullscreen_Display(true);
+		const bool reset = Reset_Device();
+		Direct3D11_Resize(ResolutionWidth, ResolutionHeight);
+		return reset;
 	} else {
 		return false;
 	}
@@ -2014,8 +2086,15 @@ void DX8Wrapper::End_Scene(bool flip_frames)
 			// device (DEVICELOST on the next call, then a null shroud surface when a match starts).
 			// Direct3D11_End_Scene has already shown the frame.
 			//
+			// Nothing presents on the Direct3D 9 device then, so the lost device Present reports has to
+			// be asked for: a display mode change loses a windowed device too, and every view update
+			// waits for TestCooperativeLevel to say D3D_OK before it draws anything.
+			//
 			if (Direct3D11_Present_Is_Enabled()) {
-				hr = D3D_OK;
+				hr = _Get_D3D_Device()->TestCooperativeLevel();
+				if (hr == D3DERR_DEVICENOTRESET) {
+					hr = D3DERR_DEVICELOST;
+				}
 			} else {
 				hr=_Get_D3D_Device()->Present(NULL, NULL, NULL, NULL);
 			}
@@ -4207,8 +4286,22 @@ void DX8Wrapper::Set_Gamma(float gamma,float bright,float contrast,bool calibrat
 		ramp.blue[i]=(WORD) (out*65535);
 	}
 
-	if (Get_Current_Caps()->Support_Gamma())	{
+	if (Get_Current_Caps()->Support_Gamma() && !_PresentParameters.Windowed)	{
 		DX8Wrapper::_Get_D3D_Device()->SetGammaRamp(PRIMARY_SWAP_CHAIN,flag,&ramp);
+	} else if (Direct3D11_Present_Is_Enabled()) {
+		// A windowed Direct3D 9 device ignores its gamma ramp, so the fullscreen display under the
+		// Direct3D 11 picture sets the desktop's, keeps the desktop's own to give back on the way out,
+		// and puts the game's on again when the game comes back.
+		if (!DesktopGammaSaved) {
+			HDC hdc = GetDC(NULL);
+			if (hdc) {
+				DesktopGammaSaved = GetDeviceGammaRamp(hdc, &DesktopGammaRamp) != FALSE;
+				ReleaseDC(NULL, hdc);
+			}
+		}
+		GameGammaRamp = ramp;
+		GameGammaSet = true;
+		set_desktop_gamma(&GameGammaRamp);
 	} else {
 		HWND hwnd = GetDesktopWindow();
 		HDC hdc = GetDC(hwnd);

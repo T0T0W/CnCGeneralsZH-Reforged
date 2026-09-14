@@ -113,6 +113,17 @@ void Direct3D11_Release()
 	Active = false;
 }
 
+bool Direct3D11_Resize(unsigned width, unsigned height)
+{
+	if (!Active) {
+		return false;
+	}
+	if (Device.Get_Width() == width && Device.Get_Height() == height) {
+		return true;
+	}
+	return Device.Resize(width, height);
+}
+
 bool Direct3D11_Is_Active()
 {
 	return Active;

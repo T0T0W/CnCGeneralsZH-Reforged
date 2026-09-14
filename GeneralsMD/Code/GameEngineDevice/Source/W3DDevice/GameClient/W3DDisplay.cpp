@@ -677,6 +677,13 @@ void Reset_D3D_Device(bool active)
 {
 	if (TheDisplay && WW3D::Is_Initted() && !TheDisplay->getWindowed())
 	{
+		// Under the Direct3D 11 picture nothing owns the display exclusively, so leaving loses no
+		// device: the mode and the window covering it go, and come back with the game.
+		if (Direct3D11_Present_Is_Enabled())
+		{
+			DX8Wrapper::Apply_Fullscreen_Display(active);
+			return;
+		}
 		if (active)
 		{	
 			//switch back to desired mode when user alt-tabs back into game
