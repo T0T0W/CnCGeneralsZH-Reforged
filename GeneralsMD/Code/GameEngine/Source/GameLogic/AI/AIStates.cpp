@@ -5721,6 +5721,53 @@ StateReturnType AIAttackFireWeaponState::onEnter()
 
 //----------------------------------------------------------------------------------------------------------
 /**
+ * Passengers firing out of the same transport or building take turns with the others carrying the same
+ * weapon, instead of all loosing on the one frame the attack order reached them.  After the group's last
+ * shot the rest wait that shooter's reload divided by the size of the group, so five rocket soldiers in a
+ * Humvee still put five rockets out per reload, spread across it rather than stacked on one frame.  Rifles
+ * and rockets are separate groups, so a rifle never waits behind a rocket.
+ *
+ * Only a shot already fired is read, and the object walk is the same on every machine, so this adds no
+ * state of its own.
+ */
+static Bool isWaitingForPassengerTurn(const Object *passenger, const Weapon *weapon)
+{
+	const Object *container = passenger->getContainedBy();
+	if (!container || !container->getContain()->isPassengerAllowedToFire(passenger->getID()))
+		return FALSE;
+
+	const ContainedItemsList *passengers = container->getContain()->getContainedItemsList();
+	Int groupSize = 0;
+	UnsignedInt groupLastShotFrame = 0;
+	UnsignedInt groupReloadFrames = 0;
+	for (ContainedItemsList::const_iterator it = passengers->begin(); it != passengers->end(); ++it)
+	{
+		const Weapon *otherWeapon = (*it)->getCurrentWeapon();
+		if (!otherWeapon || otherWeapon->getTemplate() != weapon->getTemplate())
+			continue;
+
+		++groupSize;
+		// an empty weapon that does not reload by itself never fires again, and its next shot frame is
+		// parked at the end of time
+		if (*it == passenger || otherWeapon->getStatus() == OUT_OF_AMMO)
+			continue;
+
+		if (otherWeapon->getLastShotFrame() > groupLastShotFrame)
+		{
+			groupLastShotFrame = otherWeapon->getLastShotFrame();
+			groupReloadFrames = otherWeapon->getPossibleNextShotFrame() - groupLastShotFrame;
+		}
+	}
+
+	if (groupLastShotFrame == 0)
+		return FALSE;
+
+	UnsignedInt turnFrames = groupReloadFrames / groupSize;
+	return TheGameLogic->getFrame() - groupLastShotFrame < turnFrames;
+}
+
+//----------------------------------------------------------------------------------------------------------
+/**
  * Fire the owner's weapon once and exit.
  */
 
@@ -5786,6 +5833,12 @@ StateReturnType AIAttackFireWeaponState::update()
 		return STATE_CONTINUE;
 	} 
 	else if (status != READY_TO_FIRE)
+	{
+		return STATE_FAILURE;
+	}
+
+	// back to aiming, the same way a reload waits
+	if (isWaitingForPassengerTurn(obj, weapon))
 	{
 		return STATE_FAILURE;
 	}

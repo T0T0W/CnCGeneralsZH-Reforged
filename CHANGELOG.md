@@ -272,6 +272,11 @@ found and fixed â€” EA's own, not port damage.**
   switched off once it had finished swinging back, so the whole swing was still a firing window.
 - Passengers do not step out of a transport that is itself inside something. They would have
   appeared inside whatever was carrying it.
+- A loaded transport or a garrisoned building no longer empties every launcher on the same frame. Five
+  rocket soldiers in a Humvee used to put five rockets into a tank at once, before it could back off or
+  anyone could react. Soldiers with the same weapon now take turns across their reload: the Humvee still
+  fires five rockets a reload, one after another. Rifles keep their own turns and never wait behind the
+  rockets.
 
 ## Weapons and units that were quietly wrong
 
