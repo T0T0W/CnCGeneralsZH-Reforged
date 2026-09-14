@@ -37,6 +37,7 @@
 #include "Common/Xfer.h"
 
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/IncomingDamage.h"
 #include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/PartitionManager.h"
@@ -794,10 +795,24 @@ void TurretAI::startRotOrPitchSound()
  */
 void TurretAI::stopRotOrPitchSound()
 {
-	if (m_turretRotOrPitchSound.isCurrentlyPlaying()) 
+	if (m_turretRotOrPitchSound.isCurrentlyPlaying())
 	{
 		TheAudio->removeAudioEvent(m_turretRotOrPitchSound.getPlayingHandle());
 	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/**
+ * Only updateTurretAI starts and stops the move loop and sets the rotate look, and an EMPed or
+ * unpowered owner's AI does not update, so a turret caught mid-turn kept both for the whole outage.
+ * The next update that turns the turret starts them again.
+ */
+void TurretAI::stopTurning()
+{
+	m_playRotSound = false;
+	m_playPitchSound = false;
+	stopRotOrPitchSound();
+	getOwner()->clearModelConditionState(MODELCONDITION_TURRET_ROTATE);
 }
 
 #ifdef INTER_TURRET_DELAY
@@ -848,6 +863,11 @@ Bool TurretAI::friend_isAnyWeaponInRangeOf(const Object* o) const
 		// ignore empty slots.
 		const Weapon* w = getOwner()->getWeaponInWeaponSlot((WeaponSlotType)i);
 		if (w == NULL || !isWeaponSlotOnTurret((WeaponSlotType)i))
+			continue;
+
+		// an anti-air gun's reach must not keep a tank as the target of a ground gun that cannot reach it:
+		// the turret sat in its aim state swinging after the tank and ignored the aircraft it could hit
+		if ((w->getAntiMask() & WeaponSet::getVictimAntiMask(o)) == 0)
 			continue;
 
 		if (w->isWithinAttackRange(getOwner(), o)
@@ -990,6 +1010,7 @@ StateReturnType TurretAIAimTurretState::update()
 	Bool preventing = false;
 	TurretTargetType targetType =  turret->friend_getTurretTarget(enemy, enemyPosition);
 	Object *enemyForDistanceCheckOnly = enemy;	// Note: Do not use this anywhere except for the range check.
+	Bool aimingAtGround = (targetType != TARGET_OBJECT);	// a position, or a building; decided before enemy is nulled
 
 	Bool nothingInRange = false;
 	switch (targetType)
@@ -1029,6 +1050,15 @@ StateReturnType TurretAIAimTurretState::update()
 				return STATE_FAILURE;
 			}
 
+			// The fire state holds the round on a victim already paid for and hands back to this state, which
+			// never looks for another target, so a turret that had picked the target on its own sat silent
+			// until the booking lapsed.  Drop it; hold scans again, and its scan passes over doomed targets.
+			if (turret->friend_getTargetWasSetByIdleMood() && IncomingDamageTracker::isSpokenFor(enemy, obj->getID()))
+			{
+				turret->setTurretTargetObject(NULL, FALSE);
+				return STATE_FAILURE;
+			}
+
 			// aim turret towards enemy (turret angle is relative to its parent object)
 			if (enemy->isKindOf(KINDOF_BRIDGE)) 
 			{
@@ -1059,6 +1089,8 @@ StateReturnType TurretAIAimTurretState::update()
 				enemyAI->addTargeter(obj->getID(), true);
 
 			preventing = enemyAI && enemyAI->isTemporarilyPreventingAimSuccess();
+
+			aimingAtGround = enemy->isKindOf(KINDOF_IMMOBILE);
 
 			// don't use 'enemy' after this point, just the position. to help
 			// enforce this, we'll null it out.
@@ -1146,13 +1178,9 @@ StateReturnType TurretAIAimTurretState::update()
 				desiredPitch = turret->getMinPitch();
 			}
 			if (turret->getGroundUnitPitch() > 0) {
-				Bool adjust = false;
-				if (!enemy) {
-					adjust = true; // adjust for ground targets.
-				}
-				if (enemy && enemy->isKindOf(KINDOF_IMMOBILE)) {
-					adjust = true;
-				}
+				// enemy is always NULL by now, so testing it here raised the aim against every aircraft too:
+				// a Patriot launched 40 degrees above the helicopter it was shooting at
+				Bool adjust = aimingAtGround;
 				if (enemyAI && enemyAI->isDoingGroundMovement()) {
 					adjust = true;
 				}

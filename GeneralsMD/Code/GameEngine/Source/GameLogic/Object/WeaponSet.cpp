@@ -373,7 +373,7 @@ void WeaponSet::updateWeaponSet(const Object* obj)
 }
 
 //-------------------------------------------------------------------------------------------------
-static Int getVictimAntiMask(const Object* victim)
+Int WeaponSet::getVictimAntiMask(const Object* victim)
 {
 	if( victim->isKindOf( KINDOF_SMALL_MISSILE ) )
 	{
@@ -667,27 +667,12 @@ CanAttackResult WeaponSet::getAbleToUseWeaponAgainstTarget( AbleToAttackType att
 		if ( weaponToTestForRange )
 		{
 			hasAWeapon = TRUE;
-			if ((m_totalAntiMask & targetAntiMask) == 0)//we don't care to check for this weapon
+			// this weapon's own mask, not every weapon's together: with the combined mask, a Gattling Cannon's
+			// 400-range anti-air gun counted a tank at 300 as in range of the 225-range ground gun
+			if ((weaponToTestForRange->getAntiMask() & targetAntiMask) == 0)
 				continue;
 
-			Bool handled = FALSE;
-			ContainModuleInterface *contain = containedBy ? containedBy->getContain() : NULL;
-			if( contain && contain->isGarrisonable() && contain->isEnclosingContainerFor( source ))
-			{                                       // non enclosing garrison containers do not use firepoints. Lorenzen, 6/11/03
-				//For contained things, we need to fake-move objects to the best garrison point in order
-				//to get precise range checks.
-				Coord3D targetPos = *pos;
-				Coord3D goalPos;
-				if( contain->calcBestGarrisonPosition( &goalPos, &targetPos) )
-				{
-					withinAttackRange = weaponToTestForRange->isSourceObjectWithGoalPositionWithinAttackRange( source, &goalPos, victim, &targetPos );
-					handled = TRUE;
-				}
-			}
-			else if( victim )
-				withinAttackRange = weaponToTestForRange->isWithinAttackRange( source, victim );
-			else
-				withinAttackRange = weaponToTestForRange->isWithinAttackRange( source, pos );
+			withinAttackRange = weaponToTestForRange->isWithinAttackRangeFromFirePoint( source, victim, pos );
 			if( withinAttackRange )
 			{
 				hasAWeaponInRange = TRUE;

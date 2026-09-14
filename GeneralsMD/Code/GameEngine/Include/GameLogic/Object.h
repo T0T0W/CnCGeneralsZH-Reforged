@@ -617,6 +617,7 @@ public:
 	void setDisabled( DisabledType type );
 	void setDisabledUntil( DisabledType type, UnsignedInt frame );
 	Bool isDisabledByType( DisabledType type ) const { return TEST_DISABLEDMASK( m_disabledMask, type ); }
+	Bool isAIHaltedByDisable() const;	///< disabled in a way that stops this object's AI from updating at all
 
 	UnsignedInt getDisabledUntil( DisabledType type = DISABLED_ANY ) const;
 

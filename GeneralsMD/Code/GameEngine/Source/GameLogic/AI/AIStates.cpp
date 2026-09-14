@@ -2632,7 +2632,15 @@ StateReturnType AIAttackApproachTargetState::onEnter()
 			}
 		}
 
-		// Check here:  If we are a player, and we got to this state via an ai command (ie we auto-acquired), 
+		// A Stinger soldier is its site's weapon.  Its SlavedUpdate has no guard range, so nothing ever walks
+		// it home: a computer player's soldier followed a reversing tank across the map and stood wherever
+		// the tank died.  Like the site, it shoots what is in range or nothing.
+		if (source->isKindOf(KINDOF_SPAWNS_ARE_THE_WEAPONS))
+		{
+			return STATE_FAILURE;
+		}
+
+		// Check here:  If we are a player, and we got to this state via an ai command (ie we auto-acquired),
 		// we don't want to chase the unit. isAllowedToChase is set when we are in a deploy and attack state (troop crawler).
 		// Kris (July 2003): If we are retaliating... don't fail out!
 		if( ai->getCurrentStateID() != AI_GUARD_RETALIATE )
@@ -5573,6 +5581,17 @@ StateReturnType AIAttackAimAtTargetState::update()
 //			if (m_isAttackingObject && source->canCrushOrSquish(victim)) {
 //				return STATE_SUCCESS;
 //			}
+
+			// The fire state holds the round when the victim is already paid for, and falls back to aiming,
+			// which is fine for a unit that leaves this state; a turret's aim never does.  A Gattling Cannon
+			// that had picked the tank itself went silent until the booking lapsed, with a second tank
+			// driving up.  Let go of a target we chose ourselves: the scan that chose it passes over doomed
+			// ones.  An order is kept, as the fire state promises.
+			if (m_isAttackingObject && sourceAI->getLastCommandSource() == CMD_FROM_AI &&
+					IncomingDamageTracker::isSpokenFor(victim, source->getID()))
+			{
+				return STATE_FAILURE;
+			}
 			return STATE_CONTINUE;
 		}
 

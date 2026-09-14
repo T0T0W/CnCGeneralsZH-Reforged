@@ -754,7 +754,9 @@ void ActiveBody::attemptDamage( DamageInfo *damageInfo )
 					continue;
 				}
 				//If we have AI and we're mobile, then assist!
-				if( !them->isKindOf( KINDOF_IMMOBILE ))
+				// A Stinger soldier only looks mobile: it belongs at its site, and retaliating sent it after
+				// whoever had shot a neighbour, several hundred out.
+				if( !them->isKindOf( KINDOF_IMMOBILE ) && !them->isKindOf( KINDOF_SPAWNS_ARE_THE_WEAPONS ))
 				{
 					//But only if we can attack it!
 					CanAttackResult result = them->getAbleToAttackSpecificObject( ATTACK_NEW_TARGET, damager, CMD_FROM_AI );

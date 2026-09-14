@@ -2139,6 +2139,17 @@ void Object::setDisabled( DisabledType type )
 }
 
 //-------------------------------------------------------------------------------------------------
+Bool Object::isAIHaltedByDisable() const
+{
+	if( !m_ai )
+		return FALSE;
+
+	DisabledMaskType halting = m_disabledMask;
+	halting.clear( m_ai->getDisabledTypesToProcess() );
+	return halting.any();
+}
+
+//-------------------------------------------------------------------------------------------------
 void Object::setDisabledUntil( DisabledType type, UnsignedInt frame )
 {
 	Bool edgeCase = !isDisabled();
@@ -2191,6 +2202,16 @@ void Object::setDisabledUntil( DisabledType type, UnsignedInt frame )
 		
 		m_disabledTillFrame[ type ] = frame;
 		m_disabledMask.set( type, frame > TheGameLogic->getFrame() );
+
+		// A building's AI does not run while it is EMPed, hacked, subdued or out of power, so the attack it
+		// was in never exited and kept its look: a Gattling Cannon spun its barrels through the whole EMP.
+		// Selling a building idles it the same way, and it picks a target again once it is back.
+		if( isAIHaltedByDisable() )
+		{
+			m_ai->stopTurretsTurning();
+			if( isKindOf( KINDOF_STRUCTURE ) )
+				m_ai->aiIdle( CMD_FROM_AI );
+		}
 
 		if( m_drawable )
 		{

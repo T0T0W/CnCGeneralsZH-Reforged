@@ -189,6 +189,13 @@ AITNGuardMachine::~AITNGuardMachine()
 }
 
 //--------------------------------------------------------------------------------------
+static Bool isAbleToFightFromTunnel(const Object *owner, const Object *victim)
+{
+	CanAttackResult result = owner->getAbleToAttackSpecificObject(ATTACK_TUNNEL_NETWORK_GUARD, victim, CMD_FROM_AI);
+	return result == ATTACKRESULT_POSSIBLE || result == ATTACKRESULT_POSSIBLE_AFTER_MOVING;
+}
+
+//--------------------------------------------------------------------------------------
 Bool AITNGuardMachine::lookForInnerTarget(void)
 {
 	Object* owner = getOwner();
@@ -211,8 +218,12 @@ Bool AITNGuardMachine::lookForInnerTarget(void)
 	if (!ownerPlayer) return false; // should never happen, but hey.  jba.
 	TunnelTracker *tunnels = ownerPlayer->getTunnelSystem();
 	if (tunnels==NULL) return false;
-	if (tunnels->getCurNemesis()) {
-		setNemesisID(tunnels->getCurNemesis()->getID());
+	// The tunnel's nemesis is whoever last hit it, aircraft included, and its gun's goal is whatever the
+	// gun shoots at.  Neither was asked whether this unit can fight it, so a Comanche strafing a tunnel
+	// emptied it of rebels who could not shoot back.  The attacked-tunnel scan below always asked.
+	Object *nemesis = tunnels->getCurNemesis();
+	if (nemesis && isAbleToFightFromTunnel(owner, nemesis)) {
+		setNemesisID(nemesis->getID());
 		return true;	// Transitions to AITNGuardInnerState.
 	}
 	const std::list<ObjectID> *allTunnels = tunnels->getContainerList();
@@ -222,7 +233,7 @@ Bool AITNGuardMachine::lookForInnerTarget(void)
 			// Check for attacking.
 			if (currentTunnel->getAI()) {
 				Object *victim = currentTunnel->getAI()->getGoalObject();
-				if (owner->getRelationship(victim) == ENEMIES) {
+				if (owner->getRelationship(victim) == ENEMIES && isAbleToFightFromTunnel(owner, victim)) {
 					setNemesisID(victim->getID());
 					return true;
 				}
@@ -625,8 +636,8 @@ StateReturnType AITNGuardReturnState::update( void )
 
 	if (tunnels) {
 		Object *nemesis = tunnels->getCurNemesis();
-		if (nemesis) {
-			// Check distance.  
+		if (nemesis && isAbleToFightFromTunnel(getMachineOwner(), nemesis)) {
+			// Check distance.
 			//Coord3D dist;
 			//Coord3D curPos;
 			//dist.set()

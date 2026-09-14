@@ -750,6 +750,29 @@ Bool ActionManager::canEnterObject( const Object *obj, const Object *objectToEnt
 
 
 // ------------------------------------------------------------------------------------------------
+/** The best answer any soldier firing out of obj gives, or ATTACKRESULT_NOT_POSSIBLE */
+// ------------------------------------------------------------------------------------------------
+static CanAttackResult getCanPassengersAttackObject( const Object *obj, const Object *objectToAttack, CommandSourceType commandSource, AbleToAttackType attackType )
+{
+	const ContainModuleInterface *contain = obj->getContain();
+	if( !contain || !contain->isPassengerAllowedToFire() )
+		return ATTACKRESULT_NOT_POSSIBLE;
+
+	const ContainedItemsList *passengers = contain->getContainedItemsList();
+	for( ContainedItemsList::const_iterator it = passengers->begin(); it != passengers->end(); ++it )
+	{
+		const Object *passenger = *it;
+		if( !passenger->isAbleToAttack() )
+			continue;
+
+		CanAttackResult result = passenger->getAbleToAttackSpecificObject( attackType, objectToAttack, commandSource );
+		if( result == ATTACKRESULT_POSSIBLE || result == ATTACKRESULT_POSSIBLE_AFTER_MOVING )
+			return result;
+	}
+	return ATTACKRESULT_NOT_POSSIBLE;
+}
+
+// ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 CanAttackResult ActionManager::getCanAttackObject( const Object *obj, const Object *objectToAttack, CommandSourceType commandSource, AbleToAttackType attackType )
 {
@@ -764,9 +787,28 @@ CanAttackResult ActionManager::getCanAttackObject( const Object *obj, const Obje
 		return ATTACKRESULT_NOT_POSSIBLE;
 	}
 
+	// an EMPed or unpowered defence takes the order into an attack its AI will not run until it is back
+	if( obj->isKindOf( KINDOF_STRUCTURE ) && obj->isAIHaltedByDisable() )
+	{
+		return ATTACKRESULT_NOT_POSSIBLE;
+	}
+
 	//has any weapons that are capable of inflicting damage. Special damage types are rejected
 	//such as hack weapons... others can be added.
 	CanAttackResult result = obj->getAbleToAttackSpecificObject( attackType, objectToAttack, commandSource );
+
+	// A Fire Base's own howitzer answers first, and it is ground-only with a minimum range of 50, so its
+	// "invalid shot" ended the question before the soldiers inside were asked: no attack cursor on a
+	// Comanche with Missile Defenders in the base.  The group order already hands the attack to every
+	// passenger who can take it.  The old rider fallback below only ran on NOT_POSSIBLE, and only asked
+	// the rider nearest the target.
+	if( result != ATTACKRESULT_POSSIBLE && result != ATTACKRESULT_POSSIBLE_AFTER_MOVING )
+	{
+		CanAttackResult passengerResult = getCanPassengersAttackObject( obj, objectToAttack, commandSource, attackType );
+		if( passengerResult != ATTACKRESULT_NOT_POSSIBLE )
+			return passengerResult;
+	}
+
 	if( result != ATTACKRESULT_NOT_POSSIBLE  )
 	{
 		//Kris: August 5, 2003
@@ -825,20 +867,6 @@ CanAttackResult ActionManager::getCanAttackObject( const Object *obj, const Obje
 				}
 			}
 		}
-    else if( result == ATTACKRESULT_NOT_POSSIBLE )// oh dear me. The wierd case of a garrisoncontainer being a KINDOF_SPAWNS_ARE_THE_WEAPONS... the AmericaBuildingFirebase
-    {
-      ContainModuleInterface *contain = obj->getContain();
-      if ( contain )
-      {
-        Object *rider = contain->getClosestRider( objectToAttack->getPosition() );
-        if ( rider )
-        {
-          result = rider->getAbleToAttackSpecificObject( attackType, objectToAttack, commandSource );
-          if( result != ATTACKRESULT_NOT_POSSIBLE )
-            return result;
-        }
-      }
-    }
 	}
 
 	return ATTACKRESULT_NOT_POSSIBLE;

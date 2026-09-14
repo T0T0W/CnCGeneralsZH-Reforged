@@ -45,6 +45,7 @@
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/AIPlayer.h"		// for the per-frame AI profile the slow-frame report prints
 #include "GameLogic/Weapon.h"
+#include "GameLogic/WeaponSet.h"
 
 extern void addIcon(const Coord3D *pos, Real width, Int numFramesDuration, RGBColor color);
 
@@ -581,7 +582,12 @@ public:
 			if (w == NULL)
 				continue;
 
-			if (w->isWithinAttackRange(m_obj, objOther))
+			// a weapon that cannot target this kind of thing does not bring it into range
+			if ((w->getAntiMask() & WeaponSet::getVictimAntiMask(objOther)) == 0)
+				continue;
+
+			// a garrisoned soldier idles at the middle of the building and shoots from its edge
+			if (w->isWithinAttackRangeFromFirePoint(m_obj, objOther, objOther->getPosition()))
 			{
 				return true;
 			}

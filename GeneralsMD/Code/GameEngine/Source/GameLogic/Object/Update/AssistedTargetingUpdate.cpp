@@ -72,6 +72,7 @@ AssistedTargetingUpdate::AssistedTargetingUpdate( Thing *thing, const ModuleData
 {
 	m_laserFromAssisted = NULL;
 	m_laserToTarget = NULL;
+	m_assistVictimID = INVALID_ID;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -82,15 +83,31 @@ AssistedTargetingUpdate::~AssistedTargetingUpdate( void )
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
-Bool AssistedTargetingUpdate::isFreeToAssist() const
+Bool AssistedTargetingUpdate::isFreeToAssist( const Object *victimObject ) const
 {
-	// The reload times of my two weapons are tied together, so Ready is indicitive of either.
+	const AssistedTargetingUpdateModuleData *md = getAssistedTargetingUpdateModuleData();
 	const Object *me = getObject();
 	if( !me->isAbleToAttack() )
 		return FALSE;// This will cover under construction among other things
 
+	// An underpowered, EMPed or hacked battery has no running AI to take the order, and one already on a
+	// target of its own is not free.  Both used to draw the beams and never fire the clip.
+	if( me->isDisabled() || me->testStatus( OBJECT_STATUS_IS_ATTACKING ) )
+		return FALSE;
+
+	// The reload times of my two weapons are tied together, so Ready is indicitive of either.
 	Bool ready = me->getCurrentWeapon() && me->getCurrentWeapon()->getStatus() == READY_TO_FIRE;
-	return ready;
+	if( !ready )
+		return FALSE;
+
+	// The lock forces the assisting weapon whatever the victim is, so that weapon has to be able to hit it
+	// from here.  A requester firing at aircraft 350 out and asking 200 further reaches past the assist
+	// weapon's 450, and a requester shooting down a missile asks with a weapon the assist one is not.
+	Weapon *assistWeapon = me->getWeaponInWeaponSlot( md->m_weaponSlot );
+	return (assistWeapon->getAntiMask() & WeaponSet::getVictimAntiMask( victimObject )) != 0
+		&& assistWeapon->isWithinTargetPitch( me, victimObject )
+		&& assistWeapon->isWithinAttackRange( me, victimObject )
+		&& assistWeapon->estimateWeaponDamage( me, victimObject ) > 0.0f;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -105,6 +122,8 @@ void AssistedTargetingUpdate::assistAttack( const Object *requestingObject, Obje
 	// lock it just till the weapon is empty or the attack is "done"
 	me->setWeaponLock( md->m_weaponSlot, LOCKED_TEMPORARILY );
 	me->getAI()->aiAttackObject( victimObject, md->m_clipSize, CMD_FROM_AI );
+	m_assistVictimID = victimObject->getID();
+	setWakeFrame( me, UPDATE_SLEEP_NONE );
 
 
 	if( m_laserFromAssisted )
@@ -154,6 +173,25 @@ UpdateSleepTime AssistedTargetingUpdate::update( void )
 	// victim was drawn with the template meant for the beam from the spotter.
 	m_laserToTarget = TheThingFactory->findTemplate( d->m_laserToTargetName );
 
+	if( m_assistVictimID == INVALID_ID )
+		return UPDATE_SLEEP_FOREVER;
+
+	// Only the last shot of a clip lets go of the lock.  An assist that ended any other way, the victim
+	// killed by somebody else after one missile, left the battery shooting its own targets with the
+	// long-range assist weapon until it next emptied a clip.
+	Object *me = getObject();
+	WeaponSlotType currentSlot;
+	me->getCurrentWeapon( &currentSlot );
+	if( me->isCurWeaponLocked() && currentSlot == d->m_weaponSlot )
+	{
+		Object *goal = me->getAI()->getGoalObject();
+		if( me->testStatus( OBJECT_STATUS_IS_ATTACKING ) && goal && goal->getID() == m_assistVictimID )
+			return UPDATE_SLEEP_NONE;
+
+		me->releaseWeaponLock( LOCKED_TEMPORARILY );
+	}
+
+	m_assistVictimID = INVALID_ID;
 	return UPDATE_SLEEP_FOREVER;
 }
 
@@ -171,18 +209,22 @@ void AssistedTargetingUpdate::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: m_assistVictimID */
 // ------------------------------------------------------------------------------------------------
 void AssistedTargetingUpdate::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
 	// extend base class
 	UpdateModule::xfer( xfer );
+
+	if( version >= 2 )
+		xfer->xferObjectID( &m_assistVictimID );
 
 }  // end xfer
 

@@ -813,6 +813,18 @@ void AIUpdateInterface::recenterTurret(WhichTurretType tur)
 }
 
 //=============================================================================
+void AIUpdateInterface::stopTurretsTurning()
+{
+	for (Int i = 0; i < MAX_TURRETS; ++i)
+	{
+		if (m_turretAI[i])
+		{
+			m_turretAI[i]->stopTurning();
+		}
+	}
+}
+
+//=============================================================================
 Bool AIUpdateInterface::isTurretEnabled( WhichTurretType tur ) const
 {
 	if( m_turretAI[ tur ] )

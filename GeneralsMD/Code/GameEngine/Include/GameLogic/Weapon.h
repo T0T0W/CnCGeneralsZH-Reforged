@@ -628,6 +628,7 @@ public:
 	*/
 	Bool isWithinAttackRange(const Object *source, const Object *target) const;
 	Bool isWithinAttackRange(const Object *source, const Coord3D* pos) const;
+	Bool isWithinAttackRangeFromFirePoint(const Object *source, const Object *victim, const Coord3D *victimPos) const;	///< also from the best free fire point of a garrison the source is inside
 
 	Bool isTooClose(const Object *source, const Object *target) const;
 	Bool isTooClose(const Object *source, const Coord3D *pos) const;

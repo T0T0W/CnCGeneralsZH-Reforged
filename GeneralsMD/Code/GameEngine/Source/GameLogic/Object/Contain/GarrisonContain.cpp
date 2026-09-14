@@ -1719,6 +1719,12 @@ Bool GarrisonContain::isPassengerAllowedToFire( ObjectID id ) const
   if ( self && self->isDisabledByType( DISABLED_SUBDUED ) )
     return FALSE;
 
+	// An EMP or a hacker disables the building and not the infantry inside it, so a Bunker or a Fire Base
+	// that had gone dark kept shooting through every fire point.  Patch 1.01 silenced a Stinger Site's
+	// soldiers under EMP for the same reason (Object::setDisabledUntil).
+	if ( self && ( self->isDisabledByType( DISABLED_EMP ) || self->isDisabledByType( DISABLED_HACKED ) ) )
+		return FALSE;
+
 	return TRUE;
 
 }  // end isPassengerAllowedToFire

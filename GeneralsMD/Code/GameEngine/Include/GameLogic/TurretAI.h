@@ -300,6 +300,7 @@ public:
 	Bool isTurretInNaturalPosition() const;
 
 	void setTurretEnabled( Bool enabled );
+	void stopTurning();		///< silence the move loop and drop the rotate look, for when nothing will update this turret for a while
 	Bool isTurretEnabled() const { return m_enabled; }
 
 	/**

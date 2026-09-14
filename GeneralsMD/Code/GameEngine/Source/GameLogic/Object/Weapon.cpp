@@ -2303,6 +2303,28 @@ Bool Weapon::isWithinAttackRange(const Object *source, const Object *target) con
 }
 
 //-------------------------------------------------------------------------------------------------
+Bool Weapon::isWithinAttackRangeFromFirePoint(const Object *source, const Object *victim, const Coord3D *victimPos) const
+{
+	// A garrisoned soldier shoots from the fire point closest to the target, but the point he already
+	// stands on is not free, so the best-point test never offers it.  Measured from the other points
+	// alone, a Bunker soldier at his own point dropped a target he could hit, picked it up again and
+	// never fired.  Where he stands counts too.
+	Bool fromHere = victim ? isWithinAttackRange( source, victim ) : isWithinAttackRange( source, victimPos );
+	if( fromHere )
+		return TRUE;
+
+	const Object *containedBy = source->getContainedBy();
+	ContainModuleInterface *contain = containedBy ? containedBy->getContain() : NULL;
+	if( !contain || !contain->isGarrisonable() || !contain->isEnclosingContainerFor( source ) )
+		return FALSE;
+
+	Coord3D targetPos = *victimPos;
+	Coord3D goalPos;
+	return contain->calcBestGarrisonPosition( &goalPos, &targetPos )
+		&& isSourceObjectWithGoalPositionWithinAttackRange( source, &goalPos, victim, &targetPos );
+}
+
+//-------------------------------------------------------------------------------------------------
 Bool Weapon::isTooClose(const Object *source, const Object *target) const
 {
 	Real minAttackRange = m_template->getMinimumAttackRange();
@@ -2983,7 +3005,7 @@ static void makeAssistanceRequest( Object *requestOf, void *userData )
 		return;
 
 	// and say yes
-	if( !assistModule->isFreeToAssist() )
+	if( !assistModule->isFreeToAssist( requestData->m_victimObject ) )
 		return;
 
 	assistModule->assistAttack( requestData->m_requestingObject, requestData->m_victimObject );

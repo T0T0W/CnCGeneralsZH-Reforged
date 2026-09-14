@@ -71,7 +71,7 @@ public:
 
 	virtual UpdateSleepTime update( void );
 
-	Bool isFreeToAssist() const;
+	Bool isFreeToAssist( const Object *victimObject ) const;
 	void assistAttack( const Object *requestingObject, Object *victimObject );
 
 private:
@@ -79,6 +79,7 @@ private:
 
 	const ThingTemplate *m_laserFromAssisted;
 	const ThingTemplate *m_laserToTarget;
+	ObjectID m_assistVictimID;	///< who the weapon lock was taken for, until the lock is let go
 
 
 };

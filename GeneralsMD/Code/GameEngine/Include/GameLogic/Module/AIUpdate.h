@@ -445,6 +445,7 @@ public:
 	void setTurretTargetPosition(WhichTurretType tur, const Coord3D* pos);
 	void setTurretEnabled(WhichTurretType tur, Bool enabled);
 	void recenterTurret(WhichTurretType tur);
+	void stopTurretsTurning();	///< every turret stops its move loop and rotate look
 	Bool isTurretEnabled( WhichTurretType tur ) const;
 	Bool isTurretInNaturalPosition(WhichTurretType tur) const;
 
