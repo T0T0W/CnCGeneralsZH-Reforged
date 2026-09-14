@@ -11744,6 +11744,13 @@ TEST(scenario_parses_the_order_lines)
 	CHECK_EQ( action.targetSlot, 1 );
 	CHECK_STR( action.targetSelector.str(), "AmericaCommandCenter" );
 
+	CHECK_EQ( (Int)ScenarioDrill_parseLine( "40 enter 0 AmericaInfantryMissileDefender 0 AmericaVehicleHumvee", &action ),
+						(Int)SCENARIO_PARSE_OK );
+	CHECK_EQ( (Int)action.action, (Int)SCENARIO_ACTION_ENTER );
+	CHECK_EQ( action.targetSlot, 0 );
+	CHECK_STR( action.targetSelector.str(), "AmericaVehicleHumvee" );
+	CHECK_EQ( (Int)ScenarioDrill_parseLine( "40 enter 0 * 0", &action ), (Int)SCENARIO_PARSE_MISSING_ARGS );
+
 	CHECK_EQ( (Int)ScenarioDrill_parseLine( "900 stop 2 *", &action ), (Int)SCENARIO_PARSE_OK );
 	CHECK_EQ( (Int)action.action, (Int)SCENARIO_ACTION_STOP );
 }

@@ -159,6 +159,8 @@ static Bool parseActionType( const AsciiString &token, ScenarioActionType *actio
 		*action = SCENARIO_ACTION_ATTACKMOVE;
 	else if (token == "attack")
 		*action = SCENARIO_ACTION_ATTACK;
+	else if (token == "enter")
+		*action = SCENARIO_ACTION_ENTER;
 	else if (token == "stop")
 		*action = SCENARIO_ACTION_STOP;
 	else if (token == "arrive")
@@ -241,6 +243,7 @@ static Int tokensNeededFor( ScenarioActionType action )
 		case SCENARIO_ACTION_MOVE:				return SCENARIO_TOKENS_MOVE;
 		case SCENARIO_ACTION_ATTACKMOVE:	return SCENARIO_TOKENS_MOVE;
 		case SCENARIO_ACTION_ATTACK:			return SCENARIO_TOKENS_ATTACK;
+		case SCENARIO_ACTION_ENTER:				return SCENARIO_TOKENS_ATTACK;
 		case SCENARIO_ACTION_STOP:				return SCENARIO_TOKENS_STOP;
 		case SCENARIO_ACTION_ARRIVE:			return SCENARIO_TOKENS_ARRIVE;
 	}
@@ -316,6 +319,7 @@ ScenarioParseResult ScenarioDrill_parseLine( const char *line, ScenarioAction *a
 		}
 
 		case SCENARIO_ACTION_ATTACK:
+		case SCENARIO_ACTION_ENTER:
 		{
 			if (!parseWholeNumber( tokens[ 4 ], &action->targetSlot ))
 				return SCENARIO_PARSE_BAD_SLOT;
@@ -787,22 +791,28 @@ static Bool executeOrder( const ScenarioAction &action, Player *player, const Co
 		}
 
 		case SCENARIO_ACTION_ATTACK:
+		case SCENARIO_ACTION_ENTER:
 		{
+			const char *verb = (action.action == SCENARIO_ACTION_ATTACK) ? "attack" : "enter";
 			Player *targetPlayer = findPlayerForSlot( action.targetSlot );
-			Object *victim = (targetPlayer != NULL)
+			Object *target = (targetPlayer != NULL)
 											 ? findFirstMatching( targetPlayer, action.targetSelector )
 											 : NULL;
-			if (victim == NULL)
+			if (target == NULL)
 			{
-				DEBUG_LOG(("SCENARIO: frame %d attack: slot %d owns nothing matching '%s'\n",
-									 action.frame, action.targetSlot, action.targetSelector.str()));
+				DEBUG_LOG(("SCENARIO: frame %d %s: slot %d owns nothing matching '%s'\n",
+									 action.frame, verb, action.targetSlot, action.targetSelector.str()));
 				ordered = FALSE;
 				break;
 			}
 
-			group->groupAttackObject( victim, SCENARIO_ATTACK_SHOTS, CMD_FROM_SCRIPT );
-			DEBUG_LOG(("SCENARIO: frame %d attack slot %d '%s' x%d -> slot %d '%s'\n",
-								 action.frame, action.slot, action.selector.str(), taken,
+			if (action.action == SCENARIO_ACTION_ATTACK)
+				group->groupAttackObject( target, SCENARIO_ATTACK_SHOTS, CMD_FROM_SCRIPT );
+			else
+				group->groupEnter( target, CMD_FROM_SCRIPT );
+
+			DEBUG_LOG(("SCENARIO: frame %d %s slot %d '%s' x%d -> slot %d '%s'\n",
+								 action.frame, verb, action.slot, action.selector.str(), taken,
 								 action.targetSlot, action.targetSelector.str()));
 			break;
 		}
