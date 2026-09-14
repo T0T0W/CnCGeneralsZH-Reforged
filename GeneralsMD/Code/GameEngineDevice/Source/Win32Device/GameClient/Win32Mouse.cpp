@@ -31,6 +31,7 @@
 #include <windows.h>
 
 #include "Common/Debug.h"
+#include "GameClient/Display.h"
 #include "GameClient/GameClient.h"
 #include "Win32Device/GameClient/Win32Mouse.h"
 #include "WinMain.h"
@@ -43,6 +44,7 @@
 
 // EXTERN /////////////////////////////////////////////////////////////////////////////////////////
 extern Win32Mouse *TheWin32Mouse;
+extern Bool ApplicationIsBorderless;
 
 HCURSOR cursorResources[Mouse::NUM_MOUSE_CURSORS][MAX_2D_CURSOR_DIRECTIONS];
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -283,6 +285,7 @@ Win32Mouse::Win32Mouse( void )
 	m_lostFocus = FALSE;
 	m_cursorInWindow = TRUE;
 	m_positionReported = FALSE;
+	m_cursorClipped = FALSE;
 }  // end Win32Mouse
 
 //-------------------------------------------------------------------------------------------------
@@ -356,6 +359,35 @@ void Win32Mouse::update( void )
 	// knows, and the (0,0) we were given at init is a corner nobody put the mouse in.
 	if( m_positionReported == FALSE && m_cursorInWindow )
 		setPosition( clientPos.x, clientPos.y );
+
+	//
+	// A window that covers a screen, borderless or fullscreen, keeps the pointer while it has the
+	// focus.  Screen-edge scrolling reads the edge of that screen, and with a second monitor beside it
+	// the pointer walked straight over the edge onto the other one.  WndProc has asked the mouse for
+	// this clip since 2003, but only the DirectInput mouse ever set one, and this is the mouse the
+	// game makes.  The pointer is taken once it is over the game, so activating from the taskbar
+	// does not snatch it across the desktop; the clip is checked every frame, so it follows the
+	// window through a mode change and comes back if something else released it.  A plain window has
+	// no edge scrolling and leaves the pointer free.
+	//
+	const Bool coversScreen = TheDisplay && ( !TheDisplay->getWindowed() || ApplicationIsBorderless );
+	if( coversScreen && ::GetForegroundWindow() == ApplicationHWnd )
+	{
+		RECT window;
+		RECT clip;
+		::GetWindowRect( ApplicationHWnd, &window );
+		::GetClipCursor( &clip );
+		if( m_cursorInWindow && !::EqualRect( &window, &clip ) )
+		{
+			::ClipCursor( &window );
+			m_cursorClipped = TRUE;
+		}
+	}
+	else if( m_cursorClipped )
+	{
+		::ClipCursor( NULL );
+		m_cursorClipped = FALSE;
+	}
 
 	// extend
 	Mouse::update();

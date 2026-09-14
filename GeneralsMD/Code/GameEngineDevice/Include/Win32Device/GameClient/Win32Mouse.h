@@ -111,7 +111,8 @@ protected:
 	Bool m_lostFocus;		///< flag if window has lost focues and mouse should stop being updated.
 	Bool m_cursorInWindow;	///< is the pointer over our client area right now, asked of Windows each frame
 	Bool m_positionReported;	///< has a window message ever told us where the pointer is
-};  // end Win32Mouse 
+	Bool m_cursorClipped;	///< did update() clip the pointer to the window, and so owes the release
+};  // end Win32Mouse
 
 // INLINING ///////////////////////////////////////////////////////////////////
 
