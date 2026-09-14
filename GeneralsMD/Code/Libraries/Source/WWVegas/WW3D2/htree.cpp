@@ -210,9 +210,11 @@ int HTreeClass::Load_W3D(ChunkLoadClass & cload)
 	*/
 	memcpy(Name,header.Name,W3D_NAME_LEN);
 	NumPivots = header.NumPivots;
-	if (NumPivots > 0) {
-		Pivot = MSGW3DNEWARRAY("HTreeClass::Pivot") PivotClass[NumPivots];
+	// A hierarchy with no pivots is a broken file: every lookup below indexes Pivot, which would stay NULL.
+	if (NumPivots < 1) {
+		return LOAD_ERROR;
 	}
+	Pivot = MSGW3DNEWARRAY("HTreeClass::Pivot") PivotClass[NumPivots];
 
 	/*
 	** Now, read in all of the other chunks for this hierarchy.
