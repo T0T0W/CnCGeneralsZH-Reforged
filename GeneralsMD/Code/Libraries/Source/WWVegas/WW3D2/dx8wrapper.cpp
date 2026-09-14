@@ -1364,8 +1364,11 @@ bool DX8Wrapper::Set_Render_Device(int dev, int width, int height, int bits, int
 
 	// The Direct3D 11 device is built beside the Direct3D 9 one rather than instead of it: 236
 	// places still call the D3D9 device directly, so taking it away would be a black screen.  It
-	// is on unless -d3d9 or -headless turned it off.
-	if (Direct3D11_Is_Enabled() && !Direct3D11_Is_Active()) {
+	// is on unless -d3d9 or -headless turned it off.  Only a new device gets one: a buffer or texture
+	// made before this point has no Direct3D 11 copy, so a device that was refused at startup and
+	// then created on a reset (an Alt-Tab out of fullscreen) drew every building already standing
+	// as nothing but its shadow.
+	if (!reset_device && Direct3D11_Is_Enabled() && !Direct3D11_Is_Active()) {
 		const bool created = Direct3D11_Create((HWND)_Hwnd,
 			_PresentParameters.BackBufferWidth, _PresentParameters.BackBufferHeight);
 		WWDEBUG_SAY(("-dx11: Direct3D 11 device %s\n", created ? "created" : "refused"));
