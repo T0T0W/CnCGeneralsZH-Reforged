@@ -1615,6 +1615,25 @@ Int GameWindowManager::winSetModal( GameWindow *window )
 		DEBUG_LOG(( "WinSetModal: Non Root window attempted to go modal." ));
 		return WIN_ERR_INVALID_PARAMETER;			// return error if not
 	}
+
+	// A window already on the stack moves to the top instead of going on twice.  winUnsetModal and
+	// windowHiding pop one entry, so a second one stayed behind and went on swallowing input for a
+	// window that had closed.
+	ModalWindow *previous = NULL;
+	for( ModalWindow *existing = m_modalHead; existing != NULL; previous = existing, existing = existing->next )
+	{
+		if( existing->window != window )
+			continue;
+
+		if( previous != NULL )
+		{
+			previous->next = existing->next;
+			existing->next = m_modalHead;
+			m_modalHead = existing;
+		}
+		return WIN_ERR_OK;
+	}
+
 	// Allocate new Modal Window Entry
 	modal = newInstance(ModalWindow);
 	if( modal == NULL )

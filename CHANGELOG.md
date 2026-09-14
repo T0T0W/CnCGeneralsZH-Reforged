@@ -453,6 +453,7 @@ found and fixed â€” EA's own, not port damage.**
 - Selling a building mid-research gave no refund and left the upgrade in limbo.
 - On-screen messages now hold for two and a half seconds and fade in one.
 - Closing a dialog while another one sits on top of it no longer leaves the game holding a pointer to the window it just freed. Every click, every keypress and the tab order all read that list, so what it caused was a crash with no pattern to it.
+- A dialog asked to open twice closes once. It went on the list of windows that take every click a second time, closing took one copy off, and the other kept eating input for a window nobody could see.
 - Ordering a group to use a special power that can kill the units casting it, the GLA rebel ambush over water being the one that does it every time, no longer walks a list of units that the ambush is deleting underneath.
 - A replay that never recorded which seat was yours plays instead of crashing before the map loads.
 - Alt-tabbing back into the game no longer leaves you in waypoint mode. Alt is the key you hold to lay a route and it is also the key you hold to alt-tab, so the release went to Windows and the game never heard it: every click after that queued another waypoint. Ctrl, shift and the keypad camera keys were the same story.
