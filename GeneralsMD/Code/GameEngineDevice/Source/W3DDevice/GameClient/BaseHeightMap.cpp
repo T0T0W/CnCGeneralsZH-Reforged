@@ -2035,11 +2035,22 @@ void BaseHeightMapRenderObjClass::updateScorches(void)
 		if (maxY > m_map->getYExtent()-m_map->getBorderSizeInline()) {
 			maxY = m_map->getYExtent()-m_map->getBorderSizeInline();
 		}
+		Int vertexCountX = maxX-minX;
+		Int vertexCountY = maxY-minY;
+		if (vertexCountX <= 0 || vertexCountY <= 0) {
+			continue;
+		}
+		// The whole scorch fits or none of it is written.  Checking inside the loops left the last
+		// one half drawn, a strip of triangles cut off wherever the buffer ran out.  Newest first, so
+		// what gets dropped when it is full is the oldest marks.
+		if (m_curNumScorchVertices + vertexCountX*vertexCountY > MAX_SCORCH_VERTEX ||
+				m_curNumScorchIndices + 6*(vertexCountX-1)*(vertexCountY-1) > MAX_SCORCH_INDEX) {
+			return;
+		}
 		Int startVertex = m_curNumScorchVertices;
 		Int i, j;
 		for (j=minY; j<maxY; j++) {
 			for (i=minX; i<maxX; i++) {
-				if (m_curNumScorchVertices >= MAX_SCORCH_VERTEX) return;
 				curVb->diffuse = diffuse;
 				Real theZ; 
 				theZ = amtToFloat+((float)getClipHeight(i+m_map->getBorderSizeInline(),j+m_map->getBorderSizeInline())*MAP_HEIGHT_SCALE);
@@ -2060,7 +2071,6 @@ void BaseHeightMapRenderObjClass::updateScorches(void)
 		Int yOffset = maxX-minX;
 		for (j=0; j<maxY-minY-1; j++) {
 			for (i=0; i<maxX-minX-1; i++) {
-				if (m_curNumScorchIndices+6 > MAX_SCORCH_INDEX) return;
 				Int xNdx = i+minX+m_map->getBorderSizeInline();
 				Int yNdx = j+minY+m_map->getBorderSizeInline();
 				Bool flipForBlend = m_map->getFlipState(xNdx, yNdx);
