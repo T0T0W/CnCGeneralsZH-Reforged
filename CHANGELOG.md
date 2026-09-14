@@ -286,6 +286,7 @@ found and fixed â€” EA's own, not port damage.**
 - A booby trap shot off a building, or sold with it, releases the building. The mark was only ever cleared when the trap went off, so the building stayed marked for the rest of the match and no second trap could be laid.
 - Something flagged unselectable is unselectable. The flag existed and nothing read it.
 - A suicide unit pressed up against a building goes off. Touching the building's outline counted as having its view blocked, so it walked away to find a clear line of sight it never needed, came back, and did it again without ever detonating.
+- A nuclear missile hurts the whole of a big building. The blast measured to the middle of everything near it, so an airfield whose centre sat just outside the outer ring took nothing while half of it stood in the fire. Distance is now taken halfway between the nearest edge and the centre.
 - Cancelling an order of Red Guard after the first soldier has walked out no longer refunds the order. One order is two soldiers for one price, and the refund came back whole, so the first one was free.
 - Double-clicking to grab everything of a kind grabs what a box would, not things you can only click one at a time.
 - A bounty pays what the percentage says. Rounding up a fraction that was already a whole number paid a dollar extra on every kill.

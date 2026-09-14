@@ -316,12 +316,13 @@ void NeutronMissileSlowDeathBehavior::doBlast( const BlastInfo *blastInfo )
 	{
 		ObjectIterator *iter = ThePartitionManager->iterateObjectsInRange( missilePos,
 																																			 blastInfo->outerRadius,
-																																			 FROM_CENTER_2D, 
+																																			 FROM_BOUNDINGSPHERE_3D,
 																																			 NULL );
 		MemoryPoolObjectHolder hold( iter );
 		Object *other;
 		const Coord3D *otherPos;
 		Coord3D forceVector;
+		Coord3D edgeToMissile;
 		Real dist;
 		for( other = iter->first(); other; other = iter->next() )
 		{
@@ -329,10 +330,16 @@ void NeutronMissileSlowDeathBehavior::doBlast( const BlastInfo *blastInfo )
 			// get other position
 			otherPos = other->getPosition();
 
-			// compute vector from the missile to other object
-			forceVector.x = otherPos->x - missilePos->x;
-			forceVector.y = otherPos->y - missilePos->y;
-			forceVector.z = otherPos->z - missilePos->z;
+			//
+			// Measured to the centre, a building as big as an airfield whose middle sat outside the
+			// outer radius took nothing while half of it was inside the blast.  The search now takes
+			// anything the radius touches, and the distance is taken halfway between the object's
+			// nearest edge and its centre, so a big structure in the fall-off gets a fair share.
+			//
+			ThePartitionManager->getVectorTo( other, missilePos, FROM_BOUNDINGSPHERE_3D, edgeToMissile );
+			forceVector.x = ( (otherPos->x - missilePos->x) - edgeToMissile.x ) * 0.5f;
+			forceVector.y = ( (otherPos->y - missilePos->y) - edgeToMissile.y ) * 0.5f;
+			forceVector.z = ( (otherPos->z - missilePos->z) - edgeToMissile.z ) * 0.5f;
 
 			// try to topple other object
 			other->topple( &forceVector, blastInfo->toppleSpeed, TOPPLE_OPTIONS_NO_BOUNCE | 
