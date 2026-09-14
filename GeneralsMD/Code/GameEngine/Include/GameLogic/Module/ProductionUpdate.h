@@ -162,7 +162,7 @@ public:
 	virtual Int getQuantityPerOrder( const ThingTemplate *unitType ) const = 0;
 
 	virtual Bool queueCreateUnit( const ThingTemplate *unitType, ProductionID productionID ) = 0;
-	virtual void cancelUnitCreate( ProductionID productionID ) = 0;
+	virtual Bool cancelUnitCreate( ProductionID productionID ) = 0;
 	virtual void cancelAllUnitsOfType( const ThingTemplate *unitType) = 0;
 
 	virtual void cancelAndRefundAllProduction( void ) = 0;
@@ -220,7 +220,7 @@ public:
 	virtual Int getQuantityPerOrder( const ThingTemplate *unitType ) const;	///< units one paid order hands back, from QuantityModifier
 
 	virtual Bool queueCreateUnit( const ThingTemplate *unitType, ProductionID productionID );					///< queue unit to be produced
-	virtual void cancelUnitCreate( ProductionID productionID );		      ///< cancel construction of unit with matching production ID
+	virtual Bool cancelUnitCreate( ProductionID productionID );		      ///< cancel construction of unit with matching production ID
 	virtual void cancelAllUnitsOfType( const ThingTemplate *unitType);	///< cancel all production of type unitType 
 
 	virtual void cancelAndRefundAllProduction( void );									///< cancel and refund anything in the production queue

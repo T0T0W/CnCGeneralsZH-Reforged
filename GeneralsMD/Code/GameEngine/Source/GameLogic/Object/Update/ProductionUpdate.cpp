@@ -475,9 +475,10 @@ Bool ProductionUpdate::queueCreateUnit( const ThingTemplate *unitType, Productio
 }  // end queueMakeUnit
 
 //-------------------------------------------------------------------------------------------------
-/** Cancel the construction of the unit with the matching production ID */
+/** Cancel the construction of the unit with the matching production ID.  Returns FALSE when there
+	* is nothing to cancel, or the entry has already put units on the field. */
 //-------------------------------------------------------------------------------------------------
-void ProductionUpdate::cancelUnitCreate( ProductionID productionID )
+Bool ProductionUpdate::cancelUnitCreate( ProductionID productionID )
 {
 
 	// search for the production entry in our queue
@@ -492,6 +493,11 @@ void ProductionUpdate::cancelUnitCreate( ProductionID productionID )
 		if( production->m_type == PRODUCTION_UNIT && production->m_productionID == productionID )
 		{
 
+			// One order of Red Guard is two soldiers for one price.  Cancelling after the first had
+			// walked out refunded the whole order, so the first soldier was free.
+			if( production->getProductionQuantityRemaining() < production->getProductionQuantity() )
+				return FALSE;
+
 			// give the player the cost of the object back
 			Player *player = getObject()->getControllingPlayer();
 			Money *money = player->getMoney();
@@ -503,11 +509,13 @@ void ProductionUpdate::cancelUnitCreate( ProductionID productionID )
 			// delete the production entry
 			production->deleteInstance();
 
-			return;
+			return TRUE;
 
 		}  // end if
 
 	}  // end for
+
+	return FALSE;
 
 }  // end cancelUnitCreate
 
@@ -784,9 +792,9 @@ UpdateSleepTime ProductionUpdate::update( void )
 		if (!production->getProductionObject()->isKindOf(KINDOF_DOZER)) 
 		{
 
-			cancelUnitCreate(production->getProductionID());
-			return UPDATE_SLEEP_NONE;
-	
+			if( cancelUnitCreate(production->getProductionID()) )
+				return UPDATE_SLEEP_NONE;
+
 		}  // end if
 
 	}  // end if
@@ -1246,7 +1254,14 @@ void ProductionUpdate::cancelAndRefundAllProduction( void )
 		ProductionEntry *head = m_productionQueue;
 
 		if( head->getProductionType() == PRODUCTION_UNIT )
-			cancelUnitCreate( head->getProductionID() );
+		{
+			// a batch already under way is not refunded, but it still leaves the queue
+			if( !cancelUnitCreate( head->getProductionID() ) )
+			{
+				removeFromProductionQueue( head );
+				head->deleteInstance();
+			}
+		}
 		else if( head->getProductionType() == PRODUCTION_UPGRADE )
 			cancelUpgrade( head->getProductionUpgrade() );
 		else
