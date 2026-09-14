@@ -724,6 +724,13 @@ void GameClient::update( void )
 	{
 		for( Drawable *draw = m_drawableList; draw; draw = draw->getNextDrawable() )
 			draw->refreshIndicatorColor();
+
+		// the observer bar writes its names' colours once, when it is filled, so it is filled again
+		if( TheControlBar->isObserverControlBarOn() )
+		{
+			TheControlBar->populateObserverList();
+			TheControlBar->populateObserverInfoWindow();
+		}
 	}
 
 	Bool freezeTime = TheTacticalView->isTimeFrozen() && !TheTacticalView->isCameraMovementFinished();

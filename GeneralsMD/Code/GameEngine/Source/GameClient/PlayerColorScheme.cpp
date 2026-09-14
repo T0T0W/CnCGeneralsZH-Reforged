@@ -87,6 +87,7 @@ static Bool							theTableChanged = FALSE;
 static UnsignedInt			theTableStamp = 0;
 static UnsignedInt			theTableFrame = 0;
 static Bool							theTableHasFrame = FALSE;
+static Int							theTableScheme = PLAYER_COLORS_ORIGINAL;
 
 // ------------------------------------------------------------------------------------------------
 static Color opaque( Color rgb )
@@ -360,16 +361,24 @@ static void ensureTable( void )
 	if( TheGlobalData == NULL )
 		return;
 
-	// at most one rebuild a frame; the shell has no frame counter running, and does not need one
+	// at most one rebuild a frame; the shell has no frame counter running, and does not need one.
+	// The frame is the logic frame, which stands still through a whole load and a whole pause, so a
+	// new setting or a longer roster gets past the gate on its own. Without that, a setting changed
+	// in a paused match waited for the pause to end, and a table built early in the load, before
+	// the players existed, handed out black until the first logic frame.
+	const Int scheme = TheGlobalData->m_playerColorScheme;
+	const Int rosterSize = (ThePlayerList != NULL) ? ThePlayerList->getPlayerCount() : 0;
 	if( TheGameClient != NULL )
 	{
 		const UnsignedInt frame = TheGameClient->getFrame();
-		if( theTableValid && theTableHasFrame && theTableFrame == frame )
+		if( theTableValid && theTableHasFrame && theTableFrame == frame
+				&& theTableScheme == scheme && theEntryCount == rosterSize )
 			return;
 
 		theTableFrame = frame;
 		theTableHasFrame = TRUE;
 	}
+	theTableScheme = scheme;
 
 	const UnsignedInt stamp = computeStamp();
 	if( theTableValid && stamp == theTableStamp )

@@ -541,6 +541,7 @@ found and fixed â€” EA's own, not port damage.**
 - The colour reaches everything: the tint on the models, the radar, health bars, selection rings, the score screen, the money that floats up from a supply drop.
 - Your screen only. Nobody else in the match sees your choice, nothing about the game itself changes, and two people in the same game can run different settings. Original is the default and nothing changes until you pick something else.
 - Switch it mid-match and the map repaints itself. So does the picture when an alliance is made or broken by a map script.
+- The player names on an observer's command bar follow the setting as well. They used to keep whatever colour they were given when the bar first filled, which was sometimes black.
 ## You can see where your ally is pointing
 
 - Your ally's mouse is on your map: a soft pool of their own player colour on the ground where it rests, with their name across the middle of it. No second arrow on your screen - one is confusing enough, and the name is the part that says whose it is.
