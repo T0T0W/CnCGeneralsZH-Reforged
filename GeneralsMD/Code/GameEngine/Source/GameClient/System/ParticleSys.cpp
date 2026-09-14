@@ -2426,9 +2426,11 @@ Bool ParticleSystem::finishUpdate( const ParticleShadowBlob *blob )
 	// If we have been "destroyed", wait for all of our particles to die off,
 	// then destroy ourselves (return false).
 	//
+	// A finite slave outlives its master by its own lifetime.  Going away first nulls the slave's
+	// master, and a slave with no master emits at the world origin and is cut short, so the master
+	// stays in the list, destroyed and drawing nothing, until the slave is done.
 	if (m_isDestroyed && !m_systemParticlesHead)
-		return false;
-
+		return m_slaveSystem != NULL && !m_slaveSystem->isSystemForever();
 
 	// monitor particle system lifetime
 	if (m_isForever == false)
@@ -2443,7 +2445,11 @@ Bool ParticleSystem::finishUpdate( const ParticleShadowBlob *blob )
 
 		// check if time is up
 		if (m_systemLifetimeLeft == 0)
-			return false;
+		{
+			if (m_slaveSystem == NULL || m_slaveSystem->isSystemForever())
+				return false;
+			m_isDestroyed = true;
+		}
 	}
 
 	return true;
