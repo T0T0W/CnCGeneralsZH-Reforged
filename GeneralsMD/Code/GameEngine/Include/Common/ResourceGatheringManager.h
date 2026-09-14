@@ -58,6 +58,8 @@ public:
 
 protected:
 
+	Object *findBestSupplyCenterInList(Object *queryObject);
+
 	// snapshot methods
 	virtual void crc( Xfer *xfer );
 	virtual void xfer( Xfer *xfer );

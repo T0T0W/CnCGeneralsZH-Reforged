@@ -53,6 +53,7 @@
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/Keyboard.h"
 #include "GameClient/SelectionInfo.h"
+#include "GameClient/SelectionPriority.h"
 #include "GameClient/SelectionXlat.h"
 #include "GameClient/TerrainVisual.h"
 
@@ -213,6 +214,15 @@ Bool CanSelectDrawable( const Drawable *draw, Bool dragSelecting )
 	return TRUE;
 
 }  // end canSelect
+
+//-----------------------------------------------------------------------------
+static Bool isSelectableMilitaryInBox(Drawable *draw)
+{
+	if (!CanSelectDrawable(draw, TRUE))
+		return FALSE;
+	const Object *obj = draw->getObject();
+	return obj->getContainedBy() == NULL && isMilitaryBoxSelectionUnit(obj);
+}
 
 //-----------------------------------------------------------------------------
 static Bool canSelectWrapper( Drawable *draw, void *userData )
@@ -746,6 +756,12 @@ GameMessageDisposition SelectionTranslator::translateGameMessage(const GameMessa
 					break;
 				}
 			}
+
+			// A box with an army in it takes the army and leaves the dozers and trucks standing among
+			// it; a box of workers alone still takes the workers.  Drag-only, like the filters above,
+			// and not under Legacy, which is the 2003 box.
+			if (!isPoint && !TheGlobalData->isLegacyInput())
+				prioritizeMilitaryBoxSelection(drawablesThatWillSelect, isSelectableMilitaryInBox);
 
 			SelectionInfo si;
 			if (contextCommandForNewSelection(currentList, &drawablesThatWillSelect, &si, isPoint))
