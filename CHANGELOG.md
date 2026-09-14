@@ -60,6 +60,10 @@ found and fixed â€” EA's own, not port damage.**
 ## The computer spends its money
 
 - It no longer sits on a pile of cash. Past a level that depends on the difficulty, the more money it has the faster it builds - twice the pile, half the wait, and it stops at four times. It is spending sooner, not building faster: the rate itself is untouched.
+- A full bank buys a bigger army. Late in a match the computer's plan allows one of each attack group, so once they were all on the map it only replaced its losses and banked the rest: a Hard USA sat on 117,000 on Twilight Flame. Now every 8,000 in the bank on Hard allows one more copy of each attack group, up to four of them.
+- Hard builds past its plan. When every war factory, barracks or airfield it owns is busy it puts down another, beside its newest expansion so the army comes out nearer the fighting. When production keeps up it buys income instead, supply drop zones and black markets, as many as the bank pays for. China trains hackers from any idle barracks with no cap, and a hacker left standing still is put to work.
+- Hard picks its road into your base. Of the three approaches it takes the one with the fewest guns it has seen along it, and keeps to the one its plan named until it has scouted something. Aiming at your money instead was tried first and walked it straight past your army.
+- Hard sends its attack groups out together. A group too small to be a wave on its own waits on the near side of its base until about seven tanks' worth has gathered, or a minute and a half has passed, and then everything waiting leaves on one road at the pace of its slowest unit. A lone artillery piece or a single bomb truck used to drive across the map by itself, and nearly a third of Hard's units died with barely anyone of their own nearby.
 - It puts more harvesters on a supply centre with more piles around it, instead of the same three numbers everywhere.
 
 ## The computer picks its fights
@@ -81,7 +85,7 @@ found and fixed â€” EA's own, not port damage.**
 ## The computer builds against what you field
 
 - Which unit it trained next was a coin flip. It gathered the teams sharing the highest priority number in its data and picked one at random - not one line looked at what it was fighting. An opponent facing nothing but aircraft went on building tanks.
-- Now the priority is the start of a score, not the whole of it. What it can *see* you fielding weights the choice: air pushes anti-air up, stealth pushes detectors up, armour pushes anti-tank up. Its own data decides what counts as the answer to what, so a mod's units are read correctly too.
+- Now the priority is the start of a score, not the whole of it. What it can *see* you fielding weights the choice, and the weighing is the game's own arithmetic: for every unit it could build and every unit it sees you with, how many shots each needs to kill the other through its armour, how long it waits between them, and what each one costs. A Crusader shell does a tenth of its damage to a rifleman, so your Rebels get Gattlings and your Overlords get Tank Hunters, not whatever the script listed first. Stealth still pushes detectors up. It reads the same unit data the game fights with, so a mod's units are weighed correctly too.
 - How much that weighs depends on the level, from nothing at all on Easy - which is what the game always did - to fully on Hard.
 - Anti-air was the computer's oldest hole. It is closed.
 

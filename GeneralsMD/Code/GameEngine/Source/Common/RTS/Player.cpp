@@ -1593,7 +1593,19 @@ GameDifficulty Player::getPlayerDifficulty(void) const
 //-------------------------------------------------------------------------------------------------
 Bool Player::checkBridges(Object *unit, Waypoint *way)
 {
-	return m_ai?m_ai->checkBridges(unit, way):false; 
+	return m_ai?m_ai->checkBridges(unit, way):false;
+}
+
+//-------------------------------------------------------------------------------------------------
+AsciiString Player::chooseApproachLabel(const Coord3D *from, const AsciiString &requested, Int pathSuffix)
+{
+	return m_ai ? m_ai->chooseApproachLabel(from, requested, pathSuffix) : requested;
+}
+
+//-------------------------------------------------------------------------------------------------
+Bool Player::holdTeamForWave(Team *team, const AsciiString &approach, Int pathSuffix)
+{
+	return m_ai ? m_ai->holdTeamForWave(team, approach, pathSuffix) : FALSE;
 }
 
 //-------------------------------------------------------------------------------------------------

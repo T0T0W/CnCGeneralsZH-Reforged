@@ -1712,7 +1712,10 @@ void ScriptActions::doTeamFollowSkirmishApproachPath(const AsciiString& teamName
 	Int mpNdx = enemyPlayer->getMpStartIndex()+1;
 
 	AsciiString pathLabel;
-	pathLabel.format("%s%d", waypointPathLabel.str(), mpNdx);
+	// the script names the approach; an AI that reads the map may take a quieter one
+	const AsciiString lane = theTeam->getControllingPlayer() ?
+		theTeam->getControllingPlayer()->chooseApproachLabel( &pos, waypointPathLabel, mpNdx ) : waypointPathLabel;
+	pathLabel.format("%s%d", lane.str(), mpNdx);
 	Waypoint *way = TheTerrainLogic->getClosestWaypointOnPath( &pos, pathLabel );
 	if (!way) {
 		return;
@@ -1724,7 +1727,12 @@ void ScriptActions::doTeamFollowSkirmishApproachPath(const AsciiString& teamName
 	}
 
 	DEBUG_ASSERTLOG(TheTerrainLogic->isPurposeOfPath(way, pathLabel), ("***Wrong waypoint purpose. Make jba fix this.\n"));
-	if (asTeam) 
+	// an AI that masses parks a team too small to be a wave, and sends it later with the rest
+	if (theTeam->getControllingPlayer() && theTeam->getControllingPlayer()->holdTeamForWave(theTeam, lane, mpNdx))
+	{
+		return;
+	}
+	if (asTeam)
 	{
 		theGroup->groupFollowWaypointPathAsTeam(way, CMD_FROM_SCRIPT);
 	}	else {
@@ -1771,7 +1779,10 @@ void ScriptActions::doTeamMoveToSkirmishApproachPath(const AsciiString& teamName
 	Int mpNdx = enemyPlayer->getMpStartIndex()+1;
 
 	AsciiString pathLabel;
-	pathLabel.format("%s%d", waypointPathLabel.str(), mpNdx);
+	// the script names the approach; an AI that reads the map may take a quieter one
+	const AsciiString lane = theTeam->getControllingPlayer() ?
+		theTeam->getControllingPlayer()->chooseApproachLabel( &pos, waypointPathLabel, mpNdx ) : waypointPathLabel;
+	pathLabel.format("%s%d", lane.str(), mpNdx);
 	/* This action is the slowest single thing left in a four-player skirmish frame - 40ms of a 45ms
 		 logic frame, once or twice a match, on the frame a team is told to take its approach path.
 		 The script engine already lets only one of these through per frame. The three parts are

@@ -48,6 +48,7 @@ class Path;
 class Pathfinder;
 class Player;
 class PolygonTrigger;
+class ThingTemplate;
 class UpgradeTemplate;
 class WeaponTemplate;
 
@@ -202,6 +203,7 @@ struct AIDifficultyProfile
 	Bool	m_selfTriggeredExpansion;
 	Bool	m_defendExpansions;
 	Int		m_cashHoardThreshold;						///< above this, spend faster; 0 = never hurry
+	Bool	m_economyBuildings;							///< past the hoard, buy production and income the build list never had
 };
 
 //-------------------------------------------------------------------------------------------------
@@ -221,24 +223,55 @@ struct AIEnemyComposition
 };
 
 //-------------------------------------------------------------------------------------------------
+/** One kind of enemy unit the AI can see, and how much of the visible army it makes up. */
+//-------------------------------------------------------------------------------------------------
+struct AIVisibleEnemy
+{
+	const ThingTemplate *m_template;
+	Real m_weight;			///< summed combat power of every visible unit of this kind
+	Real m_cost;				///< what one of them cost its owner
+};
+
+//-------------------------------------------------------------------------------------------------
 /** What a team can answer, read off the unit templates it is built from. */
 //-------------------------------------------------------------------------------------------------
 struct AITeamCapability
 {
-	Bool m_hitsAir;
-	Bool m_hitsGround;
+	Real m_answer;					///< 0..1: how its units fare against the visible enemy army, money for money
 	Bool m_detectsStealth;
-	Bool m_prefersVehicles;			///< carries a weapon declared PreferredAgainst a vehicle: anti-tank
-	Bool m_prefersInfantry;			///< ... or against infantry: splash, flame, machine gun
 
-	AITeamCapability() : m_hitsAir(FALSE), m_hitsGround(FALSE), m_detectsStealth(FALSE),
-											 m_prefersVehicles(FALSE), m_prefersInfantry(FALSE) {}
+	AITeamCapability() : m_answer(0.0f), m_detectsStealth(FALSE) {}
 };
 
 /** How well this team answers what the enemy is fielding, 0 (answers none of it) to 1 (answers all
 	* of it).  Pure arithmetic on purpose - the whole point of B1 is a score you can test and tune
 	* rather than a coin flip, and this is the half of it that has no engine in it. */
 Real aiCounterScore( const AIEnemyComposition &enemy, const AITeamCapability &team );
+
+//-------------------------------------------------------------------------------------------------
+/** How one weapon works on one target, in the numbers that decide how long the target lasts. */
+//-------------------------------------------------------------------------------------------------
+struct AIShotPattern
+{
+	Real m_damagePerShot;		///< after the target's armour; 0 cannot hurt it
+	Real m_delayFrames;			///< between two shots of one clip
+	Int  m_clipSize;				///< 0 never reloads
+	Real m_reloadFrames;		///< between the shot that empties a clip and the next one
+	Real m_openingFrames;		///< once, before the first shot
+
+	AIShotPattern() : m_damagePerShot(0.0f), m_delayFrames(0.0f), m_clipSize(0), m_reloadFrames(0.0f),
+										m_openingFrames(0.0f) {}
+};
+
+const Real AI_CANNOT_KILL = -1.0f;
+
+/** Frames until a weapon firing this pattern kills a target with this much health, or
+	* AI_CANNOT_KILL when it does no damage to it. */
+Real aiFramesToKill( Real targetHealth, const AIShotPattern &shots );
+
+/** One pairing as 0..1, money for money: 0.5 an even trade, 1 when my side kills sixteen times
+	* faster for its price (or cannot be hurt back), 0 when it cannot hurt the other side. */
+Real aiMatchupScore( Real myFramesToKill, Real theirFramesToKill, Real myCost, Real theirCost );
 
 /** How the exchange is going, as the ratio of how long this force lasts to how long it needs to
 	* kill what is shooting at it.  Below 1 it is losing; below the rung's retreatTtkRatio it should
@@ -319,6 +352,23 @@ Real aiEnemyCost( Real distSqr, Bool crippled, Bool alreadyTargetedByAnotherAI,
 	* Twice the threshold halves the delay, four times quarters it, and it stops there - this is a
 	* decision to spend faster, not a production multiplier, and D10 draws that line. */
 Int aiHoardAdjustedDelay( Int frames, Int money, Int hoardAt );
+
+/** How many copies of one team a skirmish AI may field.  The skirmish scripts cap the army by
+	* their roster: late in a match every attack team left to build allows one copy, so the AI
+	* replaces its losses and banks the rest.  Every two thresholds of cash allows one more copy of
+	* the teams the script already permits, up to three more.  A team the data never allows stays
+	* at zero, and no threshold leaves EA's limit alone. */
+Int aiHoardAllowedTeamInstances( Int maxInstances, Int money, Int hoardAt );
+
+/** Which approach a team takes: the lane with the least known enemy firepower along it.  A negative
+	* entry is a lane this map does not have.  A tie, or nothing known anywhere, keeps the lane the
+	* script asked for, so an AI that has not scouted plays exactly as the script wrote it. */
+Int aiLeastDefendedLane( const Real *laneFirepower, Int laneCount, Int requestedLane );
+
+/** Whether the attack teams parked at the staging point go now: when what is parked adds up to a wave,
+	* or the oldest has waited long enough.  The threshold is this AI's own force, never a fraction of
+	* the enemy's, because two AIs each waiting to outnumber the other never move. */
+Bool aiReleaseWave( Real heldPower, Real wavePower, UnsignedInt heldFrames, UnsignedInt maxHoldFrames );
 
 class TAiData : public Snapshot
 {

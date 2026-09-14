@@ -1056,35 +1056,20 @@ Real AI::getAdjustedVisionRangeForObject(const Object *object, Int factorsToCons
 	*    than 0.85 did.  These are the "clearly losing" numbers, and at 0.5 retreat is worth about a
 	*    win in twenty over having none.
 	*
-	*  - useInfluenceMapForAttackLane is FALSE everywhere, deliberately.  It works - it aims at the
-	*    enemy's most valuable visible cell instead of the middle of his base - and measured against
-	*    itself it does not pay: with one rung copied onto the other so the lane was the only
-	*    difference, and both seats played, it went 7-9 over 32 matches, and the side using it took
-	*    twice the losses for half the kills.  Aiming at the money means walking past the army.  The
-	*    roadmap's actual proposal is to come in where the *defence density* is lowest, which is the
-	*    threat map rather than the cash map; getMostValuableVisibleLocation and
-	*    influenceMapAttackGoal are kept for that attempt.
+	*  - useInfluenceMapForAttackLane was FALSE everywhere after its first cut aimed at the enemy's
+	*    most valuable visible cell: 7-9 over 32 matches against itself, twice the losses for half
+	*    the kills, because aiming at the money means walking past the army.  It is on at the top
+	*    again for the roadmap's actual proposal, AIPlayer::chooseApproachLabel: of Center, Flank and
+	*    Backdoor, the approach with the least firepower this AI has seen along it.
 	*
-	*                      scoutS maxSc react decis   cntr  mass  ttk   indiv team  infl  focus  save   harv  expand guard hoard */
+	*                      scoutS maxSc react decis   cntr  mass  ttk   indiv team  infl  focus  save   harv  expand guard hoard  econ */
 static const AIDifficultyProfile s_defaultSkillLadder[ AISKILL_COUNT ] =
 {
-	/* Easy      */ { 90.0f, 1, 15.0f, 10.0f,  0.00f, FALSE, 0.00f, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE,     0 },
-	/* Medium    */ { 60.0f, 1,  6.0f,  5.0f,  0.25f, FALSE, 0.35f, TRUE,  FALSE, FALSE, TRUE,  TRUE,  TRUE,  TRUE,  FALSE, 10000 },
-	/* Brutal    */ { 25.0f, 2,  0.0f,  1.5f,  1.00f, TRUE,  0.50f, TRUE,  TRUE,  FALSE, TRUE,  TRUE,  TRUE,  TRUE,  TRUE,   4000 }
+	/* Easy      */ { 90.0f, 1, 15.0f, 10.0f,  0.00f, FALSE, 0.00f, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE,     0, FALSE },
+	/* Medium    */ { 60.0f, 1,  6.0f,  5.0f,  0.25f, FALSE, 0.35f, TRUE,  FALSE, FALSE, TRUE,  TRUE,  TRUE,  TRUE,  FALSE, 10000, FALSE },
+	/* Brutal    */ { 25.0f, 2,  0.0f,  1.5f,  1.00f, TRUE,  0.50f, TRUE,  TRUE,  TRUE,  TRUE,  TRUE,  TRUE,  TRUE,  TRUE,   4000, TRUE }
 };
 
-//-------------------------------------------------------------------------------------------------
-/** How well a team answers what the enemy is fielding.
-	*
-	* Anti-air and stealth detection carry their enemy's whole share, because a team that cannot
-	* touch what it is walking into is worth nothing against it - AA is the AI's classic hole and
-	* stealth became a real threat to it the moment its units stopped shooting through fog.  A
-	* weapon declared PreferredAgainst something is the data's own statement that it is the answer to
-	* it, so that is what "anti-tank" and "anti-infantry" mean here rather than a hand-kept list.
-	*
-	* Merely being able to shoot at the ground is worth a quarter share: almost every team can, so
-	* it barely discriminates, but a team that cannot is genuinely useless against a ground army. */
-//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 /** How the exchange is going: how long this force lasts, over how long it needs to finish what is
 	* shooting at it.  Above 1 it is winning.
@@ -1218,21 +1203,109 @@ Int aiHoardAdjustedDelay( Int frames, Int money, Int hoardAt )
 	return (out < 1) ? 1 : out;
 }
 
+//-------------------------------------------------------------------------------------------------
+Int aiHoardAllowedTeamInstances( Int maxInstances, Int money, Int hoardAt )
+{
+	const Int MAX_EXTRA_INSTANCES = 3;
+
+	if( hoardAt <= 0 || maxInstances <= 0 )
+		return maxInstances;
+
+	Int extra = money / (2 * hoardAt);
+	if( extra > MAX_EXTRA_INSTANCES )
+		extra = MAX_EXTRA_INSTANCES;
+	return maxInstances + extra;
+}
+
+//-------------------------------------------------------------------------------------------------
+Int aiLeastDefendedLane( const Real *laneFirepower, Int laneCount, Int requestedLane )
+{
+	Int quietest = -1;
+	for( Int i = 0; i < laneCount; ++i )
+	{
+		if( laneFirepower[ i ] < 0.0f )
+			continue;
+		if( quietest < 0 || laneFirepower[ i ] < laneFirepower[ quietest ] )
+			quietest = i;
+	}
+	if( quietest < 0 )
+		return requestedLane;
+
+	const Bool requestedExists = requestedLane >= 0 && requestedLane < laneCount && laneFirepower[ requestedLane ] >= 0.0f;
+	if( requestedExists && laneFirepower[ requestedLane ] <= laneFirepower[ quietest ] )
+		return requestedLane;
+	return quietest;
+}
+
+//-------------------------------------------------------------------------------------------------
+Bool aiReleaseWave( Real heldPower, Real wavePower, UnsignedInt heldFrames, UnsignedInt maxHoldFrames )
+{
+	if( heldPower <= 0.0f )
+		return FALSE;			// nothing parked that can fight, nothing to send
+	return heldPower >= wavePower || heldFrames >= maxHoldFrames;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** How well a team answers what the enemy is fielding.
+	*
+	* m_answer carries the matchups: how the team's own units fare, weapon against armour, against
+	* every kind of unit it can see.  EA's data says a Crusader shell does a tenth of its damage to a
+	* rifleman, and that is the kind of fact a KindOf flag could never tell the AI.  Stealth detection
+	* keeps a term of its own, because no firepower answers a unit nobody can target. */
+//-------------------------------------------------------------------------------------------------
 Real aiCounterScore( const AIEnemyComposition &enemy, const AITeamCapability &team )
 {
-	Real score = 0.0f;
-
-	if( team.m_hitsAir )
-		score += enemy.m_air;
+	Real score = team.m_answer;
 	if( team.m_detectsStealth )
 		score += enemy.m_stealth;
-	if( team.m_prefersVehicles )
-		score += enemy.m_armour;
-	if( team.m_prefersInfantry )
-		score += enemy.m_infantry;
-	if( team.m_hitsGround )
-		score += 0.25f * (enemy.m_armour + enemy.m_infantry);
 
+	if( score < 0.0f ) score = 0.0f;
+	if( score > 1.0f ) score = 1.0f;
+	return score;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Frames until one weapon puts one target down.  The first shot pays one delay and every later
+	* shot pays the wait before it - the reload when the shot before it emptied the clip.  Paying a
+	* delay for the first shot is what keeps two one-shot kills from both reading as instant. */
+//-------------------------------------------------------------------------------------------------
+Real aiFramesToKill( Real targetHealth, const AIShotPattern &shots )
+{
+	const Real OVERKILL_TOLERANCE = 0.0001f;		// 480 health at 60 a shot is eight shots, not nine
+
+	if( shots.m_damagePerShot <= 0.0f || targetHealth <= 0.0f )
+		return AI_CANNOT_KILL;
+
+	Int shotsNeeded = (Int)ceilf( targetHealth / shots.m_damagePerShot - OVERKILL_TOLERANCE );
+	if( shotsNeeded < 1 )
+		shotsNeeded = 1;
+	const Int reloads = (shots.m_clipSize > 0) ? (shotsNeeded - 1) / shots.m_clipSize : 0;
+	const Real firstShot = (shots.m_delayFrames > 1.0f) ? shots.m_delayFrames : 1.0f;
+
+	return shots.m_openingFrames + firstShot
+		+ INT_TO_REAL( shotsNeeded - 1 - reloads ) * shots.m_delayFrames
+		+ INT_TO_REAL( reloads ) * shots.m_reloadFrames;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** One pairing, money for money.  On a log scale, so twice as good and half as good sit the same
+	* distance either side of an even trade, and the two directions of one pairing always sum to 1. */
+//-------------------------------------------------------------------------------------------------
+Real aiMatchupScore( Real myFramesToKill, Real theirFramesToKill, Real myCost, Real theirCost )
+{
+	const Real SATURATING_DOUBLINGS = 4.0f;		// sixteen times better is as good as it gets
+
+	if( myFramesToKill < 0.0f )
+		return 0.0f;				// nothing I can do about it, whatever it can do to me
+	if( theirFramesToKill < 0.0f )
+		return 1.0f;				// it cannot touch me and I can kill it
+
+	Real advantage = theirFramesToKill / myFramesToKill;
+	if( myCost > 0.0f && theirCost > 0.0f )
+		advantage *= theirCost / myCost;			// twice the price has to kill twice as fast to break even
+
+	const Real doublings = (Real)( log( advantage ) / log( 2.0 ) );
+	Real score = 0.5f + 0.5f * doublings / SATURATING_DOUBLINGS;
 	if( score < 0.0f ) score = 0.0f;
 	if( score > 1.0f ) score = 1.0f;
 	return score;
@@ -1272,6 +1345,7 @@ void AI::parseSkillLevel(INI *ini, void *instance, void* /*store*/, const void* 
 		{ "SelfTriggeredExpansion",		INI::parseBool, NULL, offsetof( AIDifficultyProfile, m_selfTriggeredExpansion ) },
 		{ "DefendExpansions",					INI::parseBool, NULL, offsetof( AIDifficultyProfile, m_defendExpansions ) },
 		{ "CashHoardThreshold",				INI::parseInt,  NULL, offsetof( AIDifficultyProfile, m_cashHoardThreshold ) },
+		{ "EconomyBuildings",					INI::parseBool, NULL, offsetof( AIDifficultyProfile, m_economyBuildings ) },
 		{ NULL, NULL, NULL, 0 }
 	};
 

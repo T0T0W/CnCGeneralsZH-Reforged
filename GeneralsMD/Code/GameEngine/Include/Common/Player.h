@@ -526,6 +526,12 @@ public:
 	/// Have the ai check for bridges.
 	virtual Bool checkBridges(Object *unit, Waypoint *way);
 
+	/// The skirmish approach this player's team should take: the script's choice, unless the AI reads the map.
+	AsciiString chooseApproachLabel(const Coord3D *from, const AsciiString &requested, Int pathSuffix);
+
+	/// TRUE when the AI parks this team to go out with the rest of its wave instead of on its own.
+	Bool holdTeamForWave(Team *team, const AsciiString &approach, Int pathSuffix);
+
 	/// Get the center of the ai's base.
 	virtual Bool getAiBaseCenter(Coord3D *pos);
 

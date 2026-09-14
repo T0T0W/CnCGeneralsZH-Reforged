@@ -366,8 +366,14 @@ Bool AISkirmishPlayer::isAGoodIdeaToBuildTeam( TeamPrototype *proto )
 	if (!proto->evaluateProductionCondition()) {
 		return false;
 	}
-	// check build limit
-	if (proto->countTeamInstances() >= proto->getTemplateInfo()->m_maxInstances){
+	// check build limit, which a hoard raises for attack teams; defence teams keep the data's
+	const TeamTemplateInfo *info = proto->getTemplateInfo();
+	Int allowedInstances = info->m_maxInstances;
+	if (!info->m_isBaseDefense && !info->m_isPerimeterDefense) {
+		allowedInstances = aiHoardAllowedTeamInstances( allowedInstances, m_player->getMoney()->countMoney(),
+																										getSkillProfile()->m_cashHoardThreshold );
+	}
+	if (proto->countTeamInstances() >= allowedInstances){
 		if (TheGlobalData->m_debugAI) {	
 			AsciiString str;
 			str.format("Team %s not chosen - %d already exist.", proto->getName().str(), proto->countTeamInstances());
