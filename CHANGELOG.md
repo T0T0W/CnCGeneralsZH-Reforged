@@ -679,8 +679,11 @@ found and fixed â€” EA's own, not port damage.**
   on; the water you actually play beside gets it now. The reflection only ever darkens: open water
   keeps the exact colour the map painted it, and a black shroud stays black. The water shows only
   what the land does: an enemy hidden under the fog of war, or a stealthed unit, used to give itself
-  away in the reflection. It is not free: the world is drawn a second time for the mirror, and on
-  one 1280x720 view of Golden Oasis a frame went from 4.9ms to 8.7ms.
+  away in the reflection. It is not free, since the world is drawn a second time for the mirror, but
+  the mirror only draws the ground it can see, only the part of the screen the water covers, and
+  only every other frame while the camera holds still. On one 1280x720 view of Golden Oasis, where
+  the river fills the screen, a frame takes 6.9ms against 5.8ms with no reflection; before that
+  work it took 8.3ms. Over the small lakes on Fortress Avalanche the difference is 7.1ms against 6.6ms.
 - Bright things can bleed light into the air. Off by default, because the artwork was painted in 2003 for a screen that had no glow at all.
 - Two dropdowns on the display page, not two percentages. Glow is off, subtle, normal or strong; what glows is only the brightest, bright things, or most of the picture. The numbers underneath were a strength you had to find by experiment and a brightness that ran backwards, where turning it down put more of the screen in the haze, and nothing on screen told you that.
 - Scorch marks follow the texture quality setting like everything else. The terrain and the trees

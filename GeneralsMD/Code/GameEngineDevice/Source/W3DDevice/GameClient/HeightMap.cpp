@@ -2040,6 +2040,24 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			{
 				static int count = 0;
 				count++;
+				if (ShaderClass::Is_Backface_Culling_Inverted())
+				{	// The draw window reaches well past what the mirror sees, and a mirror frame has
+					// nothing else to spend on a block of ground that could never show in the water.
+					// A block split across the window's wrap seam is not worth the arithmetic and is drawn.
+					const Int cellXMin = getXWithOrigin(i*VERTEX_BUFFER_TILE_LENGTH)+m_map->getDrawOrgX()-m_map->getBorderSizeInline();
+					const Int cellXMax = getXWithOrigin((i+1)*VERTEX_BUFFER_TILE_LENGTH-1)+m_map->getDrawOrgX()+1-m_map->getBorderSizeInline();
+					const Int cellYMin = getYWithOrigin(j*VERTEX_BUFFER_TILE_LENGTH)+m_map->getDrawOrgY()-m_map->getBorderSizeInline();
+					const Int cellYMax = getYWithOrigin((j+1)*VERTEX_BUFFER_TILE_LENGTH-1)+m_map->getDrawOrgY()+1-m_map->getBorderSizeInline();
+					if (cellXMax > cellXMin && cellYMax > cellYMin)
+					{
+						AABoxClass block;
+						block.Init_Min_Max(
+							Vector3((cellXMin-1)*MAP_XY_FACTOR, (cellYMin-1)*MAP_XY_FACTOR, m_minHeight),
+							Vector3((cellXMax+1)*MAP_XY_FACTOR, (cellYMax+1)*MAP_XY_FACTOR, m_maxHeight));
+						if (rinfo.Camera.Cull_Box(block))
+							continue;
+					}
+				}
 				Int numPolys = VERTEX_BUFFER_TILE_LENGTH*VERTEX_BUFFER_TILE_LENGTH*2;
 				Int numVertex = (VERTEX_BUFFER_TILE_LENGTH*2)*(VERTEX_BUFFER_TILE_LENGTH*2);
 				if (HALF_RES_MESH) {
@@ -2136,7 +2154,9 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		if (TheTerrainTracksRenderObjClassSystem)
 			TheTerrainTracksRenderObjClassSystem->flush();
 
-		if (m_shroud && rinfo.Additional_Pass_Count())
+		// The water a reflection lands on is shrouded already, and shrouding the ground inside the
+		// mirror as well would draw the whole terrain a second time for no visible difference.
+		if (m_shroud && rinfo.Additional_Pass_Count() && !ShaderClass::Is_Backface_Culling_Inverted())
 		{
 			rinfo.Peek_Additional_Pass(0)->Install_Materials();
 			renderTerrainPass(&rinfo.Camera);

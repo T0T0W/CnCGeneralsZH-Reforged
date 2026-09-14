@@ -175,6 +175,10 @@ protected:
 	Real				m_fBumpScale;	///<scales bump map uv perturbation
 	TextureClass * m_pReflectionTexture;	///<render target for reflection
 	Real m_reflectionLevel;	///<height of the water plane the reflection texture was rendered for
+	Vector2 m_reflectionAreaMin;	///<lower left of the screen area the reflection texture covers, -1 to 1
+	Vector2 m_reflectionAreaMax;	///<upper right of the same area
+	Matrix3D m_reflectionCameraTransform;	///<where the camera stood when the reflection texture was last rendered
+	Bool m_reflectionReused;	///<the frame before this one kept the previous reflection texture
 	RenderObjClass	*m_skyBox;		///<box around level
 	WaterTracksRenderSystem *m_waterTrackSystem;	///<object responsible for rendering water wakes
 
