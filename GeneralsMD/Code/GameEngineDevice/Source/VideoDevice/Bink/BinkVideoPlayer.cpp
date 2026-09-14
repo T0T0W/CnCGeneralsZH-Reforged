@@ -202,16 +202,39 @@ VideoStreamInterface* BinkVideoPlayer::createStream( HBINK handle )
 		stream->m_player = this;
 		m_firstStream = stream;
 
-		// never let volume go to 0, as Bink will interpret that as "play at full volume".
-		Int mod = (Int) ((TheAudio->getVolume(AudioAffect_Speech) * 0.8f) * 100) + 1;
-		Int volume = (32768*mod)/100;
-		DEBUG_LOG(("BinkVideoPlayer::createStream() - About to set volume (%g -> %d -> %d\n",
-			TheAudio->getVolume(AudioAffect_Speech), mod, volume));
-		BinkSetVolume( stream->m_handle,0, volume);
-		DEBUG_LOG(("BinkVideoPlayer::createStream() - set volume\n"));
+		// Bink drops a volume set before its first BinkWait, so without this every movie played at
+		// full level whatever the speech slider said.
+		BinkWait( stream->m_handle );
+		BinkSetVolume( stream->m_handle, 0, movieAudioVolume( TheAudio->getVolume(AudioAffect_Speech) ) );
 	}
 
 	return stream;
+}
+
+//============================================================================
+// BinkVideoPlayer::movieAudioVolume
+//============================================================================
+
+Int BinkVideoPlayer::movieAudioVolume( Real volume )
+{
+	// never let volume go to 0, as Bink will interpret that as "play at full volume".
+	Int mod = (Int) ((volume * 0.8f) * 100) + 1;
+	return (32768*mod)/100;
+}
+
+//============================================================================
+// BinkVideoPlayer::setVolume
+//============================================================================
+
+void BinkVideoPlayer::setVolume( Real volume )
+{
+	// Movie audio goes out through Bink, not through the Miles mixer, so a slider change made while
+	// a movie is open has to be handed to each stream.
+	Int binkVolume = movieAudioVolume( volume );
+	for ( VideoStreamInterface* stream = firstStream(); stream != NULL; stream = stream->next() )
+	{
+		BinkSetVolume( static_cast<BinkVideoStream*>( stream )->m_handle, 0, binkVolume );
+	}
 }
 
 //============================================================================

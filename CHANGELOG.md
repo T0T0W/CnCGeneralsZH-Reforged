@@ -979,6 +979,8 @@ found and fixed â€” EA's own, not port damage.**
 ## Sound, video, and getting it to start at all
 
 - Audio is real, through the audio library the retail game ships with.
+- A death cry plays to the end. So does "construction complete", and the tail of a gun. Telling a sound to stop used to cut it off that frame, where the 2003 game let it finish and only kept it from repeating; our own fix for the audio thread broke that, and it is put back. A looping sound caught in the pause between two plays can be stopped too, instead of carrying on after whatever made it is gone.
+- Movies follow the voice volume slider. The volume was handed to the video before it was ready to take it, so every movie played at full level, and moving the slider while one was playing changed nothing.
 - A sound at the edge of its range can fade out instead of stopping dead. The volume curve never
   actually reaches zero, so a sound you are walking away from was cut off mid-note at the maximum
   range. `RangeVolumeFade = Yes` in `AudioSettings.ini` uses a fade that reaches zero exactly where

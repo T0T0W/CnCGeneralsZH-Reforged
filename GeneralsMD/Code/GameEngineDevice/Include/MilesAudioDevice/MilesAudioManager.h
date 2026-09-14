@@ -72,7 +72,7 @@ struct PlayingAudio
 	volatile PlayingStatus m_status;	// This member is adjusted by another running thread.
 	AudioEventRTS *m_audioEventRTS;
 	void *m_file;		// The file that was opened to play this
-	Bool m_requestStop;
+	Bool m_requestStop;	///< let the sound finish, but start no further loop of it
 	Bool m_cleanupAudioEventRTS;
 	/// Asked to fade out.  Moving from the playing list to the fading list writes two lists, so it
 	/// happens in processPlayingList holding both locks rather than wherever the fade is asked for.
@@ -91,6 +91,10 @@ struct PlayingAudio
 		m_stream(0),
 		m_framesFaded(0)
 	{ }
+
+	/// An entry past PS_Playing is waiting for the sweep that frees it: its Miles handle may already
+	/// be back in the pool, so it must not be counted, touched or picked as a victim.
+	Bool isPlaying() const { return m_status == PS_Playing; }
 };
 
 struct ProviderInfo
@@ -265,7 +269,7 @@ class MilesAudioManager : public AudioManager
 		void initSamplePools( void );
 		void processRequest( AudioRequest *req );
 
-		void playAudioEvent( AudioEventRTS *event );
+		void playAudioEvent( AudioEventRTS *event, Bool requestStop );
 		void stopAudioEvent( AudioHandle handle );
 		void pauseAudioEvent( AudioHandle handle );
 
