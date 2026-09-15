@@ -5731,8 +5731,6 @@ StateReturnType AIAttackFireWeaponState::onEnter()
 		}
 	}
 
-	m_saidHeldFire = FALSE;
-
 	obj->setStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_IS_FIRING_WEAPON ) );
 	obj->preFireCurrentWeapon( getMachineGoalObject() );
 	return STATE_CONTINUE;
@@ -5822,18 +5820,7 @@ StateReturnType AIAttackFireWeaponState::update()
 		// damage lapses on its own if the shot never lands, so nothing holds fire forever.
 		//
 		if (IncomingDamageTracker::isSpokenFor(victim, obj->getID()))
-		{
-			if (!m_saidHeldFire)
-			{
-				m_saidHeldFire = TRUE;
-				DEBUG_LOG(("held fire: %s holds, %s has %.0f left and %.0f is already in the air\n",
-									 obj->getTemplate()->getName().str(),
-									 victim->getTemplate()->getName().str(),
-									 victim->getBodyModule()->getHealth(),
-									 IncomingDamageTracker::getBookedDamage(victim->getID())));
-			}
 			return STATE_FAILURE;
-		}
 
 		// still ours to take, so keep saying so: the wind-up before a shot can run for a second and
 		// nothing is in the air during it

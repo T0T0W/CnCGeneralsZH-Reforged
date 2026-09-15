@@ -418,6 +418,7 @@ protected:
 		 both machines in a network game compute them the same way from the same frames, and a
 		 savegame that restarts a half-finished scan loses nothing but a few frames of searching. */
 	Real		m_buildProbeOffset;
+	Int			m_buildProbeSkip;		///< position pairs of the ring at m_buildProbeOffset already tried
 	Coord3D m_buildProbePos;
 
 	GameDifficulty m_difficulty;
@@ -432,6 +433,7 @@ protected:
 	enum {MAX_STRUCTURES_TO_REPAIR = 2};
 	ObjectID m_structuresToRepair[MAX_STRUCTURES_TO_REPAIR];
 	ObjectID m_repairDozer;
+	UnsignedInt m_frameAfterFailedDozerQueue;	///< frame+1 of the last queueDozer that found no factory, 0 for never
 	Coord3D  m_repairDozerOrigin;
 	Int			 m_structuresInQueue;
 	Bool		 m_dozerQueuedForRepair;

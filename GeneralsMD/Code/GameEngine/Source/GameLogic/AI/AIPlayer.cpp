@@ -68,6 +68,7 @@
 #include "GameLogic/PartitionManager.h"
 #include "Common/ActionManager.h"				// canCaptureBuilding, for the tech buildings
 #include "GameLogic/Module/SpecialPowerModule.h"	// ... and the module that does it
+#include <map>
 
 #ifdef _INTERNAL
 // for occasional debugging...
@@ -244,6 +245,19 @@ static Int64 theAIBaseSubStart;
 
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
+/* How long one unit template takes to kill another, read off template data alone (see
+	 templateFramesToKill). selectTeamToBuild asks it for every unit of every candidate team against
+	 every kind of enemy in sight, both ways round, and each answer walks module names, weapon sets and
+	 armour: an eight-player match spent 84ms of one frame there. Nothing it reads changes during a
+	 match, so the answer is kept. The destructor empties it, because the next match can free a template
+	 and hand its address to another. */
+typedef std::pair<const ThingTemplate *, const ThingTemplate *> AITemplatePair;
+static std::map<AITemplatePair, Real> theFramesToKillCache;
+// the two questions under it that walk a template's module list by name, kept the same way: the first
+// team choice of a match fills all three at once, and that one choice was the 90ms frame
+static std::map<const ThingTemplate *, Real> theMaxHealthCache;
+static std::map<const ThingTemplate *, Bool> theDetectsStealthCache;
+
 AIPlayer::AIPlayer( Player *p ) :
 m_player(p),
 m_buildDelay(0), 
@@ -254,6 +268,7 @@ m_readyToBuildTeam(false),
 m_readyToBuildStructure(false),
 m_structuresInQueue(0),
 m_repairDozer(INVALID_ID),
+m_frameAfterFailedDozerQueue(0),
 m_skillsetSelector(INVALID_SKILLSET_SELECTION),
 m_dozerQueuedForRepair(false),
 m_supplySourceAttackCheckFrame(0),
@@ -261,6 +276,7 @@ m_attackedSupplyCenter(INVALID_ID),
 m_teamSeconds(10),
 m_curWarehouseID(INVALID_ID),
 m_buildProbeOffset(0.0f),
+m_buildProbeSkip(0),
 m_scoutTimer(1),
 m_retreatTimer(1),
 m_expandTimer(1),
@@ -362,6 +378,9 @@ m_role(AIROLE_AGGRESSIVE)
 AIPlayer::~AIPlayer()
 {
 	clearTeamsInQueue();
+	theFramesToKillCache.clear();
+	theMaxHealthCache.clear();
+	theDetectsStealthCache.clear();
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -890,19 +909,31 @@ Object *AIPlayer::buildStructureWithDozer(const ThingTemplate *bldgPlan, BuildLi
 				 sampling as well - while the outer rings are mostly off the map and are rejected on
 				 the first line. A budget of 100 left a 19.7ms frame made of about 120 inner
 				 positions; at 32 the first frame walks three rings and the worst frame this can cost
-				 is either those, or one whole outer ring of 240 cheap ones. */
+				 is either those, or one whole outer ring of 240 cheap ones.
+
+				 That last claim was wrong. A four-player match on 2026-09-15 spent 20 to 37ms of eight
+				 logic frames in a row here, and a timer put inside the loop showed why: the budget was
+				 only checked between rings, and a ring 72 to 104 cells out holds 152 to 216 positions,
+				 every one of them finished once started. So the budget is checked before every pair
+				 of positions now, and the pair it stopped at is kept beside the ring, which is still
+				 the same order and still the same spot. */
 			const Int BUILD_PROBES_PER_FRAME = 32;
 			Int probes = 0;
 			Bool outOfBudget = false;
 			Real firstOffset = 0;
-			if (m_buildProbeOffset > 0 &&
+			Int skipPairs = 0;
+			if ((m_buildProbeOffset > 0 || m_buildProbeSkip > 0) &&
 					m_buildProbePos.x == pos.x && m_buildProbePos.y == pos.y) {
 				firstOffset = m_buildProbeOffset;		// same spot as last frame: carry on from there
+				skipPairs = m_buildProbeSkip;				// ... from the pair it stopped at inside that ring
 			}
 			m_buildProbePos = pos;
 			m_buildProbeOffset = 0;
+			m_buildProbeSkip = 0;
 
 			for (posOffset = firstOffset; posOffset<limit; posOffset += 2*PATHFIND_CELL_SIZE_F) {
+				const Real ringOffset = posOffset;
+				Int pair = 0;
 				if (probes >= BUILD_PROBES_PER_FRAME) {
 					// out of budget with rings left to walk: pick this one up again next frame
 					m_buildProbeOffset = posOffset;
@@ -917,6 +948,14 @@ Object *AIPlayer::buildStructureWithDozer(const ThingTemplate *bldgPlan, BuildLi
 				yPos = pos.y-offset;
 				for (xPos = pos.x-offset; xPos <= pos.x+offset; xPos+=PATHFIND_CELL_SIZE_F) {
 					if (isSkirmishAI()) xPos += PATHFIND_CELL_SIZE_F;
+					if (skipPairs > 0) { --skipPairs; ++pair; continue; }		// tried last frame
+					if (probes >= BUILD_PROBES_PER_FRAME) {
+						m_buildProbeOffset = ringOffset;
+						m_buildProbeSkip = pair;
+						outOfBudget = true;
+						break;
+					}
+					++pair;
 					probes += 2;
 					newPos.x = xPos;
 					newPos.y = yPos;
@@ -933,10 +972,18 @@ Object *AIPlayer::buildStructureWithDozer(const ThingTemplate *bldgPlan, BuildLi
 																							 BuildAssistant::NO_OBJECT_OVERLAP,
 																							 dozer, m_player ) == LBC_OK;
 				}
-				if (valid) break;
+				if (valid || outOfBudget) break;
 				xPos = pos.x-offset;
 				for (yPos = pos.y-offset; yPos <= pos.y+offset; yPos+=PATHFIND_CELL_SIZE_F) {
 					if (isSkirmishAI()) yPos += PATHFIND_CELL_SIZE_F;
+					if (skipPairs > 0) { --skipPairs; ++pair; continue; }		// tried last frame
+					if (probes >= BUILD_PROBES_PER_FRAME) {
+						m_buildProbeOffset = ringOffset;
+						m_buildProbeSkip = pair;
+						outOfBudget = true;
+						break;
+					}
+					++pair;
 					probes += 2;
 					newPos.x = xPos;
 					newPos.y = yPos;
@@ -953,7 +1000,7 @@ Object *AIPlayer::buildStructureWithDozer(const ThingTemplate *bldgPlan, BuildLi
 																							 BuildAssistant::NO_OBJECT_OVERLAP,
 																							 dozer, m_player ) == LBC_OK;
 				}
-				if (valid) break;
+				if (valid || outOfBudget) break;
 			}
 			if (valid) pos = newPos;
 			if (!valid && outOfBudget) {
@@ -2028,7 +2075,7 @@ Bool AIPlayer::selectTeamToReinforce( Int minPriority )
 /** The health a unit template is built with.  Every body module that can be hurt keeps it in
 	* ActiveBodyModuleData; the one that cannot, InactiveBody, is not on the list and answers zero. */
 //-------------------------------------------------------------------------------------------------
-static Real templateMaxHealth( const ThingTemplate *tmpl )
+static Real computeTemplateMaxHealth( const ThingTemplate *tmpl )
 {
 	static const char *BODIES_WITH_HEALTH[] =
 		{ "ActiveBody", "StructureBody", "HiveStructureBody", "UndeadBody", "HighlanderBody", "ImmortalBody", NULL };
@@ -2043,6 +2090,37 @@ static Real templateMaxHealth( const ThingTemplate *tmpl )
 		}
 	}
 	return 0.0f;
+}
+
+static Real templateMaxHealth( const ThingTemplate *tmpl )
+{
+	std::map<const ThingTemplate *, Real>::const_iterator known = theMaxHealthCache.find( tmpl );
+	if( known != theMaxHealthCache.end() )
+		return known->second;
+	const Real health = computeTemplateMaxHealth( tmpl );
+	theMaxHealthCache[ tmpl ] = health;
+	return health;
+}
+
+/** "Can it see stealth" is not a KindOf - it is a module the data hangs on the unit, so ask the
+	* template's module list by name, once per template. */
+static Bool templateDetectsStealth( const ThingTemplate *tmpl )
+{
+	std::map<const ThingTemplate *, Bool>::const_iterator known = theDetectsStealthCache.find( tmpl );
+	if( known != theDetectsStealthCache.end() )
+		return known->second;
+	Bool detects = FALSE;
+	const ModuleInfo &modules = tmpl->getBehaviorModuleInfo();
+	for( Int m = 0; m < modules.getCount(); ++m )
+	{
+		if( modules.getNthName( m ).compareNoCase( "StealthDetectorUpdate" ) == 0 )
+		{
+			detects = TRUE;
+			break;
+		}
+	}
+	theDetectsStealthCache[ tmpl ] = detects;
+	return detects;
 }
 
 // ponytail: an aircraft that empties its clip flies home to rearm; a flat twenty seconds stands in
@@ -2114,7 +2192,7 @@ static Bool shotPatternAgainst( const WeaponTemplate *weapon, const ThingTemplat
 //-------------------------------------------------------------------------------------------------
 /** Frames one unit template needs to kill another, with the best weapon it carries against it. */
 //-------------------------------------------------------------------------------------------------
-static Real templateFramesToKill( const ThingTemplate *attacker, const ThingTemplate *target )
+static Real computeTemplateFramesToKill( const ThingTemplate *attacker, const ThingTemplate *target )
 {
 	if( attacker->getWeaponTemplateSets().empty() )
 		return AI_CANNOT_KILL;			// a dozer, a supply truck: the data gives it nothing to shoot with
@@ -2134,6 +2212,17 @@ static Real templateFramesToKill( const ThingTemplate *attacker, const ThingTemp
 			best = frames;
 	}
 	return best;
+}
+
+static Real templateFramesToKill( const ThingTemplate *attacker, const ThingTemplate *target )
+{
+	const AITemplatePair key( attacker, target );
+	std::map<AITemplatePair, Real>::const_iterator known = theFramesToKillCache.find( key );
+	if( known != theFramesToKillCache.end() )
+		return known->second;
+	const Real frames = computeTemplateFramesToKill( attacker, target );
+	theFramesToKillCache[ key ] = frames;
+	return frames;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2177,20 +2266,10 @@ static AITeamCapability teamCapability( const TeamPrototype *proto, const Player
 		if( tmpl == NULL )
 			continue;			// a map's team naming a unit this game does not have
 
-		//
-		// "Can it see stealth" is not a KindOf - it is a module the data hangs on the unit, so ask the
-		// template's module list by name.  That is the same question the game itself answers when it
-		// builds the object, one INI edit away from being right for a mod's own detector.
-		//
-		const ModuleInfo &modules = tmpl->getBehaviorModuleInfo();
-		for( Int m = 0; m < modules.getCount(); ++m )
-		{
-			if( modules.getNthName( m ).compareNoCase( "StealthDetectorUpdate" ) == 0 )
-			{
-				cap.m_detectsStealth = TRUE;
-				break;
-			}
-		}
+		// the same question the game itself answers when it builds the object, one INI edit away from
+		// being right for a mod's own detector
+		if( templateDetectsStealth( tmpl ) )
+			cap.m_detectsStealth = TRUE;
 
 		const Int minUnits = info->m_unitsInfo[ i ].minUnits;
 		const Real fielded = INT_TO_REAL( minUnits > 1 ? minUnits : 1 );
@@ -4155,6 +4234,18 @@ void AIPlayer::doExpansion( void )
 	if( supplyCenterName.isEmpty() )
 		return;
 
+	//
+	// A centre queued by the last check and not yet standing does not count as "a centre beside that
+	// dock", so the same dock was picked again every minute, a fresh copy queued, and its placement
+	// search run again: 2,300 checks, 23-33ms, each time.  The base builder still owns the queued one.
+	//
+	for( BuildListInfo *info = m_player->getBuildList(); info; info = info->getNext() )
+	{
+		if( info->isPriorityBuild() && info->getTemplateName() == supplyCenterName &&
+				info->getObjectID() == INVALID_ID && info->isBuildable() )
+			return;
+	}
+
 	const ThingTemplate *tmpl = TheThingFactory->findTemplate( supplyCenterName, FALSE );
 	if( tmpl == NULL )
 		return;
@@ -5624,6 +5715,13 @@ void AIPlayer::queueDozer( void )
 {
 
 	if (dozerInQueue()) return;
+	/* A player with no factory that can make a dozer walks every thing template in the game here and
+		 finds nothing, and base building asks once per missing build-list entry: 33 walks and 13ms in
+		 one pass of a late 4v4, every two seconds. Nothing a factory needs can change between two calls
+		 in the same frame, so the answer is kept for the frame. */
+	const UnsignedInt frameAfterNow = TheGameLogic->getFrame() + 1;
+	if (m_frameAfterFailedDozerQueue == frameAfterNow) return;
+	m_frameAfterFailedDozerQueue = frameAfterNow;
 	// Find a factory that can build a dozer.
 
 	Bool canBuildUnits = m_player->getCanBuildUnits();
@@ -5699,78 +5797,81 @@ const AIDifficultyProfile *AIPlayer::getSkillProfile( void ) const
 /**
  * Finds a dozer that isn't building or collecting resources.
  */
+struct FindDozerSearch
+{
+	const Coord3D *pos;
+	ObjectID repairDozer;
+	Bool needDozer;
+	Object *dozer;
+	Object *closestDozer;
+	Real closestDistSqr;
+};
+
+static void considerDozer( Object *obj, void *userData )
+{
+	FindDozerSearch *search = (FindDozerSearch *)userData;
+	if (!obj->isKindOf(KINDOF_DOZER))
+		return;
+
+	AIUpdateInterface *ai = obj->getAIUpdateInterface();
+	if (ai==NULL)
+		return;
+
+	DozerAIInterface* dozerAI = ai->getDozerAIInterface();
+	if (!dozerAI)
+		return;
+
+	// Since workers can be dozers, hmmm....
+	SupplyTruckAIInterface* supplyTruckAI = ai->getSupplyTruckAIInterface();
+	if( !dozerAI->isAnyTaskPending() && supplyTruckAI ) {
+		// If it is gathering supplies, don't steal it.
+		if (supplyTruckAI->isCurrentlyFerryingSupplies() || supplyTruckAI->isForcedIntoWantingState())
+			return;
+	}
+	if (obj->getID() == search->repairDozer)
+		return; // don't steal the repair dozer.
+
+	search->needDozer = false; // dozer exists, may be busy.
+	if (dozerAI->isTaskPending(DOZER_TASK_BUILD))
+		return; // already building.
+
+	if (!dozerAI->isAnyTaskPending())
+		search->dozer = obj; // prefer an idle dozer
+	if (search->dozer==NULL)
+		search->dozer = obj; // but we'll take one doing stuff.
+
+	if (search->dozer && !dozerAI->isAnyTaskPending()) {
+		// Got a good one, track closest.
+		const Real dx = search->pos->x - search->dozer->getPosition()->x;
+		const Real dy = search->pos->y - search->dozer->getPosition()->y;
+		const Real distSqr = dx*dx+dy*dy;
+		if (search->closestDozer == NULL || distSqr < search->closestDistSqr) {
+			search->closestDozer = search->dozer;
+			search->closestDistSqr = distSqr;
+		}
+	}
+}
+
+/* Walks this player's own objects rather than every object in the game. The skirmish AI asks once per
+	 missing build-list entry, so a late 4v4 walked the whole world twenty times in one frame here:
+	 27ms of a 50ms base-building pass. The player's own list is a few dozen objects. */
 Object * AIPlayer::findDozer( const Coord3D *pos )
 {
-	// Add any factories placed to the build list.
-	Object *obj;
-	Object *dozer = NULL;
-	Bool needDozer = true; 
-	Object *closestDozer=NULL;
-	Real closestDistSqr = 0;
+	FindDozerSearch search;
+	search.pos = pos;
+	search.repairDozer = m_repairDozer;
+	search.needDozer = true;
+	search.dozer = NULL;
+	search.closestDozer = NULL;
+	search.closestDistSqr = 0;
 
-	for( obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject() )
-	{
+	m_player->iterateObjects( considerDozer, &search );
 
-		Player *owner = obj->getControllingPlayer();
-		if (owner==m_player) {
-			// See if it's a dozer.
-			if (obj->isKindOf(KINDOF_DOZER)) {
-
-				AIUpdateInterface *ai = obj->getAIUpdateInterface();
-				if (ai==NULL) {
-					continue;										 
-				}
-
-
-				DozerAIInterface* dozerAI = ai->getDozerAIInterface();
-				if (dozerAI) {
-					// Since workers can be dozers, hmmm....
-					SupplyTruckAIInterface* supplyTruckAI = ai->getSupplyTruckAIInterface();
-					if( !dozerAI->isAnyTaskPending() && supplyTruckAI ) {
-						// If it is gathering supplies, don't steal it.
-						if (supplyTruckAI->isCurrentlyFerryingSupplies() || supplyTruckAI->isForcedIntoWantingState()) 
-						{
-							continue;
-						}
-					}
-					if (obj->getID() == m_repairDozer) {
-						continue; // don't steal the repair dozer.
-					}
-					needDozer = false; // dozer exists, may be busy.
-					if (dozerAI->isTaskPending(DOZER_TASK_BUILD)) {
-						continue; // already building.
-					}
-					if (!dozerAI->isAnyTaskPending()) {
-						dozer = obj; // prefer an idle dozer
-					}
-					if (dozer==NULL) {
-						dozer = obj; // but we'll take one doing stuff.
-					}
-					if (dozer && !dozerAI->isAnyTaskPending()) {
-						// Got a good one, track closest.
-						Real distSqr;
-						Real dx, dy;
-						dx = pos->x - dozer->getPosition()->x;
-						dy = pos->y - dozer->getPosition()->y;
-						distSqr = dx*dx+dy*dy;
-						if (closestDozer == NULL) {
-							closestDozer = dozer;
-							closestDistSqr = distSqr;
-						} else if (distSqr < closestDistSqr) {
-							closestDozer = dozer;
-							closestDistSqr = distSqr;
-						}
-					}
-				}
-			}
-		}
-
-	}
-	if (needDozer) {
+	if (search.needDozer) {
 		queueDozer();
 	}
-	if (closestDozer) return closestDozer;
-	return dozer;
+	if (search.closestDozer) return search.closestDozer;
+	return search.dozer;
 }
 
 // ------------------------------------------------------------------------------------------------

@@ -3344,6 +3344,36 @@ Object *PartitionManager::getClosestObjects(
 	static Int theIterFlag = 1;	// nonzero, thanks
 	++theIterFlag;
 
+	/* A gathering query keeps everything in range in whatever order it finds it, and the caller sorts
+		 afterwards. When the range covers the whole map the ring walk below still steps through every
+		 cell offset either side of the centre, four times the map's cells and most of them off it: a
+		 hunting unit's whole-map search spent 15-33ms there to find 3,600 objects. The master module
+		 list holds exactly the objects that sit in cells, so walking it gathers the same set. */
+	if (iterArg && maxRadius >= m_maxGcoRadius)
+	{
+		for (PartitionData *thisMod = m_moduleList; thisMod; thisMod = thisMod->getNext())
+		{
+			if (thisMod->friend_getCoiInUseCount() == 0)
+				continue;
+
+			Object *thisObj = thisMod->getObject();
+			++thePartitionQueryObjects;
+			if (thisObj == obj || thisObj == NULL)
+				continue;
+
+			Real thisDistSqr;
+			Coord3D distVec;
+			if (!(*distProc)(objPos, objToUse, thisObj->getPosition(), thisObj, thisDistSqr, distVec, closestDistSqr))
+				continue;
+
+			if (!filtersAllow(filters, thisObj))
+				continue;
+
+			iterArg->insert(thisObj, thisDistSqr);
+		}
+		maxRadiusLimit = -1;	// nothing left for the ring walk to find
+	}
+
 	/*
 		m_radiusVec[curRadius] contains a list of the cells (foo) that could
 		contain objects that are <= (curRadius * cellSize) distance away from cell (0,0).

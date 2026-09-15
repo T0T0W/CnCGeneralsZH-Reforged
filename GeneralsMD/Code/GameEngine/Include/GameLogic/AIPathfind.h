@@ -716,7 +716,7 @@ enum
 	PF_CLAIM_TABLE_SIZE				= 32768,	///< power of two: the hash is masked, not divided
 	PF_CLAIM_PROBES						= 8,			///< linear probe depth; past it a claim is simply dropped
 	PF_CLAIM_UNITS_MAX				= 4,			///< claims beyond this on one cell-moment cost nothing more
-	PF_CLAIM_SAMPLES_MAX			= 64,			///< cells of its own plan one unit may stamp per refresh
+	PF_CLAIM_SAMPLES_MAX			= 32,			///< cells of its own plan one unit may stamp per refresh; 64 was 5% of a 530-unit battle
 	PF_CLEARANCE_REBUILD_FRAMES	= 30,		///< how often a dirty clearance field is actually rebuilt
 	PF_CROSSING_NUM						= 1,			///< peak crossing penalty is NUM/DEN of a step
 	PF_CROSSING_DEN						= 2,

@@ -47,20 +47,28 @@
 #include "wwmath/vector3.h"
 #include "wwmath/matrix3d.h"
 
+	extern Int TheCRCFirstFrameToLog;
+	extern UnsignedInt TheCRCLastFrameToLog;
+
+	/* Every macro below tests this before it touches its arguments. The logging functions test the
+		 frame range themselves, but only after the call, and the call has already built the arguments:
+		 Path::computePointOnPath and doLocomotor pass DescribeObject(obj), an AsciiString::format per
+		 moving unit per frame, and the DUMP macros build AsciiStrings out of __FILE__. With the log off,
+		 which is every run that does not pass -DebugCRCFromFrame, that was about a tenth of a 530-unit
+		 battle's logic frame spent formatting text nobody kept. */
+	#define CRC_DEBUG_LOGGING_ON (TheCRCFirstFrameToLog >= 0)
+
 	#define AS_INT(x) (*(Int *)(&x))
 	#define DUMPVEL DUMPCOORD3DNAMED(&m_vel, "m_vel")
 	#define DUMPACCEL DUMPCOORD3DNAMED(&m_accel, "m_accel")
 	#define DUMPVECTOR3(x) DUMPVECTOR3NAMED(x, #x)
-	#define DUMPVECTOR3NAMED(x, y) dumpVector3(x, y, __FILE__, __LINE__)
+	#define DUMPVECTOR3NAMED(x, y) do { if (CRC_DEBUG_LOGGING_ON) dumpVector3(x, y, __FILE__, __LINE__); } while (0)
 	#define DUMPCOORD3D(x) DUMPCOORD3DNAMED(x, #x)
-	#define DUMPCOORD3DNAMED(x, y) dumpCoord3D(x, y, __FILE__, __LINE__)
+	#define DUMPCOORD3DNAMED(x, y) do { if (CRC_DEBUG_LOGGING_ON) dumpCoord3D(x, y, __FILE__, __LINE__); } while (0)
 	#define DUMPMATRIX3D(x) DUMPMATRIX3DNAMED(x, #x)
-	#define DUMPMATRIX3DNAMED(x, y) dumpMatrix3D(x, y, __FILE__, __LINE__)
+	#define DUMPMATRIX3DNAMED(x, y) do { if (CRC_DEBUG_LOGGING_ON) dumpMatrix3D(x, y, __FILE__, __LINE__); } while (0)
 	#define DUMPREAL(x) DUMPREALNAMED(x, #x)
-	#define DUMPREALNAMED(x, y) dumpReal(x, y, __FILE__, __LINE__)
-
-	extern Int TheCRCFirstFrameToLog;
-	extern UnsignedInt TheCRCLastFrameToLog;
+	#define DUMPREALNAMED(x, y) do { if (CRC_DEBUG_LOGGING_ON) dumpReal(x, y, __FILE__, __LINE__); } while (0)
 
 	void dumpVector3(const Vector3 *v, AsciiString name, AsciiString fname, Int line);
 	void dumpCoord3D(const Coord3D *c, AsciiString name, AsciiString fname, Int line);
@@ -73,9 +81,9 @@
 	void addCRCDebugLine(const char *fmt, ...);
 	void addCRCDumpLine(const char *fmt, ...);
 	void addCRCGenLine(const char *fmt, ...);
-	#define CRCDEBUG_LOG(x) addCRCDebugLine x
-	#define CRCDUMP_LOG(x) addCRCDumpLine x
-	#define CRCGEN_LOG(x) addCRCGenLine x
+	#define CRCDEBUG_LOG(x) do { if (CRC_DEBUG_LOGGING_ON) addCRCDebugLine x; } while (0)
+	#define CRCDUMP_LOG(x) do { if (CRC_DEBUG_LOGGING_ON) addCRCDumpLine x; } while (0)
+	#define CRCGEN_LOG(x) do { if (CRC_DEBUG_LOGGING_ON) addCRCGenLine x; } while (0)
 
 	class CRCVerification
 	{

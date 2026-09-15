@@ -1,0 +1,43 @@
+# Crowd battle: two large mixed armies attack-moving into each other on Twilight Flame.
+#
+# A symmetric AI batch cannot judge a logic change's cost, because the change alters the match and
+# the two builds end up measuring different armies. This spawns the same crowd on the same frames in
+# both builds, so HEADLESS LOGICTIME compares like with like.
+#
+#   generals.exe -headless -quickstart -noshellmap -observer -multiInstance -noFPSLimit
+#     -map "Maps\Twilight Flame\Twilight Flame.map" -autoskirmish 2 -takeover
+#     -side 0 FactionAmerica -side 1 FactionChina -seed 7 -maxframes 4500
+#     -scenario crowdbattle -logPrefix crowd_
+#
+# Four waves a side, 140 units each, so the fight in the middle keeps being fed rather than ending
+# after the first clash.
+
+30    spawn      0  AmericaTankCrusader             30  start0:0:300    40
+30    spawn      0  AmericaInfantryRanger           30  start0:250:300  18
+30    spawn      0  AmericaInfantryMissileDefender  20  start0:-250:300 18
+30    spawn      1  ChinaTankBattleMaster           30  start1:0:300    40
+30    spawn      1  ChinaInfantryRedguard           40  start1:250:300  18
+30    spawn      1  ChinaInfantryTankHunter         20  start1:-250:300 18
+60    attackmove 0  *  start1
+60    attackmove 1  *  start0
+
+900   spawn      0  AmericaTankCrusader             30  start0:0:300    40
+900   spawn      0  AmericaInfantryRanger           30  start0:250:300  18
+900   spawn      1  ChinaTankBattleMaster           30  start1:0:300    40
+900   spawn      1  ChinaInfantryRedguard           30  start1:250:300  18
+930   attackmove 0  *  start1
+930   attackmove 1  *  start0
+
+1800  spawn      0  AmericaTankCrusader             30  start0:0:300    40
+1800  spawn      0  AmericaInfantryRanger           30  start0:250:300  18
+1800  spawn      1  ChinaTankBattleMaster           30  start1:0:300    40
+1800  spawn      1  ChinaInfantryRedguard           30  start1:250:300  18
+1830  attackmove 0  *  start1
+1830  attackmove 1  *  start0
+
+2700  spawn      0  AmericaTankCrusader             30  start0:0:300    40
+2700  spawn      0  AmericaInfantryMissileDefender  30  start0:250:300  18
+2700  spawn      1  ChinaTankBattleMaster           30  start1:0:300    40
+2700  spawn      1  ChinaInfantryTankHunter         30  start1:250:300  18
+2730  attackmove 0  *  start1
+2730  attackmove 1  *  start0

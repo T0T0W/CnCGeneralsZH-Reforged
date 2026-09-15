@@ -982,8 +982,7 @@ class AIAttackFireWeaponState : public State
 public:
 	AIAttackFireWeaponState( StateMachine *machine, NotifyWeaponFiredInterface* att ) : 
 		State( machine, "AIAttackFireWeaponState" ),
-		m_att(att),
-		m_saidHeldFire(FALSE)
+		m_att(att)
 	{
 	}
 	virtual Bool isAttack() const { return TRUE; }
@@ -997,7 +996,6 @@ protected:
 	virtual void loadPostProcess(){};
 private:
 	NotifyWeaponFiredInterface *const m_att;		// this is NOT owned by us and should not be freed
-	Bool m_saidHeldFire;												// one log line per held shot, not one per frame of holding it
 };
 EMPTY_DTOR(AIAttackFireWeaponState)
 

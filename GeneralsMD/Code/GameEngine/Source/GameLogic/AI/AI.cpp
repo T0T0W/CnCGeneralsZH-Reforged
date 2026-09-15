@@ -673,7 +673,17 @@ Int AI_threatScore( Int templateThreatValue, Int buildCost, Bool threatensMe,
 /**
  * Return the closest enemy, according to the qualifiers.
  */
-Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifiers, 
+static Bool AI_filtersAllow( PartitionFilter **filters, Object *candidate )
+{
+	for ( ; *filters; ++filters )
+	{
+		if (!(*filters)->allow(candidate))
+			return false;
+	}
+	return true;
+}
+
+Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifiers,
 														 const AttackPriorityInfo *info, PartitionFilter *optionalFilter)
 {
 
@@ -735,13 +745,24 @@ Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifie
 	// -- filterStealth is BY FAR the least common to be useful, so it goes last.
 	// GS Fog check used to be inside can attack, so it feels right to be right after it
 
-	filters[numFilters++] = &filterObvious;	
+	filters[numFilters++] = &filterObvious;
 
 	if( !(qualifiers & ATTACK_BUILDINGS) )
 		filters[numFilters++] = &filterBldgs;
 
 	if (qualifiers & WITHIN_ATTACK_RANGE)
 		filters[numFilters++] = &filterWithinAttackRange;
+
+	/* The two gathering searches below used to run every filter over every enemy in range and only
+		 then pick one. A hunting unit searches the whole map, and the can-attack filter on a thousand
+		 enemies was a single 30-47ms unit update in an eight-player match. They now gather with the
+		 cheap filters above and ask the rest only of a candidate that would take the lead, which picks
+		 the same enemy. */
+	PartitionFilter *gatherFilters[16];
+	const Int numGatherFilters = numFilters;
+	for (Int f = 0; f < numGatherFilters; ++f)
+		gatherFilters[f] = filters[f];
+	gatherFilters[numGatherFilters] = NULL;
 
 	if (qualifiers & CAN_SEE)
 		filters[numFilters++] = &filterLOS;
@@ -775,7 +796,7 @@ Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifie
 			Real distanceModifier = TheAI->getAiData()->m_attackPriorityDistanceModifier;
 			Object *bestThreat = NULL;
 			Int bestScore = 0;
-			ObjectIterator *threatIter = ThePartitionManager->iterateObjectsInRange(me, range, FROM_BOUNDINGSPHERE_2D, filters, ITER_SORTED_NEAR_TO_FAR);
+			ObjectIterator *threatIter = ThePartitionManager->iterateObjectsInRange(me, range, FROM_BOUNDINGSPHERE_2D, gatherFilters, ITER_SORTED_NEAR_TO_FAR);
 			MemoryPoolObjectHolder threatHolder(threatIter);
 			for (Object *theEnemy = threatIter->first(); theEnemy; theEnemy = threatIter->next())
 			{
@@ -793,7 +814,7 @@ Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifie
 				const Int armedScore = AI_threatScore( theEnemy->getTemplate()->getThreatValue(),
 																		theEnemy->getTemplate()->calcCostToBuild( theEnemy->getControllingPlayer() ),
 																		true, dist, distanceModifier );
-				if (armedScore <= bestScore)
+				if (armedScore <= bestScore || !AI_filtersAllow(filters + numGatherFilters, theEnemy))
 					continue;
 
 				Bool threatensMe = theEnemy->isAbleToAttack();		// cheap bit test, and required before the call below
@@ -822,7 +843,7 @@ Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifie
 	Object *bestEnemy = NULL;
 	Int			effectivePriority=0;
 	Int			actualPriority=0;
-	ObjectIterator *iter = ThePartitionManager->iterateObjectsInRange(me, range, FROM_BOUNDINGSPHERE_2D, filters, ITER_SORTED_NEAR_TO_FAR);
+	ObjectIterator *iter = ThePartitionManager->iterateObjectsInRange(me, range, FROM_BOUNDINGSPHERE_2D, gatherFilters, ITER_SORTED_NEAR_TO_FAR);
 	MemoryPoolObjectHolder holder(iter);
 	for (Object *theEnemy = iter->first(); theEnemy; theEnemy = iter->next()) 
 	{
@@ -846,15 +867,11 @@ Object *AI::findClosestEnemy( const Object *me, Real range, UnsignedInt qualifie
 		Real dist = sqrt(distSqr);
 		Int modifier = dist/TheAI->getAiData()->m_attackPriorityDistanceModifier;
 		Int modPriority = curPriority-modifier;
-		if (modPriority < 1) 
+		if (modPriority < 1)
 			modPriority = 1;
-		if (modPriority > effectivePriority) 
-		{
-			effectivePriority = modPriority;
-			actualPriority = curPriority;
-			bestEnemy = theEnemy;
-		}
-		if (modPriority == effectivePriority && curPriority > actualPriority) 
+		const Bool takesLead = modPriority > effectivePriority ||
+			(modPriority == effectivePriority && curPriority > actualPriority);
+		if (takesLead && AI_filtersAllow(filters + numGatherFilters, theEnemy))
 		{
 			effectivePriority = modPriority;
 			actualPriority = curPriority;

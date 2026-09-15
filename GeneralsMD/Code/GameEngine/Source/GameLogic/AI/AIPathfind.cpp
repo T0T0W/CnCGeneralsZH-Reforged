@@ -618,7 +618,7 @@ void Path::optimize( const Object *obj, LocomotorSurfaceTypeMask acceptableSurfa
 			 The straightening still covers the whole path - the anchor advances and the next step
 			 looks another thirty-two nodes on - it just cannot pay for the entire remaining route in
 			 one step any more. Thirty-two cells is longer than a unit drives in a second. */
-		const Int MAX_OPTIMIZE_LOOKAHEAD = 100000;	// TEMP: cap off, isolating the early-out
+		const Int MAX_OPTIMIZE_LOOKAHEAD = 32;
 		for (node = anchor->getNext(); node->getNext(); node=node->getNext()) {
 			count++;
 			if (count >= MAX_OPTIMIZE_LOOKAHEAD) {
@@ -757,7 +757,7 @@ void Path::optimizeGroundPath( Bool crusher, Int pathDiameter )
 			 The straightening still covers the whole path - the anchor advances and the next step
 			 looks another thirty-two nodes on - it just cannot pay for the entire remaining route in
 			 one step any more. Thirty-two cells is longer than a unit drives in a second. */
-		const Int MAX_OPTIMIZE_LOOKAHEAD = 100000;	// TEMP: cap off, isolating the early-out
+		const Int MAX_OPTIMIZE_LOOKAHEAD = 32;
 		for (node = anchor->getNext(); node->getNext(); node=node->getNext()) {
 			count++;
 			if (count >= MAX_OPTIMIZE_LOOKAHEAD) {
@@ -1007,6 +1007,34 @@ void Path::computePointOnPath(
 		m_cpopCountdown--;
 		CRCDEBUG_LOG(("Path::computePointOnPath() end because we're really close\n"));
 		return;
+	}
+
+	/* A unit that is driving, not standing, used to miss the cache above every frame and pay for the
+		 whole answer again: a check of the next twenty cells of road, twenty-five cells around each
+		 one, for every moving unit, every frame. In a 530-unit battle that was the single most
+		 expensive thing in the game. The steering point is a node well ahead of the unit, and half a
+		 cell of driving does not move it, so the answer is kept until the unit has covered that much
+		 ground. Near the end of the route, or once the point is close enough to be driven past, it is
+		 worked out every frame as before, so arrival and corners are exactly what they were. */
+	if (m_cpopValid && m_cpopCountdown>0)
+	{
+		const Real CPOP_REUSE_DRIVEN = PATHFIND_CELL_SIZE_F * 0.5f;
+		const Real CPOP_REUSE_MIN_AHEAD = PATHFIND_CELL_SIZE_F * 2.0f;
+		const Real CPOP_REUSE_MIN_REMAINING = PATHFIND_CELL_SIZE_F * 4.0f;
+		const Real drivenX = pos.x - m_cpopIn.x;
+		const Real drivenY = pos.y - m_cpopIn.y;
+		const Real drivenSqr = drivenX*drivenX + drivenY*drivenY;
+		const Real aheadX = m_cpopOut.posOnPath.x - pos.x;
+		const Real aheadY = m_cpopOut.posOnPath.y - pos.y;
+		if (drivenSqr < sqr(CPOP_REUSE_DRIVEN)
+			&& aheadX*aheadX + aheadY*aheadY > sqr(CPOP_REUSE_MIN_AHEAD)
+			&& m_cpopOut.distAlongPath > CPOP_REUSE_MIN_REMAINING)
+		{
+			out = m_cpopOut;
+			out.distAlongPath -= (Real)sqrt(drivenSqr);
+			m_cpopCountdown--;
+			return;
+		}
 	}
 	m_cpopCountdown = MAX_CPOP;
 
@@ -2879,6 +2907,9 @@ static  Bool  s_stopForceCalling = FALSE;
 void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer layers[], const IRegion2D &globalBounds )
 {
 	PathProfileInner pfProfile( PF_ZONES );
+	__int64 zoneTicksPerSecond = 0, zoneStart = 0, zoneCellsDone = 0, zoneBlocksDone = 0, zoneEnd = 0;
+	QueryPerformanceFrequency((LARGE_INTEGER *)&zoneTicksPerSecond);
+	QueryPerformanceCounter((LARGE_INTEGER *)&zoneStart);
 
 #ifdef DEBUG_QPF
 #if defined(DEBUG_LOGGING) 
@@ -2959,6 +2990,7 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
  		}
 	}
 
+	QueryPerformanceCounter((LARGE_INTEGER *)&zoneCellsDone);
 	Int totalZones = m_maxZone;
 	// The merges above left a union-find forest; the collapse below indexes the array directly.
 	pathfindZoneFlatten(zoneEquivalency, totalZones);
@@ -3128,6 +3160,7 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 			m_zoneBlocks[xBlock][yBlock].blockCalculateZones(map, layers, bounds);
 		}
 	}
+	QueryPerformanceCounter((LARGE_INTEGER *)&zoneBlocksDone);
 
 
 
@@ -3416,6 +3449,18 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 		}
 	}
 #endif
+	QueryPerformanceCounter((LARGE_INTEGER *)&zoneEnd);
+	const Real SLOW_ZONES_MS = 10.0f;
+	const Real zoneTotalMS = 1000.0f * (Real)(zoneEnd - zoneStart) / (Real)zoneTicksPerSecond;
+	if (zoneTotalMS > SLOW_ZONES_MS) {
+		DEBUG_LOG(("SLOW ZONES frame %d: %.1fms | cells %.1f | blocks %.1f (%dx%d) | hierarchy %.1f | %d zones, %d allocated\n",
+							 TheGameLogic->getFrame(), zoneTotalMS,
+							 1000.0f * (Real)(zoneCellsDone - zoneStart) / (Real)zoneTicksPerSecond,
+							 1000.0f * (Real)(zoneBlocksDone - zoneCellsDone) / (Real)zoneTicksPerSecond,
+							 xCount, yCount,
+							 1000.0f * (Real)(zoneEnd - zoneBlocksDone) / (Real)zoneTicksPerSecond,
+							 (Int)m_maxZone, (Int)m_zonesAllocated));
+	}
 	m_nextFrameToCalculateZones = 0xffffffff;
 }
 
@@ -4851,8 +4896,12 @@ void Pathfinder::claimPathTiming( const Object *obj, Path *path )
 	Int radius = 0;
 	Bool center = true;
 	getRadiusAndCenter(obj, radius, center);
+	/* Capped at one cell either side, not two. A claim is read by a search deciding whether a crossing
+		 is busy, and three cells of a tank's width answer that as well as five; five cost 25 table
+		 writes per sample against 9, three times a sample, for every vehicle once a second, and in a
+		 530-unit battle the stamping was a twentieth of the game. */
 	Int dilation = radius;
-	if (dilation > 2) dilation = 2;
+	if (dilation > 1) dilation = 1;
 	if (dilation < 0) dilation = 0;
 	// one sample per body width: a tank stamping every cell would claim the same ground five times
 	const Int stride = dilation > 0 ? dilation : 1;
