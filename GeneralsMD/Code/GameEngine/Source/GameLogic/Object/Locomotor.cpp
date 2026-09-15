@@ -63,6 +63,7 @@ static const Real DONUT_DISTANCE=4.0*PATHFIND_CELL_SIZE_F;
 LocomotorStore *TheLocomotorStore = NULL;					///< the Locomotor store definition
 
 const Real BIGNUM = 99999.0f;
+const Real SINE_DESCENT_LOOKAHEAD_FRAMES = 4.0f;
 
 static const char *TheLocomotorPriorityNames[] = 
 {
@@ -187,6 +188,23 @@ static Real tryToOrientInThisDirection3D(Object* obj, Real maxTurnRate, const Ve
 		obj->setTransformMatrix( &newXform );
 	}
 	return relAngle;
+}
+
+//-------------------------------------------------------------------------------------------------
+// The turn this frame that keeps a projectile on the circle tangent to its nose through the goal. That
+// circle turns through twice the angle between nose and goal over its length, so a step of `step`
+// units turns 2*step*sin(angle)/dist, the same every frame for a goal that stands still. Past a right
+// angle no such circle reaches the goal, and a loop of diameter dist brings the nose round instead.
+// The step that arrives points straight at the goal.
+static Real calcArcTurnToGoal(const Vector3& nose, const Vector3& toGoal, Real step)
+{
+	Real dist = toGoal.Length();
+	if (step >= dist)
+		return BIGNUM;
+
+	Real cosine = Vector3::Dot_Product(nose, toGoal) / (nose.Length() * dist);
+	Real sine = (cosine > 0.0f) ? sqrt(1.0f - sqr(cosine)) : 1.0f;
+	return 2.0f * step * sine / dist;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -667,6 +685,7 @@ Locomotor::Locomotor(const LocomotorTemplate* tmpl)
 #endif
 	m_preferredHeight = m_template->m_preferredHeight;
 	m_preferredHeightDamping = m_template->m_preferredHeightDamping;
+	m_sineDescentDistance = 0.0f;
 
 	m_angleOffset = GameLogicRandomValueReal(-PI/6, PI/6);
 	m_offsetIncrement = (PI/40) * (GameLogicRandomValueReal(0.8f, 1.2f)/m_template->m_wanderLengthFactor);
@@ -698,6 +717,7 @@ Locomotor::Locomotor(const Locomotor& that)
 #endif
 	m_preferredHeight = that.m_preferredHeight;
 	m_preferredHeightDamping = that.m_preferredHeightDamping;
+	m_sineDescentDistance = that.m_sineDescentDistance;
 	m_angleOffset = that.m_angleOffset;
 	m_offsetIncrement = that.m_offsetIncrement;
 }
@@ -721,6 +741,7 @@ Locomotor& Locomotor::operator=(const Locomotor& that)
 #endif
 		m_preferredHeight = that.m_preferredHeight;
 		m_preferredHeightDamping = that.m_preferredHeightDamping;
+		m_sineDescentDistance = that.m_sineDescentDistance;
 	}
 	return *this;
 }
@@ -741,12 +762,13 @@ void Locomotor::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 3: m_sineDescentDistance */
 // ------------------------------------------------------------------------------------------------
 void Locomotor::xfer( Xfer *xfer )
 {
 	// version
-	const XferVersion currentVersion = 2;
+	const XferVersion currentVersion = 3;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -770,6 +792,9 @@ void Locomotor::xfer( Xfer *xfer )
 	xfer->xferReal(&m_preferredHeightDamping);
 	xfer->xferReal(&m_angleOffset);
 	xfer->xferReal(&m_offsetIncrement);
+
+	if (version >= 3)
+		xfer->xferReal(&m_sineDescentDistance);
 
 }  // end xfer
 
@@ -1122,23 +1147,21 @@ void Locomotor::locoUpdate_moveTowardsPosition(Object* obj, const Coord3D& goalP
 		{
 			// Projectiles never stop braking once they start.  jba.
 			obj->setStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_BRAKING ) );
-			// Projectiles cheat in 3 dimensions.
+			// Projectiles cheat in 3 dimensions, along the nose rather than straight at the goal, so a
+			// missile flies the arc moveTowardsPositionThrust turns it onto instead of kinking at the lock.
 			dist = sqrt(dx*dx+dy*dy+dz*dz);
 			Real vel = physics->getVelocityMagnitude();
 			if (vel < MIN_VEL)
 				vel = MIN_VEL;
 			if (vel > dist)
 				vel = dist;	// do not overcompensate!
-			// Normalize.
-			if (dist > 0.001f) 
+			if (dist > 0.001f)
 			{
-				dist = 1.0f / dist;
-				dx *= dist;
-				dy *= dist;
-				dz *= dist;
-				pos.x += dx * vel;
-				pos.y += dy * vel;
-				pos.z += dz * vel;
+				Vector3 nose = obj->getTransformMatrix()->Get_X_Vector();
+				nose.Normalize();
+				pos.x += nose.X * vel;
+				pos.y += nose.Y * vel;
+				pos.z += nose.Z * vel;
 			}
 		}	
 		else 
@@ -1942,7 +1965,25 @@ void Locomotor::moveTowardsPositionThrust(Object* obj, PhysicsBehavior *physics,
 
 	//out of the handleBehaviorZ() function
 	Coord3D pos = *obj->getPosition();
-	if( m_preferredHeight != 0.0f && !getFlag(PRECISE_Z_POS) )
+	Real distToGoal2D = sqrt(sqr(goalPos.x - pos.x) + sqr(goalPos.y - pos.y));
+	if( m_preferredHeight != 0.0f && !getFlag(PRECISE_Z_POS) && distToGoal2D < m_sineDescentDistance )
+	{
+		// Come down along height(d) = h * sin(PI/2 * d / descentDist), aiming a few frames ahead on the one
+		// such curve that passes through the missile now. A Scud is still near the top of its climb here,
+		// about 230 over the goal against a cruise height of 120, so the curve starts from where it is.
+		// Aiming at the goal itself instead was a straight dive with a kink where it began.
+		Real lookAhead = SINE_DESCENT_LOOKAHEAD_FRAMES * physics->getVelocityMagnitude();
+		if (distToGoal2D > lookAhead)
+		{
+			Real aimDist = distToGoal2D - lookAhead;
+			Real aimFraction = aimDist / distToGoal2D;
+			Real heightNow = pos.z - goalPos.z;
+			localGoalPos.x = goalPos.x + (pos.x - goalPos.x) * aimFraction;
+			localGoalPos.y = goalPos.y + (pos.y - goalPos.y) * aimFraction;
+			localGoalPos.z = goalPos.z + heightNow * Sin(PI / 2 * aimDist / m_sineDescentDistance) / Sin(PI / 2 * distToGoal2D / m_sineDescentDistance);
+		}
+	}
+	else if( m_preferredHeight != 0.0f && !getFlag(PRECISE_Z_POS) )
 	{
 		// If we have a preferred flight height, and we haven't been told explicitly to ignore it...
 		Real surfaceHt =  getSurfaceHtAtPt(pos.x, pos.y);
@@ -1995,7 +2036,18 @@ void Locomotor::moveTowardsPositionThrust(Object* obj, PhysicsBehavior *physics,
 				// we are at target.
 				adjust = false;
 			}
-			maxTurnRate = 3*maxTurnRate;
+			else if (obj->isKindOf(KINDOF_PROJECTILE))
+			{
+				// the projectile cheat moves along the nose, so this turn is the path it flies
+				Real step = physics->getVelocityMagnitude();
+				if (step < MIN_VEL)
+					step = MIN_VEL;
+				maxTurnRate = calcArcTurnToGoal(forwardDir, vel, step);
+			}
+			else
+			{
+				maxTurnRate = 3*maxTurnRate;
+			}
 		}
 #ifdef USE_ZDIR_DAMPING
 		if (zDirDamping != 0.0f)

@@ -555,18 +555,9 @@ void MissileAIUpdate::doAttackState(Bool turnOK)
 		} 
 	}
 
-	if(curLoco && curLoco->getPreferredHeight() > 0)
-	{
-		// Am I close enough to the target to ignore my preferred height setting?
-		Real distanceToTargetSquared = ThePartitionManager->getDistanceSquared( getObject(), getGoalPosition(), FROM_CENTER_2D );
-		Real diveDistanceSquared = d->m_diveDistance;
-		if (curLoco && curLoco->getPreferredHeight()) {
-				diveDistanceSquared *= diveDistanceSquared;
-			if( distanceToTargetSquared < diveDistanceSquared )
-				curLoco->setUsePreciseZPos( true );
-		}
-
-	}
+	// a missile with a cruise height leaves it this far from the goal along a quarter sine
+	if (curLoco)
+		curLoco->setSineDescentDistance(d->m_diveDistance);
 
 	if (m_noTurnDistLeft <= 0.0f)
 	{

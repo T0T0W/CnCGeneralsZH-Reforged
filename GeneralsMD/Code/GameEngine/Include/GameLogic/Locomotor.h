@@ -335,6 +335,13 @@ public:
 	inline void setUsePreciseZPos(Bool u) { setFlag(PRECISE_Z_POS, u); }
 
 	/**
+		above zero, a thrust locomotor with a preferred height stops holding that height this far from its
+		goal (measured flat) and comes down along a quarter sine from whatever height it has: level where
+		the descent starts, steepest where it arrives. Missiles set it from DistanceToTargetBeforeDiving.
+	*/
+	inline void setSineDescentDistance(Real dist) { m_sineDescentDistance = dist; }
+
+	/**
     when off (the default), units slow down as they approach their target. 
 
     when on, units go full speed till the end, and may overshoot their target.
@@ -450,6 +457,7 @@ private:
 	UnsignedInt	m_flags;
 	Real				m_preferredHeight;
 	Real				m_preferredHeightDamping;
+	Real				m_sineDescentDistance;
 
 	Real				m_angleOffset;
 	Real				m_offsetIncrement;
