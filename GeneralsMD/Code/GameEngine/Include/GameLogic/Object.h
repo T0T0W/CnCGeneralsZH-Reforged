@@ -183,6 +183,9 @@ extern Bool Object_isAttackableStructure( Bool underConstruction, Real construct
 ///< does this object count as something its player still has, for defeat and "team destroyed"?
 extern Bool Object_keepsOwnerAlive( Bool underConstruction, Real constructionPercent );
 
+///< is this a plan a viewer on that footing with its owner must not see, live or remembered in the fog?
+extern Bool Object_isPlanHiddenFrom( Bool underConstruction, Real constructionPercent, Relationship viewerToOwner );
+
 class Object : public Thing, public Snapshot
 {
 

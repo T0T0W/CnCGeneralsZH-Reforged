@@ -5456,6 +5456,16 @@ Bool Object_keepsOwnerAlive( Bool underConstruction, Real constructionPercent )
 	return !Object_isAwaitingBuilder( underConstruction, constructionPercent );
 }
 
+//-------------------------------------------------------------------------------------------------
+/** Clearing no shroud of its own kept a plan out of fog only. An enemy whose units already had sight
+	* of the site saw the silhouette go down, and once they looked away the fog kept a snapshot of it,
+	* so a base could be read off the map before a builder arrived. Allies and observers still see it. */
+//-------------------------------------------------------------------------------------------------
+Bool Object_isPlanHiddenFrom( Bool underConstruction, Real constructionPercent, Relationship viewerToOwner )
+{
+	return viewerToOwner == ENEMIES && Object_isAwaitingBuilder( underConstruction, constructionPercent );
+}
+
 Real Object::getShroudClearingRange() const
 {
 	Real shroudClearingRange = Object_shroudClearingRange( m_shroudClearingRange,

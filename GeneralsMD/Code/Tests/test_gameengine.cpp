@@ -6494,6 +6494,21 @@ TEST(your_own_plan_is_drawn_through_the_fog_that_hides_everything_else)
 	CHECK( GameClient_hiddenByShroud( OBJECTSHROUD_PARTIAL_CLEAR, FALSE ) == FALSE );
 }
 
+/** Fog was the only thing hiding an enemy's plan, so a unit already looking at the site watched it go
+	 down and the fog remembered it afterwards. An enemy is shown nothing until the first percent of
+	 work; allies and observers, who are never enemies, see the plan as before. */
+TEST(an_enemy_plan_is_hidden_even_where_the_viewer_has_sight)
+{
+	CHECK( Object_isPlanHiddenFrom( TRUE, 0.0f, ENEMIES ) == TRUE );
+
+	CHECK( Object_isPlanHiddenFrom( TRUE, 0.0f, ALLIES ) == FALSE );
+	CHECK( Object_isPlanHiddenFrom( TRUE, 0.0f, NEUTRAL ) == FALSE );
+
+	// started or finished, it is a building the enemy is entitled to see
+	CHECK( Object_isPlanHiddenFrom( TRUE, 0.1f, ENEMIES ) == FALSE );
+	CHECK( Object_isPlanHiddenFrom( FALSE, CONSTRUCTION_COMPLETE, ENEMIES ) == FALSE );
+}
+
 /** There is nothing to stop about a building that is still going up, so the stop key calls it off
 	 instead - the same cancel, refund and all, that the command bar button on that structure does.
 	 One structure of your own only: a mixed selection or anything already finished still means

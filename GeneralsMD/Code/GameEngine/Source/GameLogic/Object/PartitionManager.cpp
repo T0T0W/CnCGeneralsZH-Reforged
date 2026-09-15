@@ -1639,6 +1639,13 @@ ObjectShroudStatus PartitionData::getShroudedStatus(Int playerIndex)
 		return m_shroudedness[playerIndex];
 	}
 
+	// answered before the cache, so no snapshot is taken and the site is not marked as seen: the
+	// building that goes up there later is news to this player like any other
+	if (m_object && Object_isPlanHiddenFrom(m_object->testStatus(OBJECT_STATUS_UNDER_CONSTRUCTION),
+																					m_object->getConstructionPercent(),
+																					ThePlayerList->getNthPlayer(playerIndex)->getRelationship(m_object->getTeam())))
+		return OBJECTSHROUD_SHROUDED;
+
 #ifndef DISABLE_INVALID_PREVENTION
 	if (m_shroudedness[playerIndex] == OBJECTSHROUD_INVALID || m_shroudedness[playerIndex] == OBJECTSHROUD_INVALID_BUT_PREVIOUS_VALID)
 	{

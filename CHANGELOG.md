@@ -254,7 +254,9 @@ found and fixed â€” EA's own, not port damage.**
 - Click a plan, or press Stop, to cancel it and take the money back.
 - Cancelling a plan is silent â€” nothing was built, so nothing explodes.
 - Ground your units have walked stays buildable after they leave it.
-- A plan opens no fog of its own, and your opponent never sees it.
+- A plan opens no fog of its own, and your opponent never sees it. Not with a unit parked right next
+  to the site, and not as a leftover outline in the fog after that unit walks away. Both used to show
+  an AI's whole base layout before its first worker arrived.
 - And nothing shoots at one. A plan is invisible to the other side, so a tank that stopped and
   opened fire on empty ground was telling that player where your base was going up before a single
   wall existed. The first work a builder puts in ends this and the site is a target like any other.
