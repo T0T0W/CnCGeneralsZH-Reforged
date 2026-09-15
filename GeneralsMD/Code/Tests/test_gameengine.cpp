@@ -6509,6 +6509,43 @@ TEST(an_enemy_plan_is_hidden_even_where_the_viewer_has_sight)
 	CHECK( Object_isPlanHiddenFrom( FALSE, CONSTRUCTION_COMPLETE, ENEMIES ) == FALSE );
 }
 
+extern Coord3D Locomotor_interceptOffset( const Coord3D& toVictim, const Coord3D& victimVelocity, Real speed );
+
+/** A locked missile curves towards where it will meet a moving victim. Curving towards where the
+	 victim is now left a rocket barely faster than a helicopter trailing it with its nose 40 degrees
+	 off, never closing. */
+TEST(a_locked_missile_aims_where_it_will_meet_a_moving_victim)
+{
+	Coord3D toVictim;
+	toVictim.set( 100.0f, 0.0f, 0.0f );
+	Coord3D offset;
+
+	Coord3D standing;
+	standing.set( 0.0f, 0.0f, 0.0f );
+	offset = Locomotor_interceptOffset( toVictim, standing, 10.0f );
+	CHECK_NEAR( offset.x, 100.0f, 0.001f );
+	CHECK_NEAR( offset.y, 0.0f, 0.001f );
+
+	// crossing at 6 a frame against 10: |(100, 6t)| = 10t meets at t = 12.5, 75 to the side
+	Coord3D crossing;
+	crossing.set( 0.0f, 6.0f, 0.0f );
+	offset = Locomotor_interceptOffset( toVictim, crossing, 10.0f );
+	CHECK_NEAR( offset.x, 100.0f, 0.001f );
+	CHECK_NEAR( offset.y, 75.0f, 0.01f );
+
+	// head on at the missile's own speed the two meet halfway
+	Coord3D closing;
+	closing.set( -10.0f, 0.0f, 0.0f );
+	offset = Locomotor_interceptOffset( toVictim, closing, 10.0f );
+	CHECK_NEAR( offset.x, 50.0f, 0.001f );
+
+	// running away faster than the missile flies there is no meeting point to lead, so aim at it
+	Coord3D fleeing;
+	fleeing.set( 12.0f, 0.0f, 0.0f );
+	offset = Locomotor_interceptOffset( toVictim, fleeing, 10.0f );
+	CHECK_NEAR( offset.x, 100.0f, 0.001f );
+}
+
 /** There is nothing to stop about a building that is still going up, so the stop key calls it off
 	 instead - the same cancel, refund and all, that the command bar button on that structure does.
 	 One structure of your own only: a mixed selection or anything already finished still means

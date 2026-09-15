@@ -64,6 +64,7 @@ LocomotorStore *TheLocomotorStore = NULL;					///< the Locomotor store definitio
 
 const Real BIGNUM = 99999.0f;
 const Real SINE_DESCENT_LOOKAHEAD_FRAMES = 4.0f;
+const Real INTERCEPT_EPSILON = 0.0001f;
 
 static const char *TheLocomotorPriorityNames[] = 
 {
@@ -205,6 +206,54 @@ static Real calcArcTurnToGoal(const Vector3& nose, const Vector3& toGoal, Real s
 	Real cosine = Vector3::Dot_Product(nose, toGoal) / (nose.Length() * dist);
 	Real sine = (cosine > 0.0f) ? sqrt(1.0f - sqr(cosine)) : 1.0f;
 	return 2.0f * step * sine / dist;
+}
+
+//-------------------------------------------------------------------------------------------------
+// Where a projectile flying straight at `speed` a frame meets a victim that keeps its velocity, as an
+// offset from the projectile: the smallest t > 0 with |toVictim + victimVelocity*t| = speed*t. A victim
+// standing still is its own meeting point, and one this speed never catches is aimed at directly.
+Coord3D Locomotor_interceptOffset(const Coord3D& toVictim, const Coord3D& victimVelocity, Real speed)
+{
+	Real a = sqr(victimVelocity.x) + sqr(victimVelocity.y) + sqr(victimVelocity.z) - sqr(speed);
+	Real b = 2.0f * (toVictim.x * victimVelocity.x + toVictim.y * victimVelocity.y + toVictim.z * victimVelocity.z);
+	Real c = sqr(toVictim.x) + sqr(toVictim.y) + sqr(toVictim.z);
+
+	Real meetingFrames = -1.0f;
+	if (fabs(a) < INTERCEPT_EPSILON)
+	{
+		if (b < 0.0f)
+			meetingFrames = -c / b;
+	}
+	else if (b * b - 4.0f * a * c >= 0.0f)
+	{
+		Real root = sqrt(b * b - 4.0f * a * c);
+		Real firstFrames = (-b - root) / (2.0f * a);
+		Real secondFrames = (-b + root) / (2.0f * a);
+		if (firstFrames > secondFrames)
+			std::swap(firstFrames, secondFrames);
+		meetingFrames = (firstFrames > 0.0f) ? firstFrames : secondFrames;
+	}
+
+	if (meetingFrames <= 0.0f)
+		return toVictim;
+
+	Coord3D offset;
+	offset.set(toVictim.x + victimVelocity.x * meetingFrames,
+						 toVictim.y + victimVelocity.y * meetingFrames,
+						 toVictim.z + victimVelocity.z * meetingFrames);
+	return offset;
+}
+
+//-------------------------------------------------------------------------------------------------
+// A locked projectile chasing something in the air keeps EA's cheat and moves straight at it every
+// frame. An aircraft is nearly as fast as the rocket, and neither arc could close on one: a rocket got
+// within 11 of a helicopter, flew past it and climbed away with its nose 110 degrees off. Rockets at
+// helicopters and jets over 1800 frames stayed locked p95 20 frames on the straight chase and never drew
+// away; the arc took 26 and drew away 5 times, the arc onto the meeting point 35 and 17.
+static Bool Locomotor_projectileChasesStraight(Object* obj)
+{
+	Object *victim = obj->getAI()->getGoalObject();
+	return victim && victim->isAboveTerrain();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1147,15 +1196,22 @@ void Locomotor::locoUpdate_moveTowardsPosition(Object* obj, const Coord3D& goalP
 		{
 			// Projectiles never stop braking once they start.  jba.
 			obj->setStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_BRAKING ) );
-			// Projectiles cheat in 3 dimensions, along the nose rather than straight at the goal, so a
-			// missile flies the arc moveTowardsPositionThrust turns it onto instead of kinking at the lock.
+			// Projectiles cheat in 3 dimensions. Chasing an aircraft that is straight at it; otherwise along
+			// the nose, so a missile flies the arc moveTowardsPositionThrust turns it onto instead of
+			// kinking at the lock.
 			dist = sqrt(dx*dx+dy*dy+dz*dz);
 			Real vel = physics->getVelocityMagnitude();
 			if (vel < MIN_VEL)
 				vel = MIN_VEL;
 			if (vel > dist)
 				vel = dist;	// do not overcompensate!
-			if (dist > 0.001f)
+			if (dist > 0.001f && Locomotor_projectileChasesStraight(obj))
+			{
+				pos.x += dx / dist * vel;
+				pos.y += dy / dist * vel;
+				pos.z += dz / dist * vel;
+			}
+			else if (dist > 0.001f)
 			{
 				Vector3 nose = obj->getTransformMatrix()->Get_X_Vector();
 				nose.Normalize();
@@ -2036,12 +2092,26 @@ void Locomotor::moveTowardsPositionThrust(Object* obj, PhysicsBehavior *physics,
 				// we are at target.
 				adjust = false;
 			}
-			else if (obj->isKindOf(KINDOF_PROJECTILE))
+			else if (obj->isKindOf(KINDOF_PROJECTILE) && !Locomotor_projectileChasesStraight(obj))
 			{
-				// the projectile cheat moves along the nose, so this turn is the path it flies
+				// the projectile cheat moves along the nose, so this turn is the path it flies. It bends
+				// towards where a moving victim will be when the missile gets there rather than where the
+				// victim is now: rockets at driving tanks turned p95 4.1 and at most 7.5 degrees a frame.
 				Real step = physics->getVelocityMagnitude();
 				if (step < MIN_VEL)
 					step = MIN_VEL;
+				Object *victim = obj->getAI()->getGoalObject();
+				if (victim && victim->getPhysics() && step < vel.Length())
+				{
+					Coord3D toVictim;
+					toVictim.set(vel.X, vel.Y, vel.Z);
+					// flat: an aircraft held at its cruise height still carries the climb in its velocity, and
+					// leading on that sent rockets straight up past the helicopter they were chasing
+					Coord3D victimVelocity = *victim->getPhysics()->getVelocity();
+					victimVelocity.z = 0.0f;
+					Coord3D lead = Locomotor_interceptOffset(toVictim, victimVelocity, step);
+					vel.Set(lead.x, lead.y, lead.z);
+				}
 				maxTurnRate = calcArcTurnToGoal(forwardDir, vel, step);
 			}
 			else
