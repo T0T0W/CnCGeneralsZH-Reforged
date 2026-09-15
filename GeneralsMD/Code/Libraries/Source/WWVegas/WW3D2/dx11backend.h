@@ -417,6 +417,16 @@ private:
 	std::map<unsigned long long, ID3D11DepthStencilView *> TargetDepths;
 	ID3D11DepthStencilView * Depth_For(unsigned width, unsigned height);
 
+	// A draw that samples the target it is drawing into reads a copy of it taken just before the
+	// draw.  Direct3D 9 handed such a draw whatever had been drawn so far; Direct3D 11 unbinds a
+	// resource that is bound both ways and the sample reads zero.  Heat haze samples the scene while
+	// the scene is still going into that texture, and read as zero it put a black blob around every
+	// microwave tank.
+	ID3D11Resource * CurrentTargetResource;
+	ID3D11Texture2D * TargetCopy;
+	ID3D11ShaderResourceView * TargetCopyView;
+	ID3D11ShaderResourceView * Readable_Texture(ID3D11ShaderResourceView * texture);
+
 	std::map<std::string, ID3D11BlendState *> BlendStates;
 	std::map<std::string, ID3D11DepthStencilState *> DepthStencilStates;
 	std::map<std::string, ID3D11RasterizerState *> RasterizerStates;

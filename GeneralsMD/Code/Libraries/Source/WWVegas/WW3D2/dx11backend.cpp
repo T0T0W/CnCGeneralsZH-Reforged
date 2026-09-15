@@ -189,6 +189,9 @@ DX11BackendClass::DX11BackendClass()
 	, DrawsIntoTargets(0)
 	, CurrentTarget(NULL)
 	, CurrentDepth(NULL)
+	, CurrentTargetResource(NULL)
+	, TargetCopy(NULL)
+	, TargetCopyView(NULL)
 	, DrawsMade(0)
 	, DrawsRefused(0)
 	, RefusedNoBuffer(0)
@@ -353,6 +356,12 @@ void DX11BackendClass::Shutdown()
 		UserBuffer->Release();
 		UserBuffer = NULL;
 		UserBufferBytes = 0;
+	}
+	if (TargetCopy != NULL) {
+		TargetCopyView->Release();
+		TargetCopy->Release();
+		TargetCopyView = NULL;
+		TargetCopy = NULL;
 	}
 	Device = NULL;
 }
@@ -777,6 +786,7 @@ void DX11BackendClass::Set_Render_Target(ID3D11RenderTargetView * target)
 	++TargetsBound;
 	Trace_Target("texture", width, height);
 	CurrentTarget = target;
+	CurrentTargetResource = resource;
 	CurrentDepth = Depth_For(width, height);
 	Device->Get_Context()->OMSetRenderTargets(1, &CurrentTarget, CurrentDepth);
 	Set_Viewport(0, 0, width, height);
@@ -1356,11 +1366,61 @@ void DX11BackendClass::Bind_State_Objects()
 	context->RSSetState(Rasterizer_State());
 
 	ID3D11SamplerState * samplers[DX11_BACKEND_TEXTURE_STAGES];
+	ID3D11ShaderResourceView * textures[DX11_BACKEND_TEXTURE_STAGES];
 	for (unsigned sampler = 0; sampler < DX11_BACKEND_TEXTURE_STAGES; ++sampler) {
 		samplers[sampler] = Sampler_State(sampler);
+		textures[sampler] = Readable_Texture(Textures[sampler]);
 	}
 	context->PSSetSamplers(0, DX11_BACKEND_TEXTURE_STAGES, samplers);
-	context->PSSetShaderResources(0, DX11_BACKEND_TEXTURE_STAGES, Textures);
+	context->PSSetShaderResources(0, DX11_BACKEND_TEXTURE_STAGES, textures);
+}
+
+ID3D11ShaderResourceView * DX11BackendClass::Readable_Texture(ID3D11ShaderResourceView * texture)
+{
+	if (texture == NULL || CurrentTarget == NULL) {
+		return texture;
+	}
+
+	ID3D11Resource * resource = NULL;
+	texture->GetResource(&resource);
+	resource->Release();
+	if (resource != CurrentTargetResource) {
+		return texture;
+	}
+
+	// Set_Render_Target keeps only a target that is a two dimensional texture.
+	D3D11_TEXTURE2D_DESC description;
+	static_cast<ID3D11Texture2D *>(resource)->GetDesc(&description);
+	if (TargetCopy != NULL) {
+		D3D11_TEXTURE2D_DESC held;
+		TargetCopy->GetDesc(&held);
+		if (held.Width != description.Width || held.Height != description.Height
+				|| held.Format != description.Format) {
+			TargetCopyView->Release();
+			TargetCopy->Release();
+			TargetCopyView = NULL;
+			TargetCopy = NULL;
+		}
+	}
+
+	if (TargetCopy == NULL) {
+		description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		description.MiscFlags = 0;
+		if (FAILED(Device->Get_Device()->CreateTexture2D(&description, NULL, &TargetCopy))) {
+			Note_Refusal("the device refused a copy of the render target a draw samples");
+			TargetCopy = NULL;
+			return texture;
+		}
+		if (FAILED(Device->Get_Device()->CreateShaderResourceView(TargetCopy, NULL, &TargetCopyView))) {
+			Note_Refusal("the device refused a view of the render target's copy");
+			TargetCopy->Release();
+			TargetCopy = NULL;
+			return texture;
+		}
+	}
+
+	Device->Get_Context()->CopyResource(TargetCopy, resource);
+	return TargetCopyView;
 }
 
 bool DX11BackendClass::Draw_Indexed_Triangles(unsigned index_count, unsigned start_index,
