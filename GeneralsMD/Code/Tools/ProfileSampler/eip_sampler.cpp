@@ -17,6 +17,7 @@
 #include <tlhelp32.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -185,14 +186,103 @@ void report(HANDLE proc, const std::map<DWORD, unsigned long long> &hits,
 	}
 }
 
+// -callers answers "who is calling this leaf": a leaf like the CRT's printf
+// formatter can own a tenth of the frame and say nothing about which of a
+// hundred callers is paying for it.  The stack is walked while the thread is
+// still suspended, since it is moving the moment the thread resumes.
+const size_t CALLER_DEPTH = 6;
+const size_t CALLER_ROWS_SHOWN = 25;
+using CallerChain = std::array<DWORD, CALLER_DEPTH>;
+
+std::string symbol_name(HANDLE proc, DWORD64 addr, std::map<DWORD64, std::string> &cache)
+{
+	const auto found = cache.find(addr);
+	if (found != cache.end()) {
+		return found->second;
+	}
+
+	char storage[sizeof(SYMBOL_INFO) + MAX_SYM_NAME] = {};
+	SYMBOL_INFO *sym = reinterpret_cast<SYMBOL_INFO *>(storage);
+	sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+	sym->MaxNameLen = MAX_SYM_NAME;
+
+	std::string name;
+	DWORD64 displacement = 0;
+	if (SymFromAddr(proc, addr, &displacement, sym)) {
+		name = sym->Name;
+	} else {
+		char raw[32];
+		sprintf_s(raw, "0x%08lx", static_cast<unsigned long>(addr));
+		name = raw;
+	}
+	cache[addr] = name;
+	return name;
+}
+
+CallerChain walk_callers(HANDLE proc, HANDLE thread, CONTEXT ctx)
+{
+	CallerChain chain = {};
+	STACKFRAME64 frame = {};
+	frame.AddrPC.Offset = ctx.Eip;
+	frame.AddrPC.Mode = AddrModeFlat;
+	frame.AddrFrame.Offset = ctx.Ebp;
+	frame.AddrFrame.Mode = AddrModeFlat;
+	frame.AddrStack.Offset = ctx.Esp;
+	frame.AddrStack.Mode = AddrModeFlat;
+
+	for (size_t depth = 0; depth < CALLER_DEPTH; ++depth) {
+		const BOOL walked = StackWalk64(IMAGE_FILE_MACHINE_I386, proc, thread, &frame, &ctx, nullptr,
+			SymFunctionTableAccess64, SymGetModuleBase64, nullptr);
+		if (!walked || frame.AddrPC.Offset == 0) {
+			break;
+		}
+		chain[depth] = static_cast<DWORD>(frame.AddrPC.Offset);
+	}
+	return chain;
+}
+
+void report_callers(HANDLE proc, const std::vector<CallerChain> &chains, const char *leaf_filter)
+{
+	std::map<DWORD64, std::string> names;
+	std::map<std::string, unsigned long long> by_chain;
+	unsigned long long matched = 0;
+
+	for (const CallerChain &chain : chains) {
+		if (chain[0] == 0 || symbol_name(proc, chain[0], names).find(leaf_filter) == std::string::npos) {
+			continue;
+		}
+		++matched;
+		std::string key;
+		for (size_t depth = 1; depth < CALLER_DEPTH && chain[depth] != 0; ++depth) {
+			if (!key.empty()) {
+				key += " < ";
+			}
+			key += symbol_name(proc, chain[depth], names);
+		}
+		++by_chain[key];
+	}
+
+	std::vector<std::pair<std::string, unsigned long long>> ranked(by_chain.begin(), by_chain.end());
+	std::sort(ranked.begin(), ranked.end(),
+		[](const auto &a, const auto &b) { return a.second > b.second; });
+
+	printf("\ncallers of leaves matching '%s' - %llu of %zu main-thread samples\n",
+		leaf_filter, matched, chains.size());
+	const size_t shown = ranked.size() < CALLER_ROWS_SHOWN ? ranked.size() : CALLER_ROWS_SHOWN;
+	for (size_t i = 0; i < shown; ++i) {
+		printf("%7llu  %s\n", ranked[i].second, ranked[i].first.c_str());
+	}
+}
+
 } // namespace
 
 int main(int argc, char **argv)
 {
 	if (argc < 3) {
 		fprintf(stderr,
-			"usage: %s <exe-name|pid> <seconds> [-all]\n"
-			"       -all samples every thread, not just main\n", argv[0]);
+			"usage: %s <exe-name|pid> <seconds> [-all] [-callers <leaf substring>]\n"
+			"       -all samples every thread, not just main\n"
+			"       -callers walks the main thread's stack and ranks who calls the matching leaves\n", argv[0]);
 		return 2;
 	}
 
@@ -202,7 +292,15 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	const double seconds = atof(argv[2]);
-	const bool all_threads = argc > 3 && _stricmp(argv[3], "-all") == 0;
+	bool all_threads = false;
+	const char *caller_filter = nullptr;
+	for (int arg = 3; arg < argc; ++arg) {
+		if (_stricmp(argv[arg], "-all") == 0) {
+			all_threads = true;
+		} else if (_stricmp(argv[arg], "-callers") == 0 && arg + 1 < argc) {
+			caller_filter = argv[++arg];
+		}
+	}
 
 	HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
 	if (proc == nullptr) {
@@ -256,6 +354,7 @@ int main(int argc, char **argv)
 
 	std::vector<std::map<DWORD, unsigned long long>> hits(handles.size());
 	std::vector<unsigned long long> totals(handles.size(), 0);
+	std::vector<CallerChain> chains;
 	unsigned long long missed = 0;
 
 	LARGE_INTEGER freq = {}, start = {}, now = {};
@@ -275,10 +374,13 @@ int main(int argc, char **argv)
 				continue;
 			}
 			CONTEXT ctx = {};
-			ctx.ContextFlags = CONTEXT_CONTROL;
+			ctx.ContextFlags = caller_filter ? CONTEXT_FULL : CONTEXT_CONTROL;
 			if (GetThreadContext(handles[i], &ctx)) {
 				++hits[i][ctx.Eip];
 				++totals[i];
+				if (caller_filter && i == 0) {
+					chains.push_back(walk_callers(proc, handles[i], ctx));
+				}
 			} else {
 				++missed;
 			}
@@ -306,6 +408,10 @@ int main(int argc, char **argv)
 			report(proc, hits[i], totals[i], title);
 		}
 		CloseHandle(handles[i]);
+	}
+
+	if (caller_filter) {
+		report_callers(proc, chains, caller_filter);
 	}
 
 	SymCleanup(proc);
