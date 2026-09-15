@@ -5446,6 +5446,16 @@ Bool Object_isAttackableStructure( Bool underConstruction, Real constructionPerc
 	return !Object_isAwaitingBuilder( underConstruction, constructionPercent );
 }
 
+//-------------------------------------------------------------------------------------------------
+/** A plan no enemy can see or shoot must not keep its owner in the game either.  A player whose last
+	* building fell with one plan still standing in the fog was never beaten: the match waited on a
+	* structure the other side had no way to find or destroy. */
+//-------------------------------------------------------------------------------------------------
+Bool Object_keepsOwnerAlive( Bool underConstruction, Real constructionPercent )
+{
+	return !Object_isAwaitingBuilder( underConstruction, constructionPercent );
+}
+
 Real Object::getShroudClearingRange() const
 {
 	Real shroudClearingRange = Object_shroudClearingRange( m_shroudClearingRange,

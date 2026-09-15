@@ -6088,6 +6088,16 @@ TEST(a_structure_waiting_for_its_builder_cannot_be_shot_at)
 	CHECK( Object_isAttackableStructure( FALSE, 0.0f ) == TRUE );
 }
 
+/** A plan nobody can see or shoot must not hold up the end of the match.  A player left with only a
+	 plan in the fog is beaten; the first percent of work makes it a building that counts. */
+TEST(a_structure_waiting_for_its_builder_does_not_keep_its_player_alive)
+{
+	CHECK( Object_keepsOwnerAlive( TRUE, 0.0f ) == FALSE );
+	CHECK( Object_keepsOwnerAlive( TRUE, 0.1f ) == TRUE );
+	CHECK( Object_keepsOwnerAlive( FALSE, CONSTRUCTION_COMPLETE ) == TRUE );
+	CHECK( Object_keepsOwnerAlive( FALSE, 0.0f ) == TRUE );
+}
+
 /** The first percent of work is what ends the plan, so the moment the builder arrives and starts
 	 the structure turns solid and stays solid for the rest of its life.  A finished building carries
 	 CONSTRUCTION_COMPLETE (-1) and must not be mistaken for one sitting at zero. */

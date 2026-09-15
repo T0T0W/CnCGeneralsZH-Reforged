@@ -180,6 +180,9 @@ extern Bool Object_deathIsSilent( Bool underConstruction, Real constructionPerce
 ///< is there anything standing here for a weapon to shoot at, or is it still only a plan?
 extern Bool Object_isAttackableStructure( Bool underConstruction, Real constructionPercent );
 
+///< does this object count as something its player still has, for defeat and "team destroyed"?
+extern Bool Object_keepsOwnerAlive( Bool underConstruction, Real constructionPercent );
+
 class Object : public Thing, public Snapshot
 {
 

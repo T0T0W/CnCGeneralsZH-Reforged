@@ -258,6 +258,10 @@ found and fixed â€” EA's own, not port damage.**
 - And nothing shoots at one. A plan is invisible to the other side, so a tank that stopped and
   opened fire on empty ground was telling that player where your base was going up before a single
   wall existed. The first work a builder puts in ends this and the site is a target like any other.
+- A plan does not keep a beaten player in the match. Lose your last building with one plan still
+  standing in the fog and the game used to run on forever, waiting for an opponent to destroy
+  something they could neither see nor shoot. A plan is not a building; only one a worker has started
+  counts.
 - Your units walk straight over a plan â€” nothing solid is there until the builder starts work.
 - The plan turns solid the instant the first work goes in, so no building goes up inside its own ghost.
 - The builder starts work from where it reaches the site instead of shuffling into place first.

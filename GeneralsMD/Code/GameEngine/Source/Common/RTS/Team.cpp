@@ -1698,6 +1698,12 @@ void Team::iterateObjects( ObjectIterateFunc func, void *userData )
 }
 
 // ------------------------------------------------------------------------
+static Bool objectKeepsOwnerAlive(const Object *obj)
+{
+	return Object_keepsOwnerAlive(obj->testStatus(OBJECT_STATUS_UNDER_CONSTRUCTION), obj->getConstructionPercent());
+}
+
+// ------------------------------------------------------------------------
 Bool Team::hasAnyBuildings() const
 {
 	for (DLINK_ITERATOR<Object> iter = iterate_TeamMemberList(); !iter.done(); iter.advance())
@@ -1705,7 +1711,10 @@ Bool Team::hasAnyBuildings() const
 		if (iter.cur()->isEffectivelyDead())
 			continue;
 
-		if (iter.cur()->isDestroyed()) 
+		if (iter.cur()->isDestroyed())
+			continue;
+
+		if (!objectKeepsOwnerAlive(iter.cur()))
 			continue;
 
 		if (iter.cur()->isKindOf(KINDOF_STRUCTURE))
@@ -1722,7 +1731,10 @@ Bool Team::hasAnyBuildings(KindOfMaskType kindOf) const
 		if (iter.cur()->isEffectivelyDead())
 			continue;
 
-		if (iter.cur()->isDestroyed()) 
+		if (iter.cur()->isDestroyed())
+			continue;
+
+		if (!objectKeepsOwnerAlive(iter.cur()))
 			continue;
 
 		kindOf.set(KINDOF_STRUCTURE);
@@ -1803,6 +1815,9 @@ Bool Team::hasAnyObjects() const
 			// Mines don't count.
 			continue;
 		}
+
+		if (!objectKeepsOwnerAlive(iter.cur()))
+			continue;
 
 		return true;
 	}
