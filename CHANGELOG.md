@@ -3,7 +3,7 @@
 EA opened the source of Generals and Zero Hour, the game that is still on sale and still runs on
 Steam. This build is that source with the bugs the game shipped with fixed and everything below added.
 
-**124 changes. ~580 engine source files ported. 14 automated test suites. Around 60 original bugs
+**125 changes. ~580 engine source files ported. 14 automated test suites. Around 60 original bugs
 found and fixed â€” EA's own, not port damage.**
 
 ---
@@ -728,6 +728,7 @@ found and fixed â€” EA's own, not port damage.**
   one" was set once and never cleared - so the first unit genuinely behind a wall made every unit
   checked after it see-through too, wall or no wall. On a busy screen that was most of them.
 - Bloom and antialiasing work together. Turning bloom on with antialiasing on gave you a black battlefield under a live interface: the glow pass draws the world into its own picture first, and that picture came with a depth buffer nobody had cleared, so every triangle in the scene was rejected as being behind something that was not there.
+- Lakes stop showing jagged bands of shore while you scroll. The glow and smoothing effects draw the world into a picture of their own, and that picture was never wiped between frames, so the water kept reading last frame's shoreline from wherever the camera had just been.
 - A switch you write in `Options.ini` by hand takes `yes`, `true`, `on` or `1` for on. Only the
   exact word `yes` used to count, so a line spelled any other way read as off and looked like a
   setting that did not work.
