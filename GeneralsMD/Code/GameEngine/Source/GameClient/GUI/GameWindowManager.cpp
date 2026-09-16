@@ -839,6 +839,8 @@ WinInputReturnCode GameWindowManager::winProcessKey( UnsignedByte key,
 //-------------------------------------------------------------------------------------------------
 /** Process a single mouse event through the window system */
 //-------------------------------------------------------------------------------------------------
+Bool OpenWindowOwnsPoint( Bool isOpen, Int originX, Int originY, Int width, Int height, Int x, Int y );
+
 WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage msg,
 																														ICoord2D *mousePos,
 																														void *data )
@@ -1014,11 +1016,22 @@ WinInputReturnCode GameWindowManager::winProcessMouseEvent( GameWindowMessage ms
 		else
 		{
 
-			if( m_modalHead && m_modalHead->window )
+			// the rows of an open dropdown that hang past its panel; see OpenWindowOwnsPoint
+			if( m_loneWindow )
+			{
+				ICoord2D origin, size;
+				m_loneWindow->winGetScreenPosition( &origin.x, &origin.y );
+				m_loneWindow->winGetSize( &size.x, &size.y );
+				if( OpenWindowOwnsPoint( !m_loneWindow->winIsHidden(), origin.x, origin.y,
+																 size.x, size.y, mousePos->x, mousePos->y ) )
+					window = m_loneWindow->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
+			}
+
+			if( window == NULL && m_modalHead && m_modalHead->window )
 			{
 				window = m_modalHead->window->winPointInChild( mousePos->x, mousePos->y, FALSE, FALSE, allowDisabledCancel );
 			}
-			else
+			else if( window == NULL )
 			{
 			
 				/**@todo Colin, there are 3 cases here that are nearly identical code,
