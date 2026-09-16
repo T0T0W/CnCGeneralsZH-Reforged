@@ -71,6 +71,7 @@ OPTION_INT_ACCESSORS( m_healthBarMode )
 OPTION_INT_ACCESSORS( m_playerColorScheme )
 OPTION_INT_ACCESSORS( m_textLanguage )
 OPTION_INT_ACCESSORS( m_inputScheme )
+OPTION_BOOL_ACCESSORS( m_wasdCamera )
 OPTION_BOOL_ACCESSORS( m_showOrderLines )
 OPTION_BOOL_ACCESSORS( m_useShadowVolumesForSkins )
 OPTION_BOOL_ACCESSORS( m_shadowsForProjectiles )
@@ -331,6 +332,13 @@ const OptionDef TheOptionCatalog[] =
 	{ "InputScheme",							OPT_WND( "ComboBoxInputScheme" ), "GUI:InputScheme",
 		OPTION_ENUM, APPLY_LIVE, 0, INPUT_SCHEME_COUNT - 1,
 		get_m_inputScheme, set_m_inputScheme },
+
+	// W A S D on the camera, and the keys they held moved to F G H J K.  Modern only: the box greys
+	// while Legacy is picked, and a tick saved under Modern is kept but ignored until Modern is back.
+	// Every key asks, and Accept rebuilds the command bar's letters, so it changes at once.
+	{ "WasdCamera",								OPT_WND( "CheckWasdCamera" ), "GUI:WasdCamera",
+		OPTION_BOOL, APPLY_LIVE, 0, 1,
+		get_m_wasdCamera, set_m_wasdCamera },
 
 	// Which language the words are in.  English is the string table the game shipped with, and every
 	// other entry is a translation laid over it, so a line the translation lacks stays English.  The

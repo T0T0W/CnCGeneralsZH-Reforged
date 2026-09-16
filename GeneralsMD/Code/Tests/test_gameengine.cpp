@@ -10250,6 +10250,37 @@ TEST(the_input_scheme_is_a_live_menu_choice_that_starts_modern)
 	delete scratch;
 }
 
+TEST(wasd_camera_is_a_live_check_box_that_starts_off_and_needs_modern_input)
+{
+	/* The box moves eleven keys a player already has in their hands, so nobody gets it without asking.
+		 A tick saved under Modern is kept through a switch to Legacy, which plays the game's own map,
+		 and comes back with Modern. */
+	const OptionDef *def = findOptionDef( "WasdCamera" );
+	CHECK( def != NULL );
+	if( def == NULL )
+		return;
+	CHECK_EQ( def->kind, OPTION_BOOL );
+	CHECK_EQ( def->apply, APPLY_LIVE );
+	CHECK( def->widgetName != NULL && def->widgetName[ 0 ] != '\0' );
+
+	GlobalData *saved = TheWritableGlobalData;
+	GlobalData *scratch = NEW GlobalData;
+	TheWritableGlobalData = scratch;
+
+	CHECK( !scratch->m_wasdCamera );
+	CHECK( !scratch->isWasdCamera() );
+	def->set( 1 );
+	CHECK( scratch->isWasdCamera() );
+	scratch->m_inputScheme = INPUT_SCHEME_LEGACY;
+	CHECK( !scratch->isWasdCamera() );
+	CHECK_EQ( def->get(), 1 );
+	scratch->m_inputScheme = INPUT_SCHEME_MODERN;
+	CHECK( scratch->isWasdCamera() );
+
+	TheWritableGlobalData = saved;
+	delete scratch;
+}
+
 TEST(order_lines_are_a_live_check_box_that_starts_on)
 {
 	/* The lines are rebuilt from the units every frame, so the box takes effect at Accept, and a player

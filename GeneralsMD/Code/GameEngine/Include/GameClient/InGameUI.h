@@ -511,7 +511,7 @@ public:  // ********************************************************************
 	void showNamedTimerDisplay( Bool show );
 
 	// mouse mode interface
-	virtual void setScrolling( Bool isScrolling );							///< set right-click scroll mode
+	virtual void setScrolling( Bool isScrolling, Bool moveCursor = TRUE );	///< set scroll mode; moveCursor puts up the scroll arrows and takes them down
 	virtual Bool isScrolling( void );														///< are we scrolling?
 	virtual void setSelecting( Bool isSelecting );							///< set drag select mode
 	virtual Bool isSelecting( void );														///< are we selecting?

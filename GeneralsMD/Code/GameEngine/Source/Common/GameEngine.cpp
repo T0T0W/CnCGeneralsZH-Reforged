@@ -896,6 +896,9 @@ void GameEngine::init( int argc, char *argv[] )
 		ini.load("Data\\INI\\CommandMapDemo.ini", INI_LOAD_MULTIFILE, NULL);
 #endif
 
+		// Modern with W A S D on the camera: everything Modern binds above, and the keys that moves
+		TheMetaMap->loadWasdBindings("Data\\INI\\CommandMapWASD.ini");
+
 
 		initSubsystem(TheActionManager,"TheActionManager", MSGNEW("GameEngineSubsystem") ActionManager(), NULL);
 		//initSubsystem((CComObject<WebBrowser> *)TheWebBrowser,"(CComObject<WebBrowser> *)TheWebBrowser", (CComObject<WebBrowser> *)createWebBrowser(), NULL);

@@ -185,7 +185,8 @@ void ControlBar::pressCommandButton( Int index )
 	// screen: Q arms the structures in columns 1-4 (slots 0-7), W the ones in columns 5-7
 	// (slots 8-13), and the next grid key picks the cell inside that group by its own
 	// position - Q-Q, Q-Z, ... W-Q (= T's cell), W-Z (= B's cell) ...  A structure has no other
-	// way in: its own letter on its own is the second half of a chord nobody started.
+	// way in: its own letter on its own is the second half of a chord nobody started.  Q and W
+	// are whatever the grid binds to slots 0 and 2, so with W A S D on the camera they are Q and E.
 	//
 	Bool hasStructures = FALSE;
 	Bool indexIsStructure = FALSE;

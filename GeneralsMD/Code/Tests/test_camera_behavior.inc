@@ -38,7 +38,7 @@ public:
 	void draw() {}
 	View *createView() { return NULL; }
 	Bool scrolling = FALSE, selecting = FALSE, enabled = TRUE;
-	void setScrolling(Bool value) { InGameUI::setScrolling(value); scrolling = value; }
+	void setScrolling(Bool value, Bool moveCursor = TRUE) { InGameUI::setScrolling(value, moveCursor); scrolling = value; }
 	Bool isScrolling() { return scrolling; }
 	Bool isSelecting() { return selecting; }
 	Bool getInputEnabled() { return enabled; }
@@ -225,4 +225,47 @@ TEST(camera_wheel_anchors_zoom_to_cursor_only_under_modern_with_the_box_ticked)
 	f.global->m_inputScheme = INPUT_SCHEME_LEGACY;
 	spinWheel();
 	CHECK_EQ(f.view.zoomAnchors, 1);
+}
+
+TEST(wasd_camera_scrolls_without_touching_the_cursor_and_only_with_the_box_ticked)
+{
+	CHECK(bootOnce());
+	CameraInputFixture f;
+	const auto press = [&f](UnsignedByte key, Bool down)
+	{
+		GameMessage *message = newInstance(GameMessage)(down ? GameMessage::MSG_RAW_KEY_DOWN : GameMessage::MSG_RAW_KEY_UP);
+		message->appendIntegerArgument(key);
+		message->appendIntegerArgument(down ? KEY_STATE_DOWN : KEY_STATE_UP);
+		f.camera.translateGameMessage(message);
+		message->deleteInstance();
+	};
+
+	// Box off: D is a unit key and scrolls nothing; the arrow keys scroll behind the scroll arrows.
+	CHECK(!f.global->isWasdCamera());
+	press(KEY_D, TRUE);
+	CHECK(!f.ui->scrolling);
+	press(KEY_D, FALSE);
+	press(KEY_RIGHT, TRUE);
+	CHECK(f.ui->scrolling);
+	CHECK_EQ(f.mouse.getMouseCursor(), Mouse::SCROLL);
+	// letting go of a D that never scrolled leaves the arrow key's scroll running
+	press(KEY_D, FALSE);
+	CHECK(f.ui->scrolling);
+	press(KEY_RIGHT, FALSE);
+	CHECK(!f.ui->scrolling);
+
+	// Box on: D scrolls, and the cursor is not touched on the way in or out.
+	f.global->m_wasdCamera = TRUE;
+	const Int cursorChanges = f.mouse.cursorChanges;
+	press(KEY_D, TRUE);
+	CHECK(f.ui->scrolling);
+	press(KEY_D, FALSE);
+	CHECK(!f.ui->scrolling);
+	CHECK_EQ(f.mouse.cursorChanges, cursorChanges);
+
+	// Legacy keeps the game's own keys: the box is ignored.
+	f.global->m_inputScheme = INPUT_SCHEME_LEGACY;
+	press(KEY_D, TRUE);
+	CHECK(!f.ui->scrolling);
+	press(KEY_D, FALSE);
 }

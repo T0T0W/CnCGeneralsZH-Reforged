@@ -4862,7 +4862,7 @@ DrawableID InGameUI::getMousedOverDrawableID( void ) const
 //-------------------------------------------------------------------------------------------------
 /// set right-click scroll mode
 //-------------------------------------------------------------------------------------------------
-void InGameUI::setScrolling( Bool isScrolling )
+void InGameUI::setScrolling( Bool isScrolling, Bool moveCursor )
 {
 	if (m_isScrolling == isScrolling)
 	{
@@ -4872,7 +4872,8 @@ void InGameUI::setScrolling( Bool isScrolling )
 	if (isScrolling)
 	{
 		TheMouse->capture();
-		setMouseCursor( Mouse::SCROLL );
+		if (moveCursor)
+			setMouseCursor( Mouse::SCROLL );
 
 		// break any camera locks
 		TheTacticalView->setCameraLock( INVALID_ID );
@@ -4880,7 +4881,8 @@ void InGameUI::setScrolling( Bool isScrolling )
 	}
 	else
 	{
-		setMouseCursor( Mouse::ARROW );
+		if (moveCursor)
+			setMouseCursor( Mouse::ARROW );
 		TheMouse->releaseCapture();
 	}
 

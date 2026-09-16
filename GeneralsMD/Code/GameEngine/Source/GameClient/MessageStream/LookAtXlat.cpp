@@ -65,6 +65,20 @@ static enum
 
 static Bool scrollDir[4] = { false, false, false, false };
 
+// The directions a W A S D key is holding.  A release only ends a scroll its own press started: with
+// the box off W is a grid key, and letting go of it must not stop the up arrow; with the box
+// unticked while W is held, letting go must still stop the camera.
+static Bool letterScrollDir[4] = { false, false, false, false };
+
+static void scrollByLetter( Int dir, Bool isPressed, Bool pressScrolls )
+{
+	if( isPressed ? !pressScrolls : !letterScrollDir[ dir ] )
+		return;
+
+	letterScrollDir[ dir ] = isPressed;
+	scrollDir[ dir ] = isPressed;
+}
+
 Int SCROLL_AMT = 100;
 
 static const Int edgeScrollSize = 3;
@@ -77,9 +91,14 @@ void LookAtTranslator::setScrolling(Int x)
 	if (!TheInGameUI->getInputEnabled())
 		return;
 
-	prevCursor = TheMouse->getMouseCursor();
+	// With the W A S D box ticked a keyboard scroll leaves the cursor alone - arrow keys too, it is the
+	// same scroll - because the mouse is not the thing moving the camera.  A mouse scroll, and every
+	// keyboard scroll with the box off, still turns the cursor into the scroll arrows.
+	m_scrollMovesCursor = !( x == SCROLL_KEY && TheGlobalData->isWasdCamera() );
+	if( m_scrollMovesCursor )
+		prevCursor = TheMouse->getMouseCursor();
 	m_isScrolling = true;
-	TheInGameUI->setScrolling( TRUE );
+	TheInGameUI->setScrolling( TRUE, m_scrollMovesCursor );
 	TheTacticalView->setMouseLock( TRUE );
 	m_scrollType = x;
 	// A manual pan restores map constraints widened by scripted camera paths.
@@ -93,9 +112,10 @@ void LookAtTranslator::setScrolling(Int x)
 void LookAtTranslator::stopScrolling( void )
 {
 	m_isScrolling = false;
-	TheInGameUI->setScrolling( FALSE );
+	TheInGameUI->setScrolling( FALSE, m_scrollMovesCursor );
 	TheTacticalView->setMouseLock( FALSE );
-	TheMouse->setCursor(prevCursor);
+	if( m_scrollMovesCursor )
+		TheMouse->setCursor(prevCursor);
 	m_scrollType = SCROLL_NONE;
 		
 	// if we have a stats collectore increment the stats
@@ -114,7 +134,8 @@ LookAtTranslator::LookAtTranslator() :
 	m_timestamp(0),
 	m_lastPlaneID(INVALID_DRAWABLE_ID),
 	m_lastMouseMoveFrame(0),
-	m_scrollType(SCROLL_NONE)
+	m_scrollType(SCROLL_NONE),
+	m_scrollMovesCursor(true)
 {
 	//Added By Sadullah Nader
 	//Initializations misssing and needed
@@ -184,6 +205,19 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			if (TheShell && TheShell->isShellActive())
 				break;
 
+			//
+			// With the W A S D box ticked those four scroll alongside the arrow keys, and
+			// CommandMapWASD.ini moves what they were bound to.  They are read here as raw keys
+			// instead of being bound there for two reasons: the meta map holds one key per command, so
+			// binding them would have taken the arrows away, and a meta record fires its UP only while
+			// the modifier state still matches the one the key went down with - letting go of W with
+			// ctrl held for a control group would have left the camera scrolling with nothing to stop
+			// it.  A press with ctrl or alt down belongs to whatever that combination is bound to.
+			//
+			const Bool letterPressScrolls = TheGlobalData->isWasdCamera() &&
+																		 !BitTest( state, KEY_STATE_CONTROL ) &&
+																		 !BitTest( state, KEY_STATE_ALT );
+
 			switch (key)
 			{
 			case KEY_UP:
@@ -197,6 +231,18 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				break;
 			case KEY_RIGHT:
 				scrollDir[DIR_RIGHT] = isPressed;
+				break;
+			case KEY_W:
+				scrollByLetter( DIR_UP, isPressed, letterPressScrolls );
+				break;
+			case KEY_S:
+				scrollByLetter( DIR_DOWN, isPressed, letterPressScrolls );
+				break;
+			case KEY_A:
+				scrollByLetter( DIR_LEFT, isPressed, letterPressScrolls );
+				break;
+			case KEY_D:
+				scrollByLetter( DIR_RIGHT, isPressed, letterPressScrolls );
 				break;
 			}
 
@@ -768,7 +814,10 @@ void LookAtTranslator::resetModes()
 	// the flags that say a scroll is in progress.
 	//
 	for( Int i = 0; i < 4; ++i )
+	{
 		scrollDir[i] = false;
+		letterScrollDir[i] = false;
+	}
 
 	if( m_isScrolling && TheInGameUI && TheTacticalView && TheMouse )
 		stopScrolling();

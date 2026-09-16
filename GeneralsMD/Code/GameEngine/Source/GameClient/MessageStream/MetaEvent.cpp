@@ -820,14 +820,14 @@ GameMessageDisposition MetaEventTranslator::translateGameMessage(const GameMessa
 MetaMap::MetaMap() :
 	m_parseScheme(INPUT_SCHEME_MODERN)
 {
-	for (Int scheme = 0; scheme < INPUT_SCHEME_COUNT; ++scheme)
+	for (Int scheme = 0; scheme < BINDING_LIST_COUNT; ++scheme)
 		m_metaMaps[scheme] = NULL;
 }
 
 //-------------------------------------------------------------------------------------------------
 MetaMap::~MetaMap()
 {
-	for (Int scheme = 0; scheme < INPUT_SCHEME_COUNT; ++scheme)
+	for (Int scheme = 0; scheme < BINDING_LIST_COUNT; ++scheme)
 	{
 		while (m_metaMaps[scheme])
 		{
@@ -841,7 +841,10 @@ MetaMap::~MetaMap()
 //-------------------------------------------------------------------------------------------------
 const MetaMapRec *MetaMap::getFirstMetaMapRec() const
 {
-	return m_metaMaps[ TheGlobalData->isLegacyInput() ? INPUT_SCHEME_LEGACY : INPUT_SCHEME_MODERN ];
+	if( TheGlobalData->isLegacyInput() )
+		return m_metaMaps[ INPUT_SCHEME_LEGACY ];
+
+	return m_metaMaps[ TheGlobalData->isWasdCamera() ? BINDINGS_WASD : INPUT_SCHEME_MODERN ];
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -850,6 +853,37 @@ void MetaMap::loadLegacyBindings( const AsciiString& languageMapFile )
 	m_parseScheme = INPUT_SCHEME_LEGACY;
 	INI ini;
 	ini.load( languageMapFile, INI_LOAD_OVERWRITE, NULL );
+	m_parseScheme = INPUT_SCHEME_MODERN;
+}
+
+//-------------------------------------------------------------------------------------------------
+void MetaMap::loadWasdBindings( const AsciiString& overlayFile )
+{
+	//
+	// Appended at the tail, not through getMetaMapRec, which puts a new record at the head: the
+	// translator stops at the first record that matches a key, so the copy keeps Modern's order and
+	// answers a key the way Modern does wherever the overlay does not reach.
+	//
+	MetaMapRec **tail = &m_metaMaps[ BINDINGS_WASD ];
+	for( const MetaMapRec *modern = m_metaMaps[ INPUT_SCHEME_MODERN ]; modern; modern = modern->m_next )
+	{
+		MetaMapRec *copy = newInstance( MetaMapRec );
+		copy->m_next = NULL;
+		copy->m_meta = modern->m_meta;
+		copy->m_key = modern->m_key;
+		copy->m_transition = modern->m_transition;
+		copy->m_modState = modern->m_modState;
+		copy->m_usableIn = modern->m_usableIn;
+		copy->m_category = modern->m_category;
+		copy->m_description = modern->m_description;
+		copy->m_displayName = modern->m_displayName;
+		*tail = copy;
+		tail = &copy->m_next;
+	}
+
+	m_parseScheme = BINDINGS_WASD;
+	INI ini;
+	ini.load( overlayFile, INI_LOAD_OVERWRITE, NULL );
 	m_parseScheme = INPUT_SCHEME_MODERN;
 }
 

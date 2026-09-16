@@ -309,6 +309,8 @@ public:
 	Int m_textLanguage;						///< TextLanguageType: the translation GameText lays over the CSF, read once at startup (client only)
 	Int m_inputScheme;						///< InputSchemeType: which mouse and keyboard the client answers to, read on every click and key (client only)
 	Bool isLegacyInput( void ) const { return m_inputScheme == INPUT_SCHEME_LEGACY; }
+	Bool m_wasdCamera;						///< W A S D scroll the camera and the unit keys move to F G H J K; Modern input only (client only)
+	Bool isWasdCamera( void ) const { return m_wasdCamera && !isLegacyInput(); }
 	Bool m_showOrderLines;				///< draw a line from each selected unit to where it is going, and its queue (client only)
 	Bool m_scriptDebug;						///< Should we attempt to load the script debugger window (.DLL)
 	Bool m_particleEdit;					///< Should we attempt to load the particle editor (.DLL)

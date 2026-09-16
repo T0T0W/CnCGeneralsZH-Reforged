@@ -39,7 +39,7 @@ public:
 	void draw() {}
 	View *createView() { return NULL; }
 	Bool scrolling = FALSE, selecting = FALSE, enabled = TRUE;
-	void setScrolling(Bool value) { InGameUI::setScrolling(value); scrolling = value; }
+	void setScrolling(Bool value, Bool moveCursor = TRUE) { InGameUI::setScrolling(value, moveCursor); scrolling = value; }
 	Bool isScrolling() { return scrolling; }
 	Bool isSelecting() { return selecting; }
 	Bool getInputEnabled() { return enabled; }

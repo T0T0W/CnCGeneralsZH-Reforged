@@ -73,6 +73,7 @@ private:
 	DrawableID m_lastPlaneID;
 	ViewLocation m_viewLocation[ MAX_VIEW_LOCS ];
 	Int m_scrollType;
+	Bool m_scrollMovesCursor;	// the scroll in progress swapped the cursor for the scroll arrows and puts it back when it stops
 	void setScrolling( Int );
 	void stopScrolling( void );
 	UnsignedInt m_lastMouseMoveFrame;

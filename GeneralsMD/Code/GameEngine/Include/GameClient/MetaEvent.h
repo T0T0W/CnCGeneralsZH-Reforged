@@ -366,7 +366,10 @@ class MetaMap : public SubsystemInterface
 	friend class MetaEventTranslator;
 
 private:
-	MetaMapRec *m_metaMaps[ INPUT_SCHEME_COUNT ];		///< one list of bindings per InputSchemeType
+	/// one list of bindings per InputSchemeType, and a third for Modern with W A S D on the camera
+	enum { BINDINGS_WASD = INPUT_SCHEME_COUNT, BINDING_LIST_COUNT };
+
+	MetaMapRec *m_metaMaps[ BINDING_LIST_COUNT ];
 	Int m_parseScheme;															///< the list parseMetaMap is filling
 
 protected:
@@ -389,7 +392,11 @@ public:
 		* Modern list reads that. */
 	void loadLegacyBindings( const AsciiString& languageMapFile );
 
-	/// the bindings the player's InputScheme answers to
+	/** Fill the W A S D list: a copy of the finished Modern list, in the same order, with overlayFile
+		* laid over it.  Runs after everything else that binds into Modern, so the copy has it all. */
+	void loadWasdBindings( const AsciiString& overlayFile );
+
+	/// the bindings the player's InputScheme, and the W A S D box under Modern, answer to
 	const MetaMapRec *getFirstMetaMapRec() const;
 	const MetaMapRec *getFirstMetaMapRec( Int scheme ) const { return m_metaMaps[ scheme ]; }
 };

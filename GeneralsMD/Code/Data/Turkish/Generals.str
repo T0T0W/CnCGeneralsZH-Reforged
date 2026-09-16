@@ -15405,6 +15405,14 @@ TOOLTIP:InputScheme
 "Modern: sol tık seçer, sağ tık emir verir, orta tuş kamerayı gezdirir, komut çubuğu ızgara tuşlarıyla kullanılır. Legacy: oyunun çıktığı hâldeki fare ve tuşlar, sonradan eklenenlerin hiçbiri olmadan."
 END
 
+GUI:WasdCamera
+"W A S D Kamera"
+END
+
+TOOLTIP:WasdCamera
+"W A S D kamerayı gezdirir. F saldırır, G durdurur, H saldırarak ilerler, J konumu korur, K gözcü koyar; komut çubuğunun üst sırası Q E R T Y U I olur. Yalnızca Modern girişte."
+END
+
 GUI:OrderLines
 "Emir Çizgileri"
 END

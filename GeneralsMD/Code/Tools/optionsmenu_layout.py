@@ -156,6 +156,7 @@ NEW_CONTROLS = [
     (CHECK,  "CheckParticleBounce",    "GUI:ParticleBounce"),
     (LABEL,  "LabelInputScheme",       "GUI:InputScheme"),
     (COMBO,  "ComboBoxInputScheme",    None),
+    (CHECK,  "CheckWasdCamera",        "GUI:WasdCamera"),
 ]
 
 # A slider on its own says nothing about where it stands, so each one has a readout beside it that
@@ -255,7 +256,8 @@ GROUP_LAYOUT = [
         ("check", "Retaliation"),
         ("check", "CheckDoubleClickAttackMove")]),
     ("PageControls", 2, "GUI:OptionsGroupInput", [
-        setting("LabelInputScheme", "ComboBoxInputScheme")]),
+        setting("LabelInputScheme", "ComboBoxInputScheme"),
+        ("check", "CheckWasdCamera")]),
 
     ("PageGameplay", 0, "GUI:OptionsGroupBattlefield", [
         setting("LabelHealthBars", "ComboBoxHealthBars"),
