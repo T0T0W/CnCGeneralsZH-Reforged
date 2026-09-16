@@ -688,9 +688,6 @@ public:  // ********************************************************************
 
 	virtual void setRadiusCursor(RadiusCursorType r, const SpecialPowerTemplate* sp, WeaponSlotType wslot);
 	virtual void setRadiusCursorNone() { setRadiusCursor(RADIUSCURSOR_NONE, NULL, PRIMARY_WEAPON); }
-	/// ring an explicit radius with the guard-area decal; used while placing a defensive structure,
-	/// where there is no Object yet to read a weapon range off.
-	virtual void setRadiusCursorForRadius(Real radius);
 
 	virtual void setInputEnabled( Bool enable );										///< Set the input enabled or disabled
 	virtual void clearModifierModes( void );												///< forget every mode a held key puts us in (see the definition)
@@ -1177,8 +1174,9 @@ protected:
 	IRegion2D										m_hudToggleRects[ HUD_TOGGLE_ROWS ];
 	DisplayString *							m_hudToggleStrings[ HUD_TOGGLE_ROWS ];
 
-	Bool												m_placementRangeRingUp;	///< we put a radius cursor up for a pending structure, so we owe a clear
-	Real												m_placementRingRadius;	///< the radius that ring was built at, so it is not rebuilt every frame
+	Bool												m_placementRangeRingUp;	///< the structure on the cursor is armed, so its reach is drawn
+	Real												m_placementRingRadius;	///< how far from its centre it hits
+	void drawPlacementReach( void );			///< while placing, the reach of every armed building in sight, as one outline
 	void drawPlacementBlindSpots( void );	///< shade the ground behind buildings a placed defence cannot shoot past
 
 	DisplayString *							m_hudDisplayString;			///< the ShowHudOverlay line (fps / clock)

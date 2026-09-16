@@ -146,11 +146,18 @@ enum
 
 	STRIP_TRAY_OVERLAP_PARTS	= 8,	///< a strip's trays close up by one part in this many of a tray
 
-	BLIND_SPOT_RAYS						= 180	///< rays round a placed defence looking for the buildings it cannot shoot past
+	BLIND_SPOT_RAYS						= 180,	///< rays round a placed defence looking for the buildings it cannot shoot past
+
+	REACH_OUTLINE_SEGMENTS		= 256,	///< straight pieces round one reach circle
+	REACH_CROSSING_HALVINGS		= 8,		///< halvings that find where one circle's outline enters another
+	REACH_OUTLINE_ALPHA				= 230		///< the outline in the owner's colour, a touch see-through
 };
+
+static const Real REACH_OUTLINE_WIDTH = 1.0f;
 
 static const Real BLIND_SPOT_TARGET_HEIGHT = 10.0f;	///< top of a tank, the height a defence has to see over a hill
 static const Real LOS_TERRAIN_SLOP = 0.5f;					///< the terrain line-of-sight test's own fudge
+static const Real BLIND_SPOT_RING_WIDTH = PATHFIND_CELL_SIZE_F * 0.5f;	///< two looks a pathfind cell, so a corner is not stepped over
 
 //-------------------------------------------------------------------------------------------------
 /** Every number above is an 800x600 one, the resolution the command bar right below the strip was
@@ -1400,35 +1407,6 @@ void InGameUI::init( void )
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
-/** Paint a radius we already know, rather than one derived from a selected object.
-	*
-	* It is the red attack area the artillery powers aim with, not the white guard ring: what a
-	* defence on the cursor covers is ground it will shoot into, and a filled red disc says that where
-	* a thin white circle read as a building footprint. */
-//-------------------------------------------------------------------------------------------------
-void InGameUI::setRadiusCursorForRadius(Real radius)
-{
-	if (radius <= 0.0f)
-	{
-		setRadiusCursorNone();
-		return;
-	}
-
-	// re-create only when the size actually changed, otherwise the decal restarts every frame.
-	// (this used to hang off a function-level static, which outlived the decal it described.)
-	if (m_curRcType == RADIUSCURSOR_ATTACK_DAMAGE_AREA && !m_curRadiusCursor.isEmpty() && m_placementRingRadius == radius)
-		return;
-
-	m_curRadiusCursor.clear();
-	Coord3D pos = { 0, 0, 0 };	// handleRadiusCursor() puts it under the cursor
-	m_radiusCursors[RADIUSCURSOR_ATTACK_DAMAGE_AREA].createRadiusDecal(pos, radius, ThePlayerList->getLocalPlayer(), m_curRadiusCursor);
-	m_curRcType = RADIUSCURSOR_ATTACK_DAMAGE_AREA;
-	m_placementRingRadius = radius;
-
-	handleRadiusCursor();
-}
-
-//-------------------------------------------------------------------------------------------------
 void InGameUI::setRadiusCursor(RadiusCursorType cursorType, const SpecialPowerTemplate* specPowTempl, WeaponSlotType weaponSlot)
 {
 	if (cursorType == m_curRcType)
@@ -1643,13 +1621,15 @@ void InGameUI::evaluateSoloNexus( Drawable *newlyAddedDrawable )
 //-------------------------------------------------------------------------------------------------
 /** The longest weapon range anything in this template's weapon sets can reach.  Every set is
 	* walked, not just the one an empty condition mask happens to select: a defence whose gun lives
-	* in a conditional set (an upgrade, a garrisoned variant) would otherwise report no range. */
+	* in a conditional set (an upgrade, a garrisoned variant) would otherwise report no range.  The
+	* range is the one the weapon is tested with, which the game trims a little from the INI number. */
 //-------------------------------------------------------------------------------------------------
 static Real templateWeaponRange( const ThingTemplate *tmpl )
 {
 	if( tmpl == NULL )
 		return 0.0f;
 
+	const WeaponBonus noBonus;
 	Real range = 0.0f;
 	const WeaponTemplateSetVector& sets = tmpl->getWeaponTemplateSets();
 	for( WeaponTemplateSetVector::const_iterator si = sets.begin(); si != sets.end(); ++si )
@@ -1657,8 +1637,8 @@ static Real templateWeaponRange( const ThingTemplate *tmpl )
 		for( Int ws = PRIMARY_WEAPON; ws < WEAPONSLOT_COUNT; ++ws )
 		{
 			const WeaponTemplate *wt = si->getNth( (WeaponSlotType)ws );
-			if( wt && wt->getUnmodifiedAttackRange() > range )
-				range = wt->getUnmodifiedAttackRange();
+			if( wt )
+				range = max( range, wt->getAttackRange( noBonus ) );
 		}
 	}
 
@@ -1702,6 +1682,16 @@ static Real templatePlacementRange( const ThingTemplate *tmpl )
 	}
 
 	return range;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** How far from its centre a structure of this template hits.  The game measures a shot from the
+	* edge of the shooter's bounding circle, so the weapon range starts there, not at the middle. */
+//-------------------------------------------------------------------------------------------------
+static Real templateReach( const ThingTemplate *tmpl )
+{
+	const Real range = templatePlacementRange( tmpl );
+	return range > 0.0f ? range + tmpl->getTemplateGeometryInfo().getBoundingCircleRadius() : 0.0f;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -1913,113 +1903,12 @@ static Bool spanStartsFirst( const ICoord2D &a, const ICoord2D &b )
 }
 
 //-------------------------------------------------------------------------------------------------
-/** The ground a defence on the cursor could not shoot into, darkened inside its red range area.
-	*
-	* A defence that needs a line of sight - a Patriot battery, a Gattling Cannon, a Fire Base - does
-	* not fire through a building, and cannot pick a target a hill hides from it.  Both rules are the
-	* game's own.  Target picking asks the terrain for a clear line from the top of the defence to the
-	* target, and the pathfinder refuses a shot when a solid structure's cells lie between them; a
-	* structure the art says can be seen through does not count.
-	*
-	* The range area is cut into a polar grid, a sector per ray and a ring per half pathfind cell, and
-	* each cell of it is looked at from the defence.  Along one sector the walk keeps the steepest
-	* terrain seen so far, which is the horizon: a target whose top sits under that slope is behind a
-	* hill.  Everything from the first building cell outwards is behind that building, the building's
-	* own ground included.  The blocked cells are projected corner by corner onto the terrain and
-	* filled as one shape, row by row, so the shade follows the ground and has no seams in it.
-	*
-	* A Stinger Site, a bunker and anything else that does not need the line of sight gets no shading,
-	* because none of that ground is out of its reach. */
+/** Paint the rows addQuadSpans collected, each row's overlapping spans merged first, so ground two
+	* shapes both cover is painted once and a see-through colour does not come out darker there. */
 //-------------------------------------------------------------------------------------------------
-void InGameUI::drawPlacementBlindSpots( void )
+static void fillSpanRows( std::vector< std::vector< ICoord2D > > &rows, Color color )
 {
-	if( m_pendingPlaceType == NULL || !m_placementRangeRingUp )
-		return;
-	if( !TheAI->getAiData()->m_attackUsesLineOfSight || !m_pendingPlaceType->isKindOf( KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT ) )
-		return;
-
-	const Coord3D center = *m_placeIcon[ 0 ]->getPosition();
-	const Real range = m_placementRingRadius;
-	const Real ringWidth = PATHFIND_CELL_SIZE_F * 0.5f;		// two looks a cell, so a corner is not stepped over
-	const Int rings = (Int)ceil( range / ringWidth );
-	const Real eyeZ = TheTerrainLogic->getGroundHeight( center.x, center.y )
-		+ m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
-
-	std::vector< Bool > blocked( BLIND_SPOT_RAYS * rings, FALSE );
-	Bool anyBlocked = FALSE;
-	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
-	{
-		const Real angle = 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS;
-		const Real dx = Cos( angle );
-		const Real dy = Sin( angle );
-
-		Real horizonSlope = -FLT_MAX;
-		Bool behindBuilding = FALSE;
-		for( Int ring = 0; ring < rings; ring++ )
-		{
-			const Real along = min( ( ring + 0.5f ) * ringWidth, range );
-			Coord3D look = { center.x + dx * along, center.y + dy * along, center.z };
-			const Real groundZ = TheTerrainLogic->getGroundHeight( look.x, look.y );
-
-			const PathfindCell *cell = TheAI->pathfinder()->getCell( LAYER_GROUND, &look );
-			if( cell && cell->getType() == PathfindCell::CELL_OBSTACLE && !cell->isObstacleTransparent() )
-				behindBuilding = TRUE;
-
-			const Real targetSlope = ( groundZ + BLIND_SPOT_TARGET_HEIGHT - eyeZ ) / along;
-			const Bool behindHill = targetSlope < horizonSlope;
-			horizonSlope = max( horizonSlope, ( groundZ - LOS_TERRAIN_SLOP - eyeZ ) / along );
-
-			if( behindBuilding || behindHill )
-			{
-				blocked[ ray * rings + ring ] = TRUE;
-				anyBlocked = TRUE;
-			}
-		}
-	}
-
-	if( !anyBlocked )
-		return;
-
-	// corner ( ray, ring ) sits on the ray's leading edge at the ring's inner radius
-	const Int cornerRings = rings + 1;
-	std::vector< ICoord2D > corners( BLIND_SPOT_RAYS * cornerRings );
-	std::vector< Bool > onScreen( BLIND_SPOT_RAYS * cornerRings );
-	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
-	{
-		const Real angle = 2.0f * PI * ray / BLIND_SPOT_RAYS;
-		for( Int ring = 0; ring < cornerRings; ring++ )
-		{
-			const Real along = min( ring * ringWidth, range );
-			Coord3D ground;
-			ground.x = center.x + Cos( angle ) * along;
-			ground.y = center.y + Sin( angle ) * along;
-			ground.z = TheTerrainLogic->getGroundHeight( ground.x, ground.y );
-			const Int index = ray * cornerRings + ring;
-			onScreen[ index ] = TheTacticalView->worldToScreenTriReturn( &ground, &corners[ index ] ) != View::WTS_INVALID;
-		}
-	}
-
 	const Int screenW = (Int)TheDisplay->getWidth();
-	std::vector< std::vector< ICoord2D > > rows( TheDisplay->getHeight() );
-	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
-	{
-		const Int next = ( ray + 1 ) % BLIND_SPOT_RAYS;
-		for( Int ring = 0; ring < rings; ring++ )
-		{
-			if( !blocked[ ray * rings + ring ] )
-				continue;
-
-			const Int quad[ 4 ] = { ray * cornerRings + ring, next * cornerRings + ring,
-				next * cornerRings + ring + 1, ray * cornerRings + ring + 1 };
-			if( !onScreen[ quad[ 0 ] ] || !onScreen[ quad[ 1 ] ] || !onScreen[ quad[ 2 ] ] || !onScreen[ quad[ 3 ] ] )
-				continue;
-
-			const ICoord2D *quadCorners[ 4 ] = { &corners[ quad[ 0 ] ], &corners[ quad[ 1 ] ], &corners[ quad[ 2 ] ], &corners[ quad[ 3 ] ] };
-			addQuadSpans( quadCorners, rows );
-		}
-	}
-
-	const Color shade = GameMakeColor( 0, 0, 0, 120 );
 
 	TheDisplay->beginBatch2D();
 
@@ -2043,12 +1932,352 @@ void InGameUI::drawPlacementBlindSpots( void )
 			const Int x0 = max( run.x, 0 );
 			const Int x1 = min( run.y, screenW );
 			if( x1 > x0 )
-				TheDisplay->drawFillRect( x0, y, x1 - x0, 1, shade );
+				TheDisplay->drawFillRect( x0, y, x1 - x0, 1, color );
 			if( s < spans.size() )
 				run = spans[ s ];
 		}
 	}
 
+	TheDisplay->endBatch2D();
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A defence's reach cut into the blind-spot polar grid: sector ray covers the angles from ray to
+	* ray + 1, ring ring the distances from ring to ring + 1 ring widths.  blocked is empty for a
+	* defence that shoots whatever is in range. */
+//-------------------------------------------------------------------------------------------------
+struct ReachView
+{
+	Coord2D center;
+	Real radius;
+	Int rings;
+	std::vector< Bool > blocked;
+};
+
+static Bool templateNeedsLineOfSight( const ThingTemplate *tmpl )
+{
+	return TheAI->getAiData()->m_attackUsesLineOfSight && tmpl->isKindOf( KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Fill in which cells of the grid a defence cannot see from eyeZ.  Along one sector the walk keeps
+	* the steepest terrain seen so far, which is the horizon: a target whose top sits under that slope
+	* is behind a hill.  Everything from the first building cell outwards is behind that building, the
+	* building's own ground included; the defence's own cells, self, are not in its way. */
+//-------------------------------------------------------------------------------------------------
+static void lookRoundReach( ReachView &view, Real eyeZ, ObjectID self )
+{
+	view.rings = (Int)ceil( view.radius / BLIND_SPOT_RING_WIDTH );
+	view.blocked.assign( BLIND_SPOT_RAYS * view.rings, FALSE );
+
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS;
+		const Real dx = Cos( angle );
+		const Real dy = Sin( angle );
+
+		Real horizonSlope = -FLT_MAX;
+		Bool behindBuilding = FALSE;
+		for( Int ring = 0; ring < view.rings; ring++ )
+		{
+			const Real along = min( ( ring + 0.5f ) * BLIND_SPOT_RING_WIDTH, view.radius );
+			Coord3D look = { view.center.x + dx * along, view.center.y + dy * along, 0.0f };
+			const Real groundZ = TheTerrainLogic->getGroundHeight( look.x, look.y );
+
+			const PathfindCell *cell = TheAI->pathfinder()->getCell( LAYER_GROUND, &look );
+			if( cell && cell->getType() == PathfindCell::CELL_OBSTACLE && !cell->isObstacleTransparent()
+				&& !( self != INVALID_ID && cell->isObstaclePresent( self ) ) )
+				behindBuilding = TRUE;
+
+			const Real targetSlope = ( groundZ + BLIND_SPOT_TARGET_HEIGHT - eyeZ ) / along;
+			const Bool behindHill = targetSlope < horizonSlope;
+			horizonSlope = max( horizonSlope, ( groundZ - LOS_TERRAIN_SLOP - eyeZ ) / along );
+
+			view.blocked[ ray * view.rings + ring ] = behindBuilding || behindHill;
+		}
+	}
+}
+
+static Bool reachViewHits( const ReachView &view, Real x, Real y )
+{
+	const Real dx = x - view.center.x;
+	const Real dy = y - view.center.y;
+	const Real distance = sqrtf( sqr( dx ) + sqr( dy ) );
+	if( distance >= view.radius )
+		return FALSE;
+	if( view.blocked.empty() )
+		return TRUE;
+
+	Real angle = atan2( dy, dx );
+	if( angle < 0.0f )
+		angle += 2.0f * PI;
+	const Int ray = min( (Int)( angle * BLIND_SPOT_RAYS / ( 2.0f * PI ) ), BLIND_SPOT_RAYS - 1 );
+	const Int ring = min( (Int)( distance / BLIND_SPOT_RING_WIDTH ), view.rings - 1 );
+	return !view.blocked[ ray * view.rings + ring ];
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The ground a defence on the cursor could not shoot into, darkened inside its red range area.
+	*
+	* A defence that needs a line of sight - a Patriot battery, a Gattling Cannon, a Fire Base - does
+	* not fire through a building, and cannot pick a target a hill hides from it.  Both rules are the
+	* game's own.  Target picking asks the terrain for a clear line from the top of the defence to the
+	* target, and the pathfinder refuses a shot when a solid structure's cells lie between them; a
+	* structure the art says can be seen through does not count.
+	*
+	* The range area is cut into a polar grid, a sector per ray and a ring per half pathfind cell, and
+	* each cell of it is looked at from the defence.  Along one sector the walk keeps the steepest
+	* terrain seen so far, which is the horizon: a target whose top sits under that slope is behind a
+	* hill.  Everything from the first building cell outwards is behind that building, the building's
+	* own ground included.  The blocked cells are projected corner by corner onto the terrain and
+	* filled as one shape, row by row, so the shade follows the ground and has no seams in it.
+	*
+	* A Stinger Site, a bunker and anything else that does not need the line of sight gets no shading,
+	* because none of that ground is out of its reach.
+	*
+	* Ground the defence cannot see but one of the player's or an ally's defences already hits is left
+	* bright: a turret beside the building covers the corner behind it, and that corner is not a hole.
+	* Each of those defences gets the same polar grid from where it stands, with its own cells not
+	* counted as a building in its way, and the shaded cell's middle is looked up in it. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawPlacementBlindSpots( void )
+{
+	if( m_pendingPlaceType == NULL || !m_placementRangeRingUp )
+		return;
+	if( !templateNeedsLineOfSight( m_pendingPlaceType ) )
+		return;
+
+	const Coord3D center = *m_placeIcon[ 0 ]->getPosition();
+	ReachView pending;
+	pending.center.x = center.x;
+	pending.center.y = center.y;
+	pending.radius = m_placementRingRadius;
+	const Real eyeZ = TheTerrainLogic->getGroundHeight( center.x, center.y )
+		+ m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
+	lookRoundReach( pending, eyeZ, INVALID_ID );
+
+	const Real range = pending.radius;
+	const Int rings = pending.rings;
+	std::vector< Bool > &blocked = pending.blocked;
+
+	std::vector< ReachView > guards;
+	const Player *local = ThePlayerList->getLocalPlayer();
+	for( Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject() )
+	{
+		if( !obj->isKindOf( KINDOF_STRUCTURE ) )
+			continue;
+		if( obj->getControllingPlayer() != local && local->getRelationship( obj->getTeam() ) != ALLIES )
+			continue;
+
+		ReachView guard;
+		guard.radius = templateReach( obj->getTemplate() );
+		guard.center.x = obj->getPosition()->x;
+		guard.center.y = obj->getPosition()->y;
+		guard.rings = 0;
+		if( guard.radius <= 0.0f || sqr( guard.center.x - center.x ) + sqr( guard.center.y - center.y ) >= sqr( guard.radius + range ) )
+			continue;
+
+		if( templateNeedsLineOfSight( obj->getTemplate() ) )
+			lookRoundReach( guard, obj->getPosition()->z + obj->getGeometryInfo().getMaxHeightAbovePosition(), obj->getID() );
+		guards.push_back( guard );
+	}
+
+	Bool anyBlocked = FALSE;
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < rings; ring++ )
+		{
+			const Int index = ray * rings + ring;
+			if( !blocked[ index ] )
+				continue;
+
+			const Real along = min( ( ring + 0.5f ) * BLIND_SPOT_RING_WIDTH, range );
+			const Real x = center.x + Cos( angle ) * along;
+			const Real y = center.y + Sin( angle ) * along;
+			for( size_t g = 0; g < guards.size() && blocked[ index ]; g++ )
+			{
+				if( reachViewHits( guards[ g ], x, y ) )
+					blocked[ index ] = FALSE;
+			}
+			anyBlocked = anyBlocked || blocked[ index ];
+		}
+	}
+
+	if( !anyBlocked )
+		return;
+
+	// corner ( ray, ring ) sits on the ray's leading edge at the ring's inner radius
+	const Int cornerRings = rings + 1;
+	std::vector< ICoord2D > corners( BLIND_SPOT_RAYS * cornerRings );
+	std::vector< Bool > onScreen( BLIND_SPOT_RAYS * cornerRings );
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ray / BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < cornerRings; ring++ )
+		{
+			const Real along = min( ring * BLIND_SPOT_RING_WIDTH, range );
+			Coord3D ground;
+			ground.x = center.x + Cos( angle ) * along;
+			ground.y = center.y + Sin( angle ) * along;
+			ground.z = TheTerrainLogic->getGroundHeight( ground.x, ground.y );
+			const Int index = ray * cornerRings + ring;
+			onScreen[ index ] = TheTacticalView->worldToScreenTriReturn( &ground, &corners[ index ] ) != View::WTS_INVALID;
+		}
+	}
+
+	std::vector< std::vector< ICoord2D > > rows( TheDisplay->getHeight() );
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Int next = ( ray + 1 ) % BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < rings; ring++ )
+		{
+			if( !blocked[ ray * rings + ring ] )
+				continue;
+
+			const Int quad[ 4 ] = { ray * cornerRings + ring, next * cornerRings + ring,
+				next * cornerRings + ring + 1, ray * cornerRings + ring + 1 };
+			if( !onScreen[ quad[ 0 ] ] || !onScreen[ quad[ 1 ] ] || !onScreen[ quad[ 2 ] ] || !onScreen[ quad[ 3 ] ] )
+				continue;
+
+			const ICoord2D *quadCorners[ 4 ] = { &corners[ quad[ 0 ] ], &corners[ quad[ 1 ] ], &corners[ quad[ 2 ] ], &corners[ quad[ 3 ] ] };
+			addQuadSpans( quadCorners, rows );
+		}
+	}
+
+	fillSpanRows( rows, GameMakeColor( 0, 0, 0, 120 ) );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Where a ground point lands on the screen, FALSE when the camera cannot put it anywhere. */
+//-------------------------------------------------------------------------------------------------
+static Bool projectGroundPoint( Real x, Real y, ICoord2D *screen )
+{
+	Coord3D ground;
+	ground.x = x;
+	ground.y = y;
+	ground.z = TheTerrainLogic->getGroundHeight( x, y );
+	return TheTacticalView->worldToScreenTriReturn( &ground, screen ) != View::WTS_INVALID;
+}
+
+struct ReachCircle
+{
+	Coord2D center;
+	Real radius;
+	const Player *owner;
+};
+
+/// inside another circle of the same player's; two players' circles cross, each in its own colour
+static Bool insideOtherReach( const std::vector< ReachCircle > &circles, size_t self, Real x, Real y )
+{
+	for( size_t c = 0; c < circles.size(); c++ )
+	{
+		if( c != self && circles[ c ].owner == circles[ self ].owner
+			&& sqr( x - circles[ c ].center.x ) + sqr( y - circles[ c ].center.y ) < sqr( circles[ c ].radius ) )
+			return TRUE;
+	}
+	return FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** While a structure is on the cursor, the reach of every armed building in sight: yours, your
+	* allies', the enemy's you can currently see, and the one on the cursor if it is armed.
+	*
+	* Each circle is exactly the distance a shot is allowed at: the weapon range the game tests with,
+	* measured from the edge of the shooter's bounding circle, so from the centre it is that range
+	* plus the bounding radius.  Each is drawn in its owner's colour.  Where one player's circles
+	* overlap they are one area: the thin outline leaves out every stretch of a circle that runs inside
+	* another of the same player's, cutting it where the two cross.  An enemy building under fog is
+	* skipped, so the circles tell nothing the map does not. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawPlacementReach( void )
+{
+	if( !TheGlobalData->m_showPlacementRangeRing )
+		return;
+
+	// on the cursor, or clicked: a selected armed building brings the circles up just the same
+	Bool armedSelected = FALSE;
+	for( DrawableListCIt it = m_selectedDrawables.begin(); it != m_selectedDrawables.end() && !armedSelected; ++it )
+	{
+		const Object *obj = (*it)->getObject();
+		armedSelected = obj && obj->isKindOf( KINDOF_STRUCTURE ) && templateReach( obj->getTemplate() ) > 0.0f;
+	}
+	if( m_pendingPlaceType == NULL && !armedSelected )
+		return;
+
+	const Player *local = ThePlayerList->getLocalPlayer();
+	std::vector< ReachCircle > circles;
+	if( m_pendingPlaceType != NULL && m_placementRangeRingUp )
+	{
+		ReachCircle pending;
+		pending.center.x = m_placeIcon[ 0 ]->getPosition()->x;
+		pending.center.y = m_placeIcon[ 0 ]->getPosition()->y;
+		pending.radius = m_placementRingRadius;
+		pending.owner = local;
+		circles.push_back( pending );
+	}
+
+	for( Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject() )
+	{
+		if( !obj->isKindOf( KINDOF_STRUCTURE ) )
+			continue;
+		if( obj->getControllingPlayer() != local && obj->getShroudedStatus( local->getPlayerIndex() ) >= OBJECTSHROUD_FOGGED )
+			continue;
+
+		ReachCircle placed;
+		placed.radius = templateReach( obj->getTemplate() );
+		if( placed.radius <= 0.0f )
+			continue;
+		placed.center.x = obj->getPosition()->x;
+		placed.center.y = obj->getPosition()->y;
+		placed.owner = obj->getControllingPlayer();
+		circles.push_back( placed );
+	}
+
+	TheDisplay->beginBatch2D();
+	for( size_t c = 0; c < circles.size(); c++ )
+	{
+		UnsignedByte red, green, blue, alpha;
+		GameGetColorComponents( clientPlayerColor( circles[ c ].owner ), &red, &green, &blue, &alpha );
+		const Color outline = GameMakeColor( red, green, blue, REACH_OUTLINE_ALPHA );
+		const ReachCircle &circle = circles[ c ];
+		for( Int segment = 0; segment < REACH_OUTLINE_SEGMENTS; segment++ )
+		{
+			const Real angles[ 2 ] = { 2.0f * PI * segment / REACH_OUTLINE_SEGMENTS, 2.0f * PI * ( segment + 1 ) / REACH_OUTLINE_SEGMENTS };
+			Real ends[ 2 ][ 2 ];
+			Bool inside[ 2 ];
+			for( Int e = 0; e < 2; e++ )
+			{
+				ends[ e ][ 0 ] = circle.center.x + Cos( angles[ e ] ) * circle.radius;
+				ends[ e ][ 1 ] = circle.center.y + Sin( angles[ e ] ) * circle.radius;
+				inside[ e ] = insideOtherReach( circles, c, ends[ e ][ 0 ], ends[ e ][ 1 ] );
+			}
+			if( inside[ 0 ] && inside[ 1 ] )
+				continue;
+
+			// one end inside another circle: walk the arc in halves to where it crosses, keep the outside
+			if( inside[ 0 ] != inside[ 1 ] )
+			{
+				Real outsideAngle = inside[ 0 ] ? angles[ 1 ] : angles[ 0 ];
+				Real insideAngle = inside[ 0 ] ? angles[ 0 ] : angles[ 1 ];
+				for( Int halving = 0; halving < REACH_CROSSING_HALVINGS; halving++ )
+				{
+					const Real middle = 0.5f * ( outsideAngle + insideAngle );
+					if( insideOtherReach( circles, c, circle.center.x + Cos( middle ) * circle.radius, circle.center.y + Sin( middle ) * circle.radius ) )
+						insideAngle = middle;
+					else
+						outsideAngle = middle;
+				}
+				const Int cut = inside[ 0 ] ? 0 : 1;
+				ends[ cut ][ 0 ] = circle.center.x + Cos( outsideAngle ) * circle.radius;
+				ends[ cut ][ 1 ] = circle.center.y + Sin( outsideAngle ) * circle.radius;
+			}
+
+			ICoord2D from, to;
+			if( projectGroundPoint( ends[ 0 ][ 0 ], ends[ 0 ][ 1 ], &from ) && projectGroundPoint( ends[ 1 ][ 0 ], ends[ 1 ][ 1 ], &to ) )
+				TheDisplay->drawLine( from.x, from.y, to.x, to.y, REACH_OUTLINE_WIDTH, outline );
+		}
+	}
 	TheDisplay->endBatch2D();
 }
 
@@ -2068,14 +2297,12 @@ void InGameUI::handleBuildPlacements( void )
 		//
 		// ShowPlacementRangeRing: ring the structure's own weapon range while it is being placed,
 		// so a defense can be sited against what it actually covers. The radius comes off the
-		// template - there is no Object yet - and the ring rides the cursor like any other radius
-		// decal.
+		// template - there is no Object yet - and drawPlacementReach draws it under the cursor.
 		//
 		if( TheGlobalData->m_showPlacementRangeRing )
 		{
-			Real placeRange = templatePlacementRange( m_pendingPlaceType );
-			setRadiusCursorForRadius( placeRange );
-			m_placementRangeRingUp = ( placeRange > 0.0f );
+			m_placementRingRadius = templateReach( m_pendingPlaceType );
+			m_placementRangeRingUp = ( m_placementRingRadius > 0.0f );
 		}
 
 		// update the angle of the icon to match any placement angle and pick the
@@ -5037,20 +5264,10 @@ void InGameUI::destroyPlacementIcons( void )
 void InGameUI::placeBuildAvailable( const ThingTemplate *build, Drawable *buildDrawable )
 {
 
+	// if building something, no radius cursor, thankew
 	if (build != NULL)
-	{
-		// if building something, no radius cursor, thankew
 		setRadiusCursorNone();
-		m_placementRangeRingUp = FALSE;
-	}
-	else if (m_placementRangeRingUp)
-	{
-		// placement is over - cancelled, or the structure went down. Take our own range ring with
-		// it; nothing else was going to, so it used to sit on the map until the next radius cursor
-		// happened to replace it.
-		setRadiusCursorNone();
-		m_placementRangeRingUp = FALSE;
-	}
+	m_placementRangeRingUp = FALSE;
 
 	//
 	// if we're setting another place available, but we're somehow already in the placement
@@ -5861,6 +6078,7 @@ void InGameUI::postDraw( void )
 	drawProductionStrip();
 	drawSkillStrip();			// the same shelf, the other end of it
 	drawPlacementBlindSpots();
+	drawPlacementReach();		// after the shade, so the outline stays bright over it
 	drawHudToggles();
 
 
