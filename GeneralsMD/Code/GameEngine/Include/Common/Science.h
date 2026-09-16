@@ -106,6 +106,9 @@ public:
 
 	Int getSciencePurchaseCost(ScienceType science) const;
 
+	/// does st name prereq among its own prerequisites (one level, not the whole chain)
+	Bool isDirectPrereq(ScienceType prereq, ScienceType st) const;
+
 	ScienceType getScienceFromInternalName(const AsciiString& name) const;
 	AsciiString getInternalNameForScience(ScienceType science) const;
 

@@ -15536,3 +15536,19 @@ END
 TOOLTIP:WeaponStats
 "Hasar %d  Menzil %d"
 END
+
+GUI:HudToggles
+"Şeritler"
+END
+
+GUI:HudProductionStrip
+"Üretim sırası"
+END
+
+GUI:HudSkillStrip
+"General yetenekleri"
+END
+
+GUI:HudSuperweaponStrip
+"Süper silah sayaçları"
+END

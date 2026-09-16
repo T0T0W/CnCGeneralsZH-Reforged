@@ -387,7 +387,12 @@ Bool addDrawableToList( Drawable *draw, void *userData )
 	{
 		const Player *player = ThePlayerList->getLocalPlayer();
 		Relationship rel = player->getRelationship( obj->getTeam() );
-		if( rel == NEUTRAL || rel == ENEMIES )
+		/* ...but a spectator is not somebody who could exploit knowing. An observer, and a player
+			 who has already lost, commands nothing, sees the whole map anyway, and is watching the
+			 match precisely to look at what the players are doing - a stealth building that cannot be
+			 clicked is a hole in the broadcast. Same test the control bar uses to switch to its
+			 observer scheme. */
+		if( ( rel == NEUTRAL || rel == ENEMIES ) && player->isPlayerActive() )
 		{
 			if( obj->getShroudedStatus( player->getPlayerIndex() ) >= OBJECTSHROUD_FOGGED )
 			{

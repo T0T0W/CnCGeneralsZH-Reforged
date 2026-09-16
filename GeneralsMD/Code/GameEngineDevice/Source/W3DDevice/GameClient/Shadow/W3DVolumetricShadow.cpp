@@ -2029,6 +2029,16 @@ void W3DVolumetricShadow::Update()
    		if (fabs(pos.Z - groundHeight) >= AIRBORNE_UNIT_GROUND_DELTA)
    		{	
  			Real extent = MAX_SHADOW_LENGTH_EXTRA_AIRBORNE_SCALE_FACTOR * m_robjExtent;
+
+			//a shadow cast by the real sun lands off to one side of the aircraft, as far out as its
+			//height asks for, so an aircraft just off screen can still have its shadow on it
+			const Vector3 &lightPos = TheW3DShadowManager->getLightPosWorld(0);
+			const Real lightXY = sqrt(lightPos.X*lightPos.X + lightPos.Y*lightPos.Y);
+			Real lightZ = lightPos.Z;
+			if (lightXY * m_shadowLengthScale > lightZ)
+				lightZ = lightXY * m_shadowLengthScale;
+			if (lightZ > 0.0f)
+				extent += fabs(pos.Z - groundHeight) * lightXY / lightZ;
  			if (WWMath::Fabs(pos.X - bcX) > (beX + extent) ||
  				WWMath::Fabs(pos.Y - bcY) > (beY + extent) ||
  				WWMath::Fabs(pos.Z - bcZ) > (beZ + extent))
@@ -4207,10 +4217,26 @@ W3DVolumetricShadow* W3DVolumetricShadowManager::addShadow(RenderObjClass *robj,
  	robj->Get_Obj_Space_Bounding_Sphere(sphere);
  	shadow->setRenderObjExtent(sphere.Radius*MAX_SHADOW_LENGTH_SCALE_FACTOR);
 
+	/* Every aircraft EA shipped asks for ShadowSizeX = 89, a sun no lower than 89 degrees, so every
+		 plane and helicopter cast its shadow straight down and towed it along underneath itself at any
+		 height - while the tank beside it was lit by the map's real sun and threw its shadow off to the
+		 side.  An aircraft takes the same sun as everything else now, so its shadow lands where the
+		 sun puts it and slides out from under it as it climbs.  The floor only lifts a sun lower than
+		 AIRCRAFT_MIN_SUN_ELEVATION, so a dusk map does not throw a Comanche's shadow across half the
+		 screen. */
+	const Real AIRCRAFT_MIN_SUN_ELEVATION = 30.0f;
+	Drawable *owner = draw;
+	if (owner == NULL && robj->Get_User_Data())
+		owner = ((DrawableInfo *)robj->Get_User_Data())->m_drawable;
+
+	Real sunElevation = shadowInfo->m_sizeX;
+	if (owner && owner->isKindOf(KINDOF_AIRCRAFT) && sunElevation > AIRCRAFT_MIN_SUN_ELEVATION)
+		sunElevation = AIRCRAFT_MIN_SUN_ELEVATION;
+
 	Real sunElevationAngleTan = 0;
-	if (shadowInfo->m_sizeX)
+	if (sunElevation)
 	{	//need to adjust sun elevation for this model in order to limit shadow length
-		sunElevationAngleTan=tan(shadowInfo->m_sizeX/180.0f*PI);
+		sunElevationAngleTan=tan(sunElevation/180.0f*PI);
 	}
 	shadow->setShadowLengthScale(sunElevationAngleTan);
 

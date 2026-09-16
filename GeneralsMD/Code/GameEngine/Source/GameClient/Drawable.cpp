@@ -2978,6 +2978,7 @@ void Drawable::drawIconUI( void )
 			return;
 		drawHealing( healthBarRegion );//call so dead things can kill their healing icons
 		drawBombed( healthBarRegion );
+		drawCaptureProgress();
 	
 	
 		//Disabled for multiplay!
@@ -4117,6 +4118,60 @@ void Drawable::drawVeterancy( const IRegion2D *healthBarRegion )
 	TheDisplay->drawImage(image, screenCenter.x + 1, screenCenter.y + 1, screenCenter.x + 1 + vetBoxWidth, screenCenter.y + 1 + vetBoxHeight);
 
 }  // end drawVeterancy
+
+// ------------------------------------------------------------------------------------------------
+/** The capture clock, drawn under the health bar of the building being taken.
+	*
+	* A capture is a man standing at a door for several seconds and a building that flashes while it
+	* happens. The flash says somebody is taking it; it does not say whether that is nearly over or
+	* barely started, so the choice between driving over to shoot him and carrying on with the fight
+	* was made blind. The bar says how long is left.
+	*
+	* Drawn by the man rather than by the building, because he is the one who knows: a building being
+	* captured is told nothing about it until it changes hands. So this runs in the captor's icon
+	* pass and puts its rectangle under the target's health bar, in the capturing player's colour -
+	* whose capture it is, is the other half of the question.
+	*/
+// ------------------------------------------------------------------------------------------------
+void Drawable::drawCaptureProgress( void )
+{
+	const Object *obj = getObject();
+	if( obj == NULL || !obj->isKindOf( KINDOF_INFANTRY ) )
+		return;
+
+	ObjectID targetID = INVALID_ID;
+	Real progress = 0.0f;
+	if( !obj->getCaptureProgress( &targetID, &progress ) )
+		return;
+
+	const Object *target = TheGameLogic->findObjectByID( targetID );
+	const Drawable *targetDraw = target ? target->getDrawable() : NULL;
+	if( targetDraw == NULL )
+		return;
+
+	IRegion2D healthBarRegion;
+	if( !computeHealthRegion( targetDraw, healthBarRegion ) )
+		return;
+
+	const Real barWidth = healthBarRegion.hi.x - healthBarRegion.lo.x;
+	const Real barHeight = max( 3, healthBarRegion.hi.y - healthBarRegion.lo.y );
+	const Real barTop = healthBarRegion.hi.y + 2;		// clear of the health bar, and of its outline
+
+	Color fillColor = GameMakeColor( 255, 255, 255, 255 );
+	const Player *owner = obj->getControllingPlayer();
+	if( owner != NULL && owner->getPlayerColor() != 0 )
+	{
+		UnsignedByte r, g, b, a;
+		GameGetColorComponents( clientPlayerColor( owner ), &r, &g, &b, &a );
+		fillColor = GameMakeColor( r, g, b, 255 );
+	}
+
+	TheDisplay->drawOpenRect( healthBarRegion.lo.x, barTop, barWidth, barHeight,
+														1.0f, GameDarkenColor( fillColor, 60 ) );
+	TheDisplay->drawFillRect( healthBarRegion.lo.x + 1, barTop + 1,
+														(barWidth - 2) * progress, barHeight - 2, fillColor );
+
+}  // end drawCaptureProgress
 
 // ------------------------------------------------------------------------------------------------
 /** Draw health bar information for drawable */

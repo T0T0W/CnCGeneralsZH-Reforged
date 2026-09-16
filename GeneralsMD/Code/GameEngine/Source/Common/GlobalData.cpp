@@ -1123,6 +1123,9 @@ GlobalData::GlobalData()
 	m_showPlacementRangeRing = TRUE;
 	m_workersReturnToSupply = TRUE;
 	m_detailedBuildTooltips = TRUE;
+	m_showProductionStrip = TRUE;
+	m_showSkillStrip = TRUE;
+	m_showSuperweaponStrip = TRUE;
 	m_archiveReplays = TRUE;
 
 	// Bloom is the one that does NOT default on: it changes how the game looks rather than what it

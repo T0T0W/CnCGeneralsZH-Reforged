@@ -788,6 +788,19 @@ public:
 	/// find existing command set
 	const CommandSet *findCommandSet( const AsciiString& name );
 
+	/// whose promotion screen and skills are shown: your own while playing, the selected or
+	/// observed player's while watching
+	Player *getWatchedPlayer( void );
+
+	/// watching, the player whose thing is selected; NULL for nothing selected, which is the
+	/// whole-match view
+	Player *getSelectedPlayer( void );
+
+	/// watching, follow the selection: the player's readouts, his money and his side's metal
+	void updateWatchedPlayer( void );
+	void showObserverPlayerInfo( void );		///< his readouts up, the player list down
+	void showObserverPlayerList( void );		///< and back again
+
 	void showPurchaseScience( void );
 	void hidePurchaseScience( void );
 	void togglePurchaseScience( void );
@@ -838,6 +851,7 @@ public:
 
 	// Functions for repositioning/resizing the control bar
 	void switchControlBarStage( ControlBarStages stage );
+	void restoreStageAfterScheme( void );		///< a new scheme keeps a minimised bar minimised
 	void toggleControlBarStage( void );
 
 	const Image *getStarImage( void );
@@ -1267,6 +1281,8 @@ protected:
 
 	Bool m_isObserverCommandBar;												///< If this is true, the command bar behaves greatly differnt
 	Player *m_observerLookAtPlayer;											///< The current player we're looking at, Null if we're not looking at anyone.
+	AsciiString m_watchedSide;													///< the side the bar is wearing while watching, so a selection change only lays it out again when it really changes side
+	Player *m_watchedSelection;													///< the player the selection last named while watching, NULL for nobody
 
 	WindowLayout *m_buildToolTipLayout;										///< The window that will slide on/display tooltips
 	Bool m_showBuildToolTipLayout;											///< every frame we test to see if we aregoing to continue showing this or not.

@@ -597,8 +597,34 @@ Bool SpecialAbilityUpdate::isPowerCurrentlyInUse( const CommandButton *command )
       return true;
     }
   }
-  
+
   return false;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** How far through taking a building this unit is, for the bar the building wears while it happens.
+	*
+	* m_prepFrames is the whole of the answer: it is set to the preparation length when the man
+	* reaches the door and counts down from there, and it is zero while he is still walking over and
+	* again once the building has changed hands. Two abilities take a building - a rifleman walking
+	* in and Black Lotus hacking one - and every other ability this module drives says nothing. */
+//-------------------------------------------------------------------------------------------------
+Bool SpecialAbilityUpdate::getCaptureProgress( ObjectID *targetID, Real *progress ) const
+{
+	if( !m_active || m_prepFrames == 0 || m_targetID == INVALID_ID )
+		return FALSE;
+
+	const SpecialPowerType type = getSpecialPowerType();
+	if( type != SPECIAL_INFANTRY_CAPTURE_BUILDING && type != SPECIAL_BLACKLOTUS_CAPTURE_BUILDING )
+		return FALSE;
+
+	const UnsignedInt total = getSpecialAbilityUpdateModuleData()->m_preparationFrames;
+	if( total == 0 || m_prepFrames > total )
+		return FALSE;
+
+	*targetID = m_targetID;
+	*progress = 1.0f - (Real)m_prepFrames / (Real)total;
+	return TRUE;
 }
 
 //-------------------------------------------------------------------------------------------------

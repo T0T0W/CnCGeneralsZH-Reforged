@@ -1004,3 +1004,20 @@ END
 GUI:CantBuildTooManyDerrickDefenses
 "You already have two defenses round these oil derricks."
 END
+
+// the drop-down in the top left corner of a match that switches the strips on and off
+GUI:HudToggles
+"Strips"
+END
+
+GUI:HudProductionStrip
+"Production queue"
+END
+
+GUI:HudSkillStrip
+"Generals' promotions"
+END
+
+GUI:HudSuperweaponStrip
+"Superweapon timers"
+END

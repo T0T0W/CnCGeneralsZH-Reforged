@@ -64,17 +64,21 @@ Bool SalvageCrateCollide::isValidToExecute( const Object *other ) const
 	if( ! CrateCollide::isValidToExecute( other ) )
 		return FALSE;
 
-	// Only salvage units can pick up a Salvage crate
-	if( ! other->getTemplate()->isKindOf( KINDOF_SALVAGER ) )
-		return FALSE;
-
+	/* Salvagers are what a salvage crate is for, and they are the only ones who get anything out of
+		 it but money. Anybody else may still pick it up, because the alternative is what the game did
+		 before: a crate nobody in range could take sat in the middle of a battlefield until it timed
+		 out, and the money in it belonged to nobody. A tank driving over one now at least gets paid
+		 for the wreck. */
 	return TRUE;
 }
 
 //-------------------------------------------------------------------------------------------------
 Bool SalvageCrateCollide::executeCrateBehavior( Object *other )
 {
-	if( eligibleForArmorSet(other) )// No percent chance on this one, if you can get it, you get it.
+	// what a salvager takes off a wreck; everybody else takes the cash and leaves the parts
+	const Bool salvager = other->isKindOf( KINDOF_SALVAGER );
+
+	if( salvager && eligibleForArmorSet(other) )// No percent chance on this one, if you can get it, you get it.
 	{
 		doArmorSet(other);
 
@@ -83,7 +87,7 @@ Bool SalvageCrateCollide::executeCrateBehavior( Object *other )
 		soundToPlay.setObjectID( other->getID() );
 		TheAudio->addAudioEvent( &soundToPlay );
 	}
-	else if( eligibleForWeaponSet( other ) && testWeaponChance() )
+	else if( salvager && eligibleForWeaponSet( other ) && testWeaponChance() )
 	{
 		doWeaponSet( other );
 
@@ -99,7 +103,7 @@ Bool SalvageCrateCollide::executeCrateBehavior( Object *other )
 		//soundToPlay.setObjectID( other->getID() );
 		//TheAudio->addAudioEvent( &soundToPlay );
 	}
-	else if( eligibleForLevel( other ) && testLevelChance() )
+	else if( salvager && eligibleForLevel( other ) && testLevelChance() )
 	{
 		doLevelGain( other );
 		

@@ -299,6 +299,33 @@ void ControlBar::populateObserverList( void )
 	}
 }
 
+//-------------------------------------------------------------------------------------------------
+/** Put up the readouts of the player the bar is looking at, and take the list down - what pressing
+	* his button in the list does, reached from the selection as well. */
+//-------------------------------------------------------------------------------------------------
+void ControlBar::showObserverPlayerInfo( void )
+{
+	if( ObserverPlayerInfoWindow == NULL || ObserverPlayerListWindow == NULL )
+		return;
+
+	ObserverPlayerInfoWindow->winHide( FALSE );
+	ObserverPlayerListWindow->winHide( TRUE );
+	populateObserverInfoWindow();
+}
+
+//-------------------------------------------------------------------------------------------------
+/** ... and back to the list of everybody, which is what the cancel button does. */
+//-------------------------------------------------------------------------------------------------
+void ControlBar::showObserverPlayerList( void )
+{
+	if( ObserverPlayerInfoWindow == NULL || ObserverPlayerListWindow == NULL )
+		return;
+
+	ObserverPlayerInfoWindow->winHide( TRUE );
+	ObserverPlayerListWindow->winHide( FALSE );
+	populateObserverList();
+}
+
 void ControlBar::populateObserverInfoWindow ( void )
 {
 	if(ObserverPlayerInfoWindow->winIsHidden())

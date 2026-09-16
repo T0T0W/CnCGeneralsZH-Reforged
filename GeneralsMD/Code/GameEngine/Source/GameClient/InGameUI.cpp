@@ -39,6 +39,8 @@
 #include "Common/MessageStream.h"
 #include "Common/PerfTimer.h"
 #include "Common/Player.h"
+#include "Common/PlayerTemplate.h"
+#include "Common/Science.h"
 #include "Common/Upgrade.h"
 #include "Common/PlayerList.h"
 #include "Common/Radar.h"
@@ -56,6 +58,7 @@
 #include "GameClient/Diplomacy.h"
 #include "GameClient/Eva.h"
 #include "GameClient/GameText.h"
+#include "Common/UserPreferences.h"
 #include "GameClient/GameWindowManager.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GadgetPushButton.h"
@@ -82,6 +85,7 @@
 
 #include "GameNetwork/NetworkInterface.h"
 
+#include "GameLogic/AI.h"
 #include "GameLogic/AIGuard.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/AIStateMachine.h"
@@ -138,8 +142,15 @@ enum
 	PRODUCTION_STRIP_LEFT		= 8,		///< inset from the left edge of the screen
 	PRODUCTION_STRIP_LIFT		= 24,		///< clearance above the control bar
 	PRODUCTION_STRIP_MORE		= 18,		///< width kept for the "+N" that closes an overflowing row
-	PRODUCTION_STRIP_SECS		= 7			///< point size of the countdown written inside a cameo
+	PRODUCTION_STRIP_SECS		= 7,		///< point size of the countdown written inside a cameo
+
+	STRIP_TRAY_OVERLAP_PARTS	= 8,	///< a strip's trays close up by one part in this many of a tray
+
+	BLIND_SPOT_RAYS						= 180	///< rays round a placed defence looking for the buildings it cannot shoot past
 };
+
+static const Real BLIND_SPOT_TARGET_HEIGHT = 10.0f;	///< top of a tank, the height a defence has to see over a hill
+static const Real LOS_TERRAIN_SLOP = 0.5f;					///< the terrain line-of-sight test's own fudge
 
 //-------------------------------------------------------------------------------------------------
 /** Every number above is an 800x600 one, the resolution the command bar right below the strip was
@@ -1162,6 +1173,11 @@ InGameUI::InGameUI()
 	m_productionStripTraySource = NULL;
 	for( Int stripString = 0; stripString < STRIP_OVERFLOW_STRINGS; stripString++ )
 		m_productionStripOverflow[ stripString ] = NULL;
+	m_hudTogglesOpen = FALSE;
+	m_hudToggleRowsShown = 0;
+	m_hudTogglesBottom = 0;
+	for( Int toggleRow = 0; toggleRow < HUD_TOGGLE_ROWS; toggleRow++ )
+		m_hudToggleStrings[ toggleRow ] = NULL;
 	for( Int stripSeconds = 0; stripSeconds < STRIP_SECONDS_STRINGS; stripSeconds++ )
 		m_stripSecondsString[ stripSeconds ] = NULL;
 	for( Int stripQuantity = 0; stripQuantity < STRIP_QUANTITY_STRINGS; stripQuantity++ )
@@ -1384,7 +1400,11 @@ void InGameUI::init( void )
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
-/** Ring a radius we already know, rather than one derived from a selected object. */
+/** Paint a radius we already know, rather than one derived from a selected object.
+	*
+	* It is the red attack area the artillery powers aim with, not the white guard ring: what a
+	* defence on the cursor covers is ground it will shoot into, and a filled red disc says that where
+	* a thin white circle read as a building footprint. */
 //-------------------------------------------------------------------------------------------------
 void InGameUI::setRadiusCursorForRadius(Real radius)
 {
@@ -1396,13 +1416,13 @@ void InGameUI::setRadiusCursorForRadius(Real radius)
 
 	// re-create only when the size actually changed, otherwise the decal restarts every frame.
 	// (this used to hang off a function-level static, which outlived the decal it described.)
-	if (m_curRcType == RADIUSCURSOR_GUARD_AREA && !m_curRadiusCursor.isEmpty() && m_placementRingRadius == radius)
+	if (m_curRcType == RADIUSCURSOR_ATTACK_DAMAGE_AREA && !m_curRadiusCursor.isEmpty() && m_placementRingRadius == radius)
 		return;
 
 	m_curRadiusCursor.clear();
 	Coord3D pos = { 0, 0, 0 };	// handleRadiusCursor() puts it under the cursor
-	m_radiusCursors[RADIUSCURSOR_GUARD_AREA].createRadiusDecal(pos, radius, ThePlayerList->getLocalPlayer(), m_curRadiusCursor);
-	m_curRcType = RADIUSCURSOR_GUARD_AREA;
+	m_radiusCursors[RADIUSCURSOR_ATTACK_DAMAGE_AREA].createRadiusDecal(pos, radius, ThePlayerList->getLocalPlayer(), m_curRadiusCursor);
+	m_curRcType = RADIUSCURSOR_ATTACK_DAMAGE_AREA;
 	m_placementRingRadius = radius;
 
 	handleRadiusCursor();
@@ -1682,6 +1702,354 @@ static Real templatePlacementRange( const ThingTemplate *tmpl )
 	}
 
 	return range;
+}
+
+//-------------------------------------------------------------------------------------------------
+// The top left drop-down.  Row 0 is its header; each row after it is one strip, its words, the
+// GlobalData switch it flips and the Options.ini key that switch is saved under.
+//-------------------------------------------------------------------------------------------------
+static const char *const TheHudToggleLabels[] =
+{
+	"GUI:HudToggles", "GUI:HudProductionStrip", "GUI:HudSkillStrip", "GUI:HudSuperweaponStrip"
+};
+static Bool GlobalData::* const TheHudToggleFlags[] =
+{
+	NULL, &GlobalData::m_showProductionStrip, &GlobalData::m_showSkillStrip, &GlobalData::m_showSuperweaponStrip
+};
+static const char *const TheHudToggleKeys[] =
+{
+	NULL, "ShowProductionStrip", "ShowSkillStrip", "ShowSuperweaponStrip"
+};
+
+enum
+{
+	HUD_TOGGLES_INSET	= 6,		///< from the top and left edges of the screen, 800x600
+	HUD_TOGGLES_WIDTH	= 150,	///< the whole drop-down's width, 800x600
+	HUD_TOGGLES_PAD		= 3			///< round the words and the boxes inside a row, 800x600
+};
+
+//-------------------------------------------------------------------------------------------------
+/** Is the local player watching rather than playing - an observer, or knocked out and stayed? */
+//-------------------------------------------------------------------------------------------------
+static Bool localPlayerWatching( void )
+{
+	const Player *local = ThePlayerList ? ThePlayerList->getLocalPlayer() : NULL;
+	return local != NULL && !local->isPlayerActive();
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Is this strip switched off from the drop-down?  Only a watcher has the drop-down, so a player
+	* always has his strips, whatever he last chose while watching somebody else's match. */
+//-------------------------------------------------------------------------------------------------
+static Bool stripSwitchedOff( Bool GlobalData::* flag )
+{
+	return localPlayerWatching() && !( TheGlobalData->*flag );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The strips over the battlefield, switched on and off from a drop-down in the top left corner.
+	*
+	* Watching a match three of them fight over the same picture - the production rows, the
+	* promotions, the superweapon countdowns - and which of them a spectator wants depends on what he
+	* is watching for.  Closed it is one line with a plus in it.  Each box flips its strip the moment
+	* it is clicked and saves the choice with the rest of the options.  Only while watching: playing,
+	* the top left corner belongs to the messages. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawHudToggles( void )
+{
+	m_hudToggleRowsShown = 0;
+	m_hudTogglesBottom = 0;
+
+	if( TheGameLogic == NULL || !TheGameLogic->isInGame() || TheGameLogic->isInShellGame() )
+		return;
+	if( !localPlayerWatching() )
+		return;
+
+	const Int rows = m_hudTogglesOpen ? HUD_TOGGLE_ROWS : 1;
+	for( Int row = 0; row < rows; row++ )
+	{
+		if( m_hudToggleStrings[ row ] )
+			continue;
+
+		m_hudToggleStrings[ row ] = TheDisplayStringManager->newDisplayString();
+		m_hudToggleStrings[ row ]->setFont( TheFontLibrary->getFont( m_superweaponNormalFont,
+																	TheGlobalLanguageData->adjustFontSize( HUD_OVERLAY_POINT_SIZE ), TRUE ) );
+		m_hudToggleStrings[ row ]->setText( TheGameText->fetch( TheHudToggleLabels[ row ] ) );
+	}
+
+	Int textW = 0, textH = 0;
+	m_hudToggleStrings[ 0 ]->getSize( &textW, &textH );
+
+	const Int pad = stripPixels( HUD_TOGGLES_PAD );
+	const Int left = stripPixels( HUD_TOGGLES_INSET );
+	const Int top = stripPixels( HUD_TOGGLES_INSET );
+	const Int width = stripPixels( HUD_TOGGLES_WIDTH );
+	const Int rowH = textH + 2 * pad;
+	const Int box = textH;
+	const Color plate = GameMakeColor( 0, 0, 0, 150 );
+	const Color edge = GameMakeColor( 200, 200, 200, 255 );
+	const Color on = GameMakeColor( 90, 200, 90, 255 );
+	const Color words = GameMakeColor( 235, 235, 235, 255 );
+	const Color shade = GameMakeColor( 0, 0, 0, 255 );
+
+	TheDisplay->beginBatch2D();
+
+	for( Int row = 0; row < rows; row++ )
+	{
+		const Int y = top + row * rowH;
+		IRegion2D *rect = &m_hudToggleRects[ row ];
+		rect->lo.x = left;
+		rect->lo.y = y;
+		rect->hi.x = left + width;
+		rect->hi.y = y + rowH;
+
+		TheDisplay->drawFillRect( left, y, width, rowH, plate );
+
+		const Int boxX = left + pad;
+		const Int boxY = y + pad;
+		TheDisplay->drawOpenRect( boxX, boxY, box, box, 1.0f, edge );
+
+		if( row == 0 )
+		{
+			// a minus to close it, a plus to open it
+			const Int middleY = boxY + box / 2;
+			const Int middleX = boxX + box / 2;
+			TheDisplay->drawLine( boxX + pad, middleY, boxX + box - pad, middleY, 2.0f, edge );
+			if( !m_hudTogglesOpen )
+				TheDisplay->drawLine( middleX, boxY + pad, middleX, boxY + box - pad, 2.0f, edge );
+		}
+		else if( TheGlobalData->*TheHudToggleFlags[ row ] )
+		{
+			TheDisplay->drawFillRect( boxX + pad, boxY + pad, box - 2 * pad, box - 2 * pad, on );
+		}
+
+		m_hudToggleStrings[ row ]->draw( boxX + box + 2 * pad, y + pad, words, shade );
+	}
+
+	TheDisplay->endBatch2D();
+
+	m_hudToggleRowsShown = rows;
+	m_hudTogglesBottom = top + rows * rowH;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A click on the drop-down is the drop-down's, whatever button it was, so it never becomes a move
+	* order into the ground under it.  Only a plain left click does anything. */
+//-------------------------------------------------------------------------------------------------
+Bool InGameUI::handleHudTogglesClick( const ICoord2D *mouse, Bool act )
+{
+	for( Int row = 0; row < m_hudToggleRowsShown; row++ )
+	{
+		const IRegion2D &rect = m_hudToggleRects[ row ];
+		if( mouse->x < rect.lo.x || mouse->x >= rect.hi.x || mouse->y < rect.lo.y || mouse->y >= rect.hi.y )
+			continue;
+
+		if( !act )
+			return TRUE;
+
+		if( row == 0 )
+		{
+			m_hudTogglesOpen = !m_hudTogglesOpen;
+			return TRUE;
+		}
+
+		const Bool now = !( TheGlobalData->*TheHudToggleFlags[ row ] );
+		TheWritableGlobalData->*TheHudToggleFlags[ row ] = now;
+
+		OptionPreferences pref;
+		pref[ AsciiString( TheHudToggleKeys[ row ] ) ] = AsciiString( now ? "yes" : "no" );
+		pref.write();
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Add the pixel rows a convex four-cornered shape covers to a per-row list of spans, one span a
+	* row, as x = start and y = end.  Rows are sampled through their middle and both edges are rounded
+	* the same way, so two shapes sharing an edge meet on the same pixel. */
+//-------------------------------------------------------------------------------------------------
+static void addQuadSpans( const ICoord2D *corners[ 4 ], std::vector< std::vector< ICoord2D > > &rows )
+{
+	Int top = corners[ 0 ]->y;
+	Int bottom = corners[ 0 ]->y;
+	for( Int c = 1; c < 4; c++ )
+	{
+		top = min( top, corners[ c ]->y );
+		bottom = max( bottom, corners[ c ]->y );
+	}
+	top = max( top, 0 );
+	bottom = min( bottom, (Int)rows.size() );
+
+	for( Int y = top; y < bottom; y++ )
+	{
+		const Real rowY = y + 0.5f;
+		Real left = FLT_MAX;
+		Real right = -FLT_MAX;
+
+		for( Int c = 0; c < 4; c++ )
+		{
+			const ICoord2D &from = *corners[ c ];
+			const ICoord2D &to = *corners[ ( c + 1 ) % 4 ];
+			if( ( rowY < from.y ) == ( rowY < to.y ) )
+				continue;		// this edge does not cross the row
+
+			const Real x = from.x + ( to.x - from.x ) * ( rowY - from.y ) / (Real)( to.y - from.y );
+			left = min( left, x );
+			right = max( right, x );
+		}
+
+		ICoord2D span;
+		span.x = REAL_TO_INT_FLOOR( left + 0.5f );
+		span.y = REAL_TO_INT_FLOOR( right + 0.5f );
+		rows[ y ].push_back( span );
+	}
+}
+
+static Bool spanStartsFirst( const ICoord2D &a, const ICoord2D &b )
+{
+	return a.x < b.x;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The ground a defence on the cursor could not shoot into, darkened inside its red range area.
+	*
+	* A defence that needs a line of sight - a Patriot battery, a Gattling Cannon, a Fire Base - does
+	* not fire through a building, and cannot pick a target a hill hides from it.  Both rules are the
+	* game's own.  Target picking asks the terrain for a clear line from the top of the defence to the
+	* target, and the pathfinder refuses a shot when a solid structure's cells lie between them; a
+	* structure the art says can be seen through does not count.
+	*
+	* The range area is cut into a polar grid, a sector per ray and a ring per half pathfind cell, and
+	* each cell of it is looked at from the defence.  Along one sector the walk keeps the steepest
+	* terrain seen so far, which is the horizon: a target whose top sits under that slope is behind a
+	* hill.  Everything from the first building cell outwards is behind that building, the building's
+	* own ground included.  The blocked cells are projected corner by corner onto the terrain and
+	* filled as one shape, row by row, so the shade follows the ground and has no seams in it.
+	*
+	* A Stinger Site, a bunker and anything else that does not need the line of sight gets no shading,
+	* because none of that ground is out of its reach. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawPlacementBlindSpots( void )
+{
+	if( m_pendingPlaceType == NULL || !m_placementRangeRingUp )
+		return;
+	if( !TheAI->getAiData()->m_attackUsesLineOfSight || !m_pendingPlaceType->isKindOf( KINDOF_ATTACK_NEEDS_LINE_OF_SIGHT ) )
+		return;
+
+	const Coord3D center = *m_placeIcon[ 0 ]->getPosition();
+	const Real range = m_placementRingRadius;
+	const Real ringWidth = PATHFIND_CELL_SIZE_F * 0.5f;		// two looks a cell, so a corner is not stepped over
+	const Int rings = (Int)ceil( range / ringWidth );
+	const Real eyeZ = TheTerrainLogic->getGroundHeight( center.x, center.y )
+		+ m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
+
+	std::vector< Bool > blocked( BLIND_SPOT_RAYS * rings, FALSE );
+	Bool anyBlocked = FALSE;
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS;
+		const Real dx = Cos( angle );
+		const Real dy = Sin( angle );
+
+		Real horizonSlope = -FLT_MAX;
+		Bool behindBuilding = FALSE;
+		for( Int ring = 0; ring < rings; ring++ )
+		{
+			const Real along = min( ( ring + 0.5f ) * ringWidth, range );
+			Coord3D look = { center.x + dx * along, center.y + dy * along, center.z };
+			const Real groundZ = TheTerrainLogic->getGroundHeight( look.x, look.y );
+
+			const PathfindCell *cell = TheAI->pathfinder()->getCell( LAYER_GROUND, &look );
+			if( cell && cell->getType() == PathfindCell::CELL_OBSTACLE && !cell->isObstacleTransparent() )
+				behindBuilding = TRUE;
+
+			const Real targetSlope = ( groundZ + BLIND_SPOT_TARGET_HEIGHT - eyeZ ) / along;
+			const Bool behindHill = targetSlope < horizonSlope;
+			horizonSlope = max( horizonSlope, ( groundZ - LOS_TERRAIN_SLOP - eyeZ ) / along );
+
+			if( behindBuilding || behindHill )
+			{
+				blocked[ ray * rings + ring ] = TRUE;
+				anyBlocked = TRUE;
+			}
+		}
+	}
+
+	if( !anyBlocked )
+		return;
+
+	// corner ( ray, ring ) sits on the ray's leading edge at the ring's inner radius
+	const Int cornerRings = rings + 1;
+	std::vector< ICoord2D > corners( BLIND_SPOT_RAYS * cornerRings );
+	std::vector< Bool > onScreen( BLIND_SPOT_RAYS * cornerRings );
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ray / BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < cornerRings; ring++ )
+		{
+			const Real along = min( ring * ringWidth, range );
+			Coord3D ground;
+			ground.x = center.x + Cos( angle ) * along;
+			ground.y = center.y + Sin( angle ) * along;
+			ground.z = TheTerrainLogic->getGroundHeight( ground.x, ground.y );
+			const Int index = ray * cornerRings + ring;
+			onScreen[ index ] = TheTacticalView->worldToScreenTriReturn( &ground, &corners[ index ] ) != View::WTS_INVALID;
+		}
+	}
+
+	const Int screenW = (Int)TheDisplay->getWidth();
+	std::vector< std::vector< ICoord2D > > rows( TheDisplay->getHeight() );
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Int next = ( ray + 1 ) % BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < rings; ring++ )
+		{
+			if( !blocked[ ray * rings + ring ] )
+				continue;
+
+			const Int quad[ 4 ] = { ray * cornerRings + ring, next * cornerRings + ring,
+				next * cornerRings + ring + 1, ray * cornerRings + ring + 1 };
+			if( !onScreen[ quad[ 0 ] ] || !onScreen[ quad[ 1 ] ] || !onScreen[ quad[ 2 ] ] || !onScreen[ quad[ 3 ] ] )
+				continue;
+
+			const ICoord2D *quadCorners[ 4 ] = { &corners[ quad[ 0 ] ], &corners[ quad[ 1 ] ], &corners[ quad[ 2 ] ], &corners[ quad[ 3 ] ] };
+			addQuadSpans( quadCorners, rows );
+		}
+	}
+
+	const Color shade = GameMakeColor( 0, 0, 0, 120 );
+
+	TheDisplay->beginBatch2D();
+
+	for( Int y = 0; y < (Int)rows.size(); y++ )
+	{
+		std::vector< ICoord2D > &spans = rows[ y ];
+		if( spans.empty() )
+			continue;
+
+		std::sort( spans.begin(), spans.end(), spanStartsFirst );
+		ICoord2D run = spans[ 0 ];
+		for( size_t s = 1; s <= spans.size(); s++ )
+		{
+			// a pixel's gap between two neighbours is rounding, not open ground
+			if( s < spans.size() && spans[ s ].x <= run.y + 1 )
+			{
+				run.y = max( run.y, spans[ s ].y );
+				continue;
+			}
+
+			const Int x0 = max( run.x, 0 );
+			const Int x1 = min( run.y, screenW );
+			if( x1 > x0 )
+				TheDisplay->drawFillRect( x0, y, x1 - x0, 1, shade );
+			if( s < spans.size() )
+				run = spans[ s ];
+		}
+	}
+
+	TheDisplay->endBatch2D();
 }
 
 void InGameUI::handleBuildPlacements( void )
@@ -3454,6 +3822,15 @@ Bool InGameUI::issueAttackCircle( void )
 		if( local->getRelationship( obj->getTeam() ) != ENEMIES )
 			continue;
 		if( isHiddenByShroud( obj ) )
+			continue;
+
+		//
+		// Shroud is only half of invisible. A stealthed tank sitting in ground the player has
+		// cleared passes the test above, so a circle swept over open country used to pick out every
+		// hidden unit in it and open fire: a detector nobody built, and a way to read the map for
+		// stealth by dragging a circle over it. Undetected means not in the circle.
+		//
+		if( obj->testStatus( OBJECT_STATUS_STEALTHED ) && !obj->testStatus( OBJECT_STATUS_DETECTED ) )
 			continue;
 
 		//
@@ -5480,6 +5857,9 @@ void InGameUI::postDraw( void )
 {
 	// drawHudOverlay is NOT called here - it goes on top of everything, see W3DInGameUI::draw
 	drawProductionStrip();
+	drawSkillStrip();			// the same shelf, the other end of it
+	drawPlacementBlindSpots();
+	drawHudToggles();
 
 
 	// render our display strings for the messages if on
@@ -5491,6 +5871,9 @@ void InGameUI::postDraw( void )
 
 		x = m_messagePosition.x;
 		y = m_messagePosition.y;
+		// the messages start under the strip drop-down rather than being written across it
+		if( m_hudTogglesBottom + stripPixels( HUD_TOGGLES_INSET ) > y )
+			y = m_hudTogglesBottom + stripPixels( HUD_TOGGLES_INSET );
 		for( i = MAX_UI_MESSAGES - 1; i >= 0; i-- )
 		{
 
@@ -7672,17 +8055,26 @@ const Image *InGameUI::productionStripTray( void )
 //-------------------------------------------------------------------------------------------------
 void InGameUI::stripTrayMetrics( ICoord2D *tray, ICoord2D *cameo, ICoord2D *hole, Int *step )
 {
-	if( TheControlBar
-			&& TheControlBar->getSpecialPowerTrayLayout( tray, cameo, hole, step ) )
-		return;
+	if( !TheControlBar || !TheControlBar->getSpecialPowerTrayLayout( tray, cameo, hole, step ) )
+	{
+		tray->x = stripPixels( PRODUCTION_STRIP_TRAY_W );
+		tray->y = stripPixels( PRODUCTION_STRIP_TRAY_H );
+		cameo->x = stripPixels( PRODUCTION_STRIP_QUEUE_W );
+		cameo->y = stripPixels( PRODUCTION_STRIP_QUEUE_H );
+		hole->x = stripPixels( PRODUCTION_STRIP_TRAY_X );
+		hole->y = stripPixels( PRODUCTION_STRIP_TRAY_Y );
+	}
 
-	tray->x = stripPixels( PRODUCTION_STRIP_TRAY_W );
-	tray->y = stripPixels( PRODUCTION_STRIP_TRAY_H );
-	cameo->x = stripPixels( PRODUCTION_STRIP_QUEUE_W );
-	cameo->y = stripPixels( PRODUCTION_STRIP_QUEUE_H );
-	hole->x = stripPixels( PRODUCTION_STRIP_TRAY_X );
-	hole->y = stripPixels( PRODUCTION_STRIP_TRAY_Y );
-	*step = tray->x;
+	//
+	// Across a row the trays close up an eighth of a tray under each other, so a row reads as one
+	// run of metal rather than a line of separate boxes.  The command bar's own power slots stopped
+	// doing that because they are windows and the neighbour's rail was drawn over each cameo's edge;
+	// every strip here lays all its trays down before any cameo, so the rails overlap each other and
+	// never a picture.  The step never closes past a cameo's own width, so no two pictures touch.
+	//
+	const Int overlapped = tray->x - tray->x / STRIP_TRAY_OVERLAP_PARTS;
+	const Int narrowest = cameo->x + stripPixels( PRODUCTION_STRIP_GAP );
+	*step = overlapped > narrowest ? overlapped : narrowest;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -7810,7 +8202,7 @@ void InGameUI::addSuperweaponIcon( const Image *image, Int seconds, Int percent,
 //-------------------------------------------------------------------------------------------------
 void InGameUI::drawSuperweaponStrip( void )
 {
-	if( m_superweaponIconCount < 1 )
+	if( m_superweaponIconCount < 1 || stripSwitchedOff( &GlobalData::m_showSuperweaponStrip ) )
 		return;
 
 	if( TheGameLogic == NULL || !TheGameLogic->isInGame() || TheGameLogic->isInShellGame() )
@@ -7992,6 +8384,216 @@ void InGameUI::drawSuperweaponStrip( void )
 											y + ( cameoH - textHeight ) / 2,
 											GameMakeColor( 235, 235, 235, 255 ),
 											GameMakeColor( 0, 0, 0, 255 ) );
+		}
+	}
+
+	TheDisplay->endBatch2D();
+}
+
+//-------------------------------------------------------------------------------------------------
+/** One bought promotion, and the cameo the promotion screen buys it from. */
+struct BoughtSkill
+{
+	ScienceType science;
+	const Image *cameo;
+};
+
+/** Every science in one of a general's three promotion command sets that the player has actually
+	* bought.  Appends to skills and hands back the new count, so the three sets fill one list in rank
+	* order. */
+//-------------------------------------------------------------------------------------------------
+static Int gatherSkillCameos( const Player *player, const AsciiString &setName,
+															BoughtSkill *skills, Int count, Int max )
+{
+	const CommandSet *set = TheControlBar->findCommandSet( setName );
+	if( set == NULL )
+		return count;
+
+	for( Int i = 0; i < MAX_COMMANDS_PER_SET && count < max; i++ )
+	{
+		const CommandButton *button = set->getCommandButton( i );
+		if( button == NULL || button->getScienceVec().empty() || button->getButtonImage() == NULL )
+			continue;
+
+		const ScienceType science = button->getScienceVec()[ 0 ];
+		if( !player->hasScience( science ) || player->isScienceHidden( science ) )
+			continue;
+
+		skills[ count ].science = science;
+		skills[ count ].cameo = button->getButtonImage();
+		count++;
+	}
+
+	return count;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Everything one player has bought out of his three promotion sets, in rank order, as cameos
+	* appended to icons.  Hands back the new count.
+	*
+	* A level that a later level of the same power has replaced is left out: Artillery Barrage 3 is
+	* one cameo, not three of the same picture in a row.  "Replaced" is the science's own
+	* prerequisite list, so the second level asking for the first is what hides the first. */
+//-------------------------------------------------------------------------------------------------
+static Int gatherPlayerSkills( const Player *player, const Image **icons, Int count, Int max )
+{
+	const PlayerTemplate *playerTemplate = player->getPlayerTemplate();
+	if( playerTemplate == NULL )
+		return count;
+
+	enum { MOST_SKILLS = 3 * MAX_COMMANDS_PER_SET };
+	BoughtSkill skills[ MOST_SKILLS ];
+	Int bought = gatherSkillCameos( player, playerTemplate->getPurchaseScienceCommandSetRank1(),
+																	skills, 0, MOST_SKILLS );
+	bought = gatherSkillCameos( player, playerTemplate->getPurchaseScienceCommandSetRank3(),
+															skills, bought, MOST_SKILLS );
+	bought = gatherSkillCameos( player, playerTemplate->getPurchaseScienceCommandSetRank8(),
+															skills, bought, MOST_SKILLS );
+
+	for( Int i = 0; i < bought && count < max; i++ )
+	{
+		Bool replaced = FALSE;
+		for( Int later = 0; later < bought && !replaced; later++ )
+			replaced = TheScienceStore->isDirectPrereq( skills[ i ].science, skills[ later ].science );
+
+		if( !replaced )
+			icons[ count++ ] = skills[ i ].cameo;
+	}
+
+	return count;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The skill strip: what the generals have spent their promotions on, down the right hand edge
+	* under the superweapon countdowns.
+	*
+	* Watching a match, those choices decide half of what is about to happen on the field, and the
+	* only place they were written down was a screen you had to open - which came up blank anyway,
+	* because it was filled in with the watcher's own empty template.  The strip reads the way the
+	* production rows on the other side of the screen do: with nothing selected it is every player
+	* at once, one row each in his own colour, and a selected unit narrows the whole screen to his
+	* owner - his row, and as many rows as his promotions need.  Playing, it is not drawn at all:
+	* your own promotions are one key away and you bought them yourself. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawSkillStrip( void )
+{
+	if( stripSwitchedOff( &GlobalData::m_showSkillStrip ) )
+		return;
+	if( TheGameLogic == NULL || !TheGameLogic->isInGame() || TheGameLogic->isInShellGame() )
+		return;
+
+	Player *local = ThePlayerList->getLocalPlayer();
+	if( local == NULL || local->isPlayerActive() || TheControlBar == NULL )
+		return;
+
+	const Image *icons[ SKILL_STRIP_MAX ];
+	Color rowColor[ SKILL_STRIP_ROWS ];
+	Int rowCount[ SKILL_STRIP_ROWS ];
+	Int rows = 0;
+
+	Player *selected = TheControlBar->getSelectedPlayer();
+	if( selected )
+	{
+		const Int count = gatherPlayerSkills( selected, icons, 0, SKILL_STRIP_MAX );
+		const Color color = clientPlayerColor( selected );
+
+		while( rows * SKILL_STRIP_COLS < count && rows < SKILL_STRIP_ROWS )
+		{
+			const Int left = count - rows * SKILL_STRIP_COLS;
+			rowCount[ rows ] = left > SKILL_STRIP_COLS ? SKILL_STRIP_COLS : left;
+			rowColor[ rows ] = color;
+			rows++;
+		}
+	}
+	else
+	{
+		for( Int i = 0; i < ThePlayerList->getPlayerCount() && rows < SKILL_STRIP_ROWS; i++ )
+		{
+			Player *player = ThePlayerList->getNthPlayer( i );
+			if( player == local || !player->isPlayerActive() || !player->isPlayableSide() )
+				continue;
+
+			// a row is one player's, so his own run stops at the end of it rather than running on
+			const Int start = rows * SKILL_STRIP_COLS;
+			const Int count = gatherPlayerSkills( player, icons, start, start + SKILL_STRIP_COLS );
+			if( count == start )
+				continue;						// nothing bought yet: no row rather than an empty one
+
+			rowCount[ rows ] = count - start;
+			rowColor[ rows ] = clientPlayerColor( player );
+			rows++;
+		}
+	}
+
+	if( rows < 1 )
+		return;
+
+	ICoord2D traySize, cameoSize, trayHole;
+	Int trayStep = 0;
+	stripTrayMetrics( &traySize, &cameoSize, &trayHole, &trayStep );
+
+	const Int trayW = traySize.x;
+	const Int trayH = traySize.y;
+	const Int cameoW = cameoSize.x;
+	const Int cameoH = cameoSize.y;
+	const Image *tray = TheControlBar->getSpecialPowerTrayImage();
+
+	//
+	// Bottom right, standing on the control bar and growing upward - the production rows' own
+	// corner, on the other side of the screen.  It was up under the superweapon countdowns to begin
+	// with, which is where the eye is not: watching a match you read the bottom of the screen, and
+	// the two strips now sit at either end of the same shelf.
+	//
+	Int barTop = TheDisplay->getHeight();
+	static NameKeyType controlBarKey = TheNameKeyGenerator->nameToKey( "ControlBar.wnd:ControlBarParent" );
+	GameWindow *bar = TheWindowManager->winGetWindowFromId( NULL, controlBarKey );
+	if( bar && !bar->winIsHidden() )
+	{
+		ICoord2D barPos;
+		bar->winGetScreenPosition( &barPos.x, &barPos.y );
+		barTop = barPos.y;
+	}
+
+	const Int lowerY = barTop - ( trayH - trayHole.y ) - stripPixels( PRODUCTION_STRIP_LIFT );
+	const Int right = TheDisplay->getWidth();
+
+	// drawn as a batch, for the reason drawProductionStrip() gives - see Display::beginBatch2D
+	TheDisplay->beginBatch2D();
+
+	for( Int row = 0; row < rows; row++ )
+	{
+		const Int first = row * SKILL_STRIP_COLS;
+		const Int inRow = rowCount[ row ];
+
+		UnsignedByte red, green, blue, alpha;
+		GameGetColorComponents( rowColor[ row ], &red, &green, &blue, &alpha );
+
+		// the first row is the one on the bar, and the rest are piled over it
+		const Int y = lowerY - row * trayH;
+		const Int trayY = y - trayHole.y;
+		if( trayY < 0 )
+			break;
+
+		for( Int back = inRow - 1; back >= 0; back-- )
+		{
+			const Int backX = right - trayW - back * trayStep;
+			if( tray )
+				TheDisplay->drawImage( tray, backX, trayY, backX + trayW, trayY + trayH );
+			else
+				TheDisplay->drawFillRect( backX, trayY, trayW, trayH, GameMakeColor( 0, 0, 0, 130 ) );
+		}
+
+		for( Int cameoSlot = 0; cameoSlot < inRow; cameoSlot++ )
+		{
+			const Int x = right - trayW + trayHole.x - cameoSlot * trayStep;
+			TheDisplay->drawImage( icons[ first + cameoSlot ], x, y, x + cameoW, y + cameoH );
+		}
+
+		// whose skills these are, in his own colour, the same border the superweapon cameos wear
+		for( Int borderSlot = 0; borderSlot < inRow; borderSlot++ )
+		{
+			const Int x = right - trayW + trayHole.x - borderSlot * trayStep;
+			TheDisplay->drawOpenRect( x, y, cameoW, cameoH, 2.0f, GameMakeColor( red, green, blue, 255 ) );
 		}
 	}
 
@@ -8349,6 +8951,9 @@ void InGameUI::drawProductionStrip( void )
 		m_productionStripRowColor[ row ] = 0;
 	}
 
+	// switched off from the drop-down: nothing drawn, and with the counts at nought nothing to click
+	if( stripSwitchedOff( &GlobalData::m_showProductionStrip ) )
+		return;
 	if( TheGameLogic == NULL || !TheGameLogic->isInGame() || TheGameLogic->isInShellGame() )
 		return;
 
@@ -8366,19 +8971,29 @@ void InGameUI::drawProductionStrip( void )
 	m_productionStripWatching = !player->isPlayerActive();
 	if( m_productionStripWatching )
 	{
+		//
+		// Selecting somebody's unit narrows the whole screen to him - his rows here, his skills on
+		// the right, his side on the bar - and clicking empty ground puts the whole match back.
+		//
+		Player *only = TheControlBar ? TheControlBar->getSelectedPlayer() : NULL;
+
 		Int row = 0;
 		for( Int i = 0; i < ThePlayerList->getPlayerCount() && row < PRODUCTION_STRIP_ROWS; i++ )
 		{
 			Player *p = ThePlayerList->getNthPlayer( i );
 			if( p == NULL || p == player || !p->isPlayerActive() || !p->isPlayableSide() )
 				continue;
+			if( only && p != only )
+				continue;
 
 			ProductionStripGather watch;
 			watch.slot = m_productionStrip[ row ];
 			watch.count = &m_productionStripCount[ row ];
 			watch.total = &m_productionStripTotal[ row ];
-			// eight rows are on screen at once here, so each one is the few soonest and a "+N"
-			watch.max = PRODUCTION_STRIP_WATCH_MAX;
+			// eight rows are on screen at once here, so each one is the few soonest and a "+N" -
+			// unless one player has the screen to himself, and then his row is as long as the
+			// playing strip's own column
+			watch.max = only ? PRODUCTION_STRIP_ROW_MAX : PRODUCTION_STRIP_WATCH_MAX;
 			watch.skip = INVALID_ID;			// nothing is selected in somebody else's base
 			p->iterateObjects( gatherStripEverything, &watch );
 
@@ -8520,6 +9135,10 @@ Bool InGameUI::handleProductionStripClick( const ICoord2D *mouse, Bool cancel )
 {
 	if( mouse == NULL )
 		return FALSE;
+
+	// the strip drop-down lies over the world the same way the strip does, so its clicks come here too
+	if( handleHudTogglesClick( mouse, !cancel ) )
+		return TRUE;
 
 	for( Int row = 0; row < PRODUCTION_STRIP_ROWS; row++ )
 	{

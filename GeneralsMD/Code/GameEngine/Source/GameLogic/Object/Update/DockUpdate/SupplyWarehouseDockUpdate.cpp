@@ -179,7 +179,19 @@ UpdateSleepTime SupplyWarehouseDockUpdate::update()
 	if( now < m_nextRegenFrame )
 		return ret;
 
-	++m_boxesStored;
+	/* One box at a time was money nobody noticed: a hundred dollars every forty seconds is less
+		 than a harvester earns on the trip it takes to go and collect it, so a mined-out point stayed
+		 mined out as far as anybody playing was concerned. A refill is worth six hundred now, which
+		 is a trip worth making and a reason to keep somebody standing on the ground. */
+	const Int REGEN_CASH = 600;
+	const Int boxValue = TheGlobalData->m_baseValuePerSupplyBox;
+	Int boxes = ( boxValue > 0 ) ? ( REGEN_CASH / boxValue ) : 1;
+	if( boxes < 1 )
+		boxes = 1;
+	if( m_boxesStored + boxes > ceiling )
+		boxes = ceiling - m_boxesStored;
+
+	m_boxesStored += boxes;
 	m_nextRegenFrame = 0;			// re-measured against the new count next time round
 
 	Drawable *draw = getObject()->getDrawable();

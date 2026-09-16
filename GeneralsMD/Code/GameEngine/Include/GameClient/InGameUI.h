@@ -777,6 +777,11 @@ public:  // ********************************************************************
 	enum { SUPERWEAPON_STRIP_COLS = 6 };		///< cameos in one row, the soonest at the right hand end
 	enum { SUPERWEAPON_STRIP_ROWS = 3 };		///< rows of them, and the rest become a "+N"
 	enum { SUPERWEAPON_STRIP_MAX = SUPERWEAPON_STRIP_COLS * SUPERWEAPON_STRIP_ROWS };
+
+	enum { SKILL_STRIP_COLS = 6 };			///< bought promotions in one row, under the countdowns
+	enum { SKILL_STRIP_ROWS = 8 };			///< a row per player watching the whole match, or one
+																			///  player's promotions wrapped over as many as they need
+	enum { SKILL_STRIP_MAX = SKILL_STRIP_COLS * SKILL_STRIP_ROWS };
 	struct SuperweaponIconSlot
 	{
 		const Image *	image;							///< the cameo the command bar wears for this power
@@ -1157,9 +1162,24 @@ protected:
 	void drawStripQuantity( Int which, Int x, Int y, Int w, Int quantity );	///< the "xN" in a cameo's top right corner
 	void addSuperweaponIcon( const Image *image, Int seconds, Int percent, Bool ready, Color color );
 	void drawSuperweaponStrip( void );		///< those icons, top right, soonest at the right hand end
+	void drawSkillStrip( void );					///< the watched player's bought promotions, under those
+
+	//
+	// The drop-down in the top left corner that switches the strips on and off.  Row 0 is its header,
+	// the rest are one check box each.
+	//
+	enum { HUD_TOGGLE_ROWS = 4 };
+	void drawHudToggles( void );
+	Bool handleHudTogglesClick( const ICoord2D *mouse, Bool act );	///< TRUE when the click landed on it
+	Bool												m_hudTogglesOpen;
+	Int													m_hudToggleRowsShown;		///< rows drawn this frame, header included
+	Int													m_hudTogglesBottom;			///< its bottom edge, so the message list starts under it
+	IRegion2D										m_hudToggleRects[ HUD_TOGGLE_ROWS ];
+	DisplayString *							m_hudToggleStrings[ HUD_TOGGLE_ROWS ];
 
 	Bool												m_placementRangeRingUp;	///< we put a radius cursor up for a pending structure, so we owe a clear
 	Real												m_placementRingRadius;	///< the radius that ring was built at, so it is not rebuilt every frame
+	void drawPlacementBlindSpots( void );	///< shade the ground behind buildings a placed defence cannot shoot past
 
 	DisplayString *							m_hudDisplayString;			///< the ShowHudOverlay line (fps / clock)
 	DisplayString *							m_peaceTimeDisplayString;	///< the peace time clock at the top of the screen

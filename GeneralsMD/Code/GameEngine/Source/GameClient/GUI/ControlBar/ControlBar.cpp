@@ -374,6 +374,100 @@ void ControlBar::markUIDirty( void )
 }
 
 
+//-------------------------------------------------------------------------------------------------
+/** Whose promotion screen is being shown.  Playing, it is your own and nothing else.
+	*
+	* Watching - an observer, or a player knocked out who stayed to watch - the screen used to be
+	* populated with the watcher's own player, who owns no command sets at all, so the whole screen
+	* came up blank.  It follows the field instead: whatever is selected names its owner, and with
+	* nothing selected it is the player the observer list is pointed at, or the first side still in
+	* the match. */
+//-------------------------------------------------------------------------------------------------
+/** The player a watcher has picked out by clicking one of his things, NULL when nothing is
+	* selected or the selection belongs to nobody who is still playing.  It is what narrows the
+	* whole screen to one player: the production rows on the left, the skills on the right, the
+	* side the bar wears and whose promotion screen the key opens. */
+Player *ControlBar::getSelectedPlayer( void )
+{
+	if( ThePlayerList->getLocalPlayer()->isPlayerActive() )
+		return NULL;
+
+	const DrawableList *selection = TheInGameUI->getAllSelectedDrawables();
+	if( selection == NULL || selection->empty() )
+		return NULL;
+
+	Object *selected = selection->front()->getObject();
+	Player *owner = selected ? selected->getControllingPlayer() : NULL;
+	if( owner == NULL || !owner->isPlayableSide() || !owner->isPlayerActive() )
+		return NULL;
+
+	return owner;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Watching, the selection drives the whole bar: clicking a unit is clicking its owner in the
+	* player list.  His readouts come up, the money plate becomes his, and the bar wears his side's
+	* metal - and clicking empty ground puts the list and the watcher's own plain bar back.
+	*
+	* Before this, picking up somebody's tank told you nothing about him: the bar stayed on whatever
+	* side had last been chosen off the list, and the money plate with it. */
+//-------------------------------------------------------------------------------------------------
+void ControlBar::updateWatchedPlayer( void )
+{
+	Player *selected = getSelectedPlayer();
+	if( selected == m_watchedSelection )
+		return;
+
+	m_watchedSelection = selected;
+	setObserverLookAtPlayer( selected );
+
+	if( selected )
+		showObserverPlayerInfo();
+	else
+		showObserverPlayerList();
+
+	const PlayerTemplate *wear = selected ? selected->getPlayerTemplate()
+																				: ThePlayerList->getLocalPlayer()->getPlayerTemplate();
+	if( m_controlBarSchemeManager && wear && wear->getSide().compare( m_watchedSide ) != 0 )
+	{
+		// a scheme lays the whole bar out again, so it is set when the side really changes and not
+		// on every click
+		m_watchedSide = wear->getSide();
+		m_controlBarSchemeManager->setControlBarSchemeByPlayerTemplate( wear );
+		restoreStageAfterScheme();
+	}
+
+	// the general's stars open the promotion screen of the player who is selected, and there is
+	// nobody's to open with nothing selected
+	static NameKeyType buttonGeneralID = NAMEKEY( "ControlBar.wnd:ButtonGeneral" );
+	GameWindow *buttonGeneral = TheWindowManager->winGetWindowFromId( NULL, buttonGeneralID );
+	if( buttonGeneral )
+		buttonGeneral->winEnable( selected != NULL );
+}
+
+Player *ControlBar::getWatchedPlayer( void )
+{
+	Player *local = ThePlayerList->getLocalPlayer();
+	if( local->isPlayerActive() )
+		return local;
+
+	Player *selected = getSelectedPlayer();
+	if( selected )
+		return selected;
+
+	if( m_observerLookAtPlayer )
+		return m_observerLookAtPlayer;
+
+	for( Int i = 0; i < ThePlayerList->getPlayerCount(); i++ )
+	{
+		Player *candidate = ThePlayerList->getNthPlayer( i );
+		if( candidate != local && candidate->isPlayerActive() && candidate->isPlayableSide() )
+			return candidate;
+	}
+
+	return local;
+}
+
 void ControlBar::populatePurchaseScience( Player* player )
 {
 //	TheInGameUI->deselectAllDrawables();
@@ -590,6 +684,19 @@ void ControlBar::populatePurchaseScience( Player* player )
 
 	}  // end for
 
+	//
+	// Somebody else's screen is a read-out, not a shop: a watcher sees what that general has bought
+	// and what is still open to him, and cannot press any of it.
+	//
+	if( player != ThePlayerList->getLocalPlayer() )
+	{
+		for( i = 0; i < MAX_PURCHASE_SCIENCE_RANK_1; i++ )
+			m_sciencePurchaseWindowsRank1[ i ]->winEnable( FALSE );
+		for( i = 0; i < MAX_PURCHASE_SCIENCE_RANK_3; i++ )
+			m_sciencePurchaseWindowsRank3[ i ]->winEnable( FALSE );
+		for( i = 0; i < MAX_PURCHASE_SCIENCE_RANK_8; i++ )
+			m_sciencePurchaseWindowsRank8[ i ]->winEnable( FALSE );
+	}
 
 	GameWindow *win = NULL;
 	UnicodeString tempUS;
@@ -670,7 +777,7 @@ void ControlBar::populatePurchaseScience( Player* player )
 void ControlBar::updateContextPurchaseScience( void )
 {
 	GameWindow *win =NULL;
-	Player *player = ThePlayerList->getLocalPlayer();
+	Player *player = getWatchedPlayer();
 	// hash the name once, not on every render frame this panel is open
 	static const NameKeyType key_progressBarExperience = TheNameKeyGenerator->nameToKey( "GeneralsExpPoints.wnd:ProgressBarExperience" );
 	win = TheWindowManager->winGetWindowFromId( m_contextParent[ CP_PURCHASE_SCIENCE ], key_progressBarExperience );
@@ -1084,6 +1191,9 @@ ControlBar::ControlBar( void )
 	m_controlBarSchemeManager = NULL;
 	m_isObserverCommandBar = FALSE;
 	m_observerLookAtPlayer = NULL;
+	m_watchedSide.clear();
+	m_watchedSelection = NULL;
+	m_currentControlBarStage = CONTROL_BAR_STAGE_DEFAULT;
 	m_buildToolTipLayout = NULL;
 	m_showBuildToolTipLayout = FALSE;
 
@@ -2726,6 +2836,9 @@ void ControlBar::reset( void )
 
 	m_isObserverCommandBar = FALSE; // reset us to use a normal command bar
 	m_observerLookAtPlayer = NULL;
+	m_watchedSide.clear();
+	m_watchedSelection = NULL;
+	m_currentControlBarStage = CONTROL_BAR_STAGE_DEFAULT;	// a minimised bar is this match's, not the next one's
 
 	// the next match has its own sides, and a mod switch reloads the artwork these point at
 	m_borrowedTrayCount = 0;
@@ -2933,6 +3046,9 @@ void ControlBar::update( void )
 	// if we're an observer, don't do the complete update
 	if( m_isObserverCommandBar)
 	{
+		// clicking a unit is clicking its owner in the player list: his readouts, his money, his side
+		updateWatchedPlayer();
+
 		// twice a second is plenty for the observer readouts, and only on a real logic tick -
 		// a bare "frame % n == 0" fires on every render frame that lands inside that one tick
 		if( logicTick && (logicNow % (LOGICFRAMES_PER_SECOND/2)) == 0 )
@@ -3276,10 +3392,10 @@ void ControlBar::evaluateContextUI( void )
 	// information to the player
 	//
 	m_UIDirty = FALSE;
-	
+
 	// if our purchase science window is up, we will want to update it by repopulating it.
 	if( isPurchaseScienceVisible() )
-		populatePurchaseScience( ThePlayerList->getLocalPlayer() );
+		populatePurchaseScience( getWatchedPlayer() );
 
 	// erase any current state of the GUI by switching out to the empty context
 	switchToContext( CB_CONTEXT_NONE, NULL );
@@ -5062,7 +5178,19 @@ void ControlBar::setControlBarSchemeByPlayer(Player *p)
 			buttonGeneral->winEnable(TRUE);
 		}
 	}
-	switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT);
+	restoreStageAfterScheme();
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A scheme change lays the bar out again at full size.  A bar the player minimised stays that way:
+	* switching seats, or clicking another player's unit while watching, used to throw the whole bar
+	* back up over the battlefield the player had just cleared it off.  A new match starts at full
+	* size because reset() puts the stage back first. */
+//-------------------------------------------------------------------------------------------------
+void ControlBar::restoreStageAfterScheme( void )
+{
+	switchControlBarStage( m_currentControlBarStage == CONTROL_BAR_STAGE_LOW ? CONTROL_BAR_STAGE_LOW
+																																					: CONTROL_BAR_STAGE_DEFAULT );
 }
 
 void ControlBar::setControlBarSchemeByPlayerTemplate( const PlayerTemplate *pt)
@@ -5107,7 +5235,7 @@ void ControlBar::setControlBarSchemeByPlayerTemplate( const PlayerTemplate *pt)
 			buttonGeneral->winEnable(TRUE);
 		}
 	}
-	switchControlBarStage(CONTROL_BAR_STAGE_DEFAULT);
+	restoreStageAfterScheme();
 
 	hidePurchaseScience();
 }
@@ -5217,7 +5345,19 @@ void ControlBar::showPurchaseScience( void )
 
 	if(TheScriptEngine->isGameEnding())
 		return;
-	populatePurchaseScience(ThePlayerList->getLocalPlayer());
+
+	//
+	// Watching, the screen is one player's in particular and the selection is what names him.  With
+	// nothing selected there is nobody to open it on, so the key does nothing rather than putting up
+	// a general the watcher did not ask for.  The painting behind it is his side's, which is the
+	// same scheme the bar is already wearing by then - evaluateContextUI put it on when he was
+	// selected.
+	//
+	Player *watched = getWatchedPlayer();
+	if( watched != ThePlayerList->getLocalPlayer() && getSelectedPlayer() == NULL )
+		return;
+
+	populatePurchaseScience(watched);
 	m_genStarFlash = FALSE;
 	if( m_purchaseScienceOpen )
 		return;

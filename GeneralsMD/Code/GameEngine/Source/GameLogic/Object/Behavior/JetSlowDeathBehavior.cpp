@@ -38,6 +38,7 @@
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Locomotor.h"
 #include "GameLogic/Module/AIUpdate.h"
+#include "GameLogic/Module/BodyModule.h"
 #include "GameLogic/Module/JetSlowDeathBehavior.h"
 #include "GameLogic/Module/PhysicsUpdate.h"
 #include "GameLogic/Object.h"
@@ -136,6 +137,7 @@ JetSlowDeathBehavior::JetSlowDeathBehavior( Thing *thing, const ModuleData *modu
 
 	m_timerDeathFrame = 0;
 	m_timerOnGroundFrame = 0;
+	m_fallDeadlineFrame = 0;
 	m_rollRate = 0.0f;
 
 }  // end JetSlowDeathBehavior
@@ -195,6 +197,10 @@ void JetSlowDeathBehavior::beginSlowDeath( const DamageInfo *damageInfo )
 	// record the frame we died on
 	m_timerDeathFrame = TheGameLogic->getFrame();
 
+	// ... and the latest the fall is allowed to hold the fireball back to
+	const UnsignedInt MAX_FALL_SECONDS = 15;
+	m_fallDeadlineFrame = m_timerDeathFrame + MAX_FALL_SECONDS * LOGICFRAMES_PER_SECOND;
+
 	// do some effects
 	FXList::doFXObj( modData->m_fxInitialDeath, us );
 	ObjectCreationList::create( modData->m_oclInitialDeath, us, NULL );
@@ -212,9 +218,13 @@ void JetSlowDeathBehavior::beginSlowDeath( const DamageInfo *damageInfo )
 	// initialize our roll rate to that defined as the initial value in the module data
 	m_rollRate = modData->m_rollRate;
 
-	// set the locomotor so that the plane starts falling
+	/* A wing does not stop working the moment the engine behind it stops. The lift used to drop
+		 straight to the module's FallHowFast on the frame of the kill, so a plane doing two hundred
+		 knots fell out of the sky on the spot and hit the ground almost under where it was shot,
+		 which is the one thing a plane cannot do. It keeps its lift here and gives it up over the
+		 next couple of seconds in update(), so it carries on forward first and noses over after. */
 	Locomotor *locomotor = us->getAIUpdateInterface()->getCurLocomotor();
-	locomotor->setMaxLift( -TheGlobalData->m_gravity * (1.0f - modData->m_fallHowFast) );
+	locomotor->setMaxLift( -TheGlobalData->m_gravity );
 
 	// do not allow the jet to turn anymore
 	locomotor->setMaxTurnRate( 0.0f );
@@ -250,7 +260,36 @@ UpdateSleepTime JetSlowDeathBehavior::update( void )
 	// do effects for death while in the air
 	if( m_timerOnGroundFrame == 0 )
 	{
-		
+		/* Bleed the lift away towards what the module data asked for. A tenth of the gap a frame
+			 puts the plane at the falling speed the data names about two seconds after it is hit,
+			 having flown a plane's length or three further forward on the way.
+
+			 With a floor under it, because FallHowFast defaults to nought and the delivery aircraft -
+			 the B-52, the Spectre gunship, the cargo plane, the A-10 - never set it. Nought means the
+			 lift exactly cancels gravity, so those four did not fall at all: they flew on at cruising
+			 height, burning, until the destruction timer went off and blew them up in mid-air.  Half
+			 of gravity is a plane coming down, which is the only thing a dead plane does. */
+		AIUpdateInterface *ai = us->getAIUpdateInterface();
+		Locomotor *locomotor = ai ? ai->getCurLocomotor() : NULL;
+		if( locomotor )
+		{
+			const Real LIFT_BLEED_PER_FRAME = 0.1f;
+			const Real MIN_FALL_FRACTION = 0.5f;
+			const Real fallFraction = max( MIN_FALL_FRACTION, modData->m_fallHowFast );
+			const Real fallingLift = -TheGlobalData->m_gravity * (1.0f - fallFraction);
+			const Real currentLift = locomotor->getMaxLift( us->getBodyModule()->getDamageState() );
+			locomotor->setMaxLift( currentLift + (fallingLift - currentLift) * LIFT_BLEED_PER_FRAME );
+		}
+
+		/* And the explosion waits for the ground. The base class destroys the object on a timer
+			 whatever is happening to it, which for a plane still in the air is the mid-air blast again
+			 by another route; the fireball belongs where the airframe lands. Held off only up to the
+			 deadline set when it died, so one that never arrives - shot down over the edge of the
+			 world, or held up by something driving its locomotor - still goes away. */
+		const UnsignedInt now = TheGameLogic->getFrame();
+		if( now < m_fallDeadlineFrame && now + 1 >= getDestructionFrame() )
+			setDestructionFrame( now + 2 );
+
 		PathfindLayerEnum layer = TheTerrainLogic->getLayerForDestination(us->getPosition());
 		us->setLayer(layer);
 		Real height;
@@ -357,13 +396,14 @@ void JetSlowDeathBehavior::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: the deadline the fall may hold the explosion back to */
 // ------------------------------------------------------------------------------------------------
 void JetSlowDeathBehavior::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -378,6 +418,11 @@ void JetSlowDeathBehavior::xfer( Xfer *xfer )
 
 	// roll rate
 	xfer->xferReal( &m_rollRate );
+
+	// how long the fall may hold the explosion back for; a version 1 save has no such deadline, so
+	// a plane loaded in mid-fall blows up on the timer it was saved with
+	if( version >= 2 )
+		xfer->xferUnsignedInt( &m_fallDeadlineFrame );
 
 }  // end xfer
 

@@ -213,6 +213,7 @@ public:
 	virtual Bool doesSpecialPowerHaveOverridableDestination() const { return false; }	//Does it have it, even if it's not active?
 	virtual void setSpecialPowerOverridableDestination( const Coord3D *loc ) {}
 	virtual Bool isPowerCurrentlyInUse( const CommandButton *command = NULL ) const;
+	virtual Bool getCaptureProgress( ObjectID *targetID, Real *progress ) const;
 
 //	virtual Bool isBusy() const { return m_isBusy; }
 

@@ -51,6 +51,11 @@ public:
 	virtual Bool doesSpecialPowerHaveOverridableDestination() const = 0;	//Does it have it, even if it's not active?
 	virtual void setSpecialPowerOverridableDestination( const Coord3D *loc ) = 0;
 	virtual Bool isPowerCurrentlyInUse( const CommandButton *command = NULL ) const = 0;
+
+	/** While this module is in the middle of taking a building: which building, and how far through
+		* it is, nought to one. Asked by the client so the building can wear a clock. Not pure, because
+		* taking a building is one ability out of dozens and the rest have no answer to give. */
+	virtual Bool getCaptureProgress( ObjectID *targetID, Real *progress ) const { return FALSE; }
 };
 
 //-------------------------------------------------------------------------------------------------

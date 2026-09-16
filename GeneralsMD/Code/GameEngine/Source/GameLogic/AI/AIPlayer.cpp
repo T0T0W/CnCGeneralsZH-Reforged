@@ -3979,9 +3979,9 @@ void AIPlayer::doUpgradesAndSkills( void )
 	 Pathfinder already break theirs down: per job, plus whichever single player cost the most.
 	 Reset once per logic frame by AI::update. */
 enum { AIP_BASE, AIP_READY, AIP_QUEUED, AIP_TEAM, AIP_UPGRADE,
-			 AIP_BRIDGE, AIP_SCOUT, AIP_RETREAT, AIP_EXPAND, AIP_CAPTURE, AIP_ECONOMY, AIP_WAVE, AIP_PHASE_COUNT };
+			 AIP_BRIDGE, AIP_SCOUT, AIP_RETREAT, AIP_EXPAND, AIP_CAPTURE, AIP_ECONOMY, AIP_POWER, AIP_WAVE, AIP_PHASE_COUNT };
 static const char *theAIPhaseName[ AIP_PHASE_COUNT ] =
-	{ "base", "ready", "queued", "team", "upg", "bridge", "scout", "retreat", "expand", "capture", "economy", "wave" };
+	{ "base", "ready", "queued", "team", "upg", "bridge", "scout", "retreat", "expand", "capture", "economy", "power", "wave" };
 static Real theAIPhaseMS[ AIP_PHASE_COUNT ];
 static Real theAIWorstPlayerMS = 0.0f;
 static Int theAIWorstPlayer = -1;
@@ -4055,6 +4055,7 @@ void AIPlayer::update( void )
 	AI_PHASE( AIP_EXPAND,  doExpansion() );					// Go and take the money that is lying around.
 	AI_PHASE( AIP_CAPTURE, doCapture() );						// ... and the money that is standing around.
 	AI_PHASE( AIP_ECONOMY, doEconomy() );						// ... and the money sitting in the bank.
+	AI_PHASE( AIP_POWER,   doPower() );							// Keep the lights on, and out of reach.
 	AI_PHASE( AIP_WAVE,    doWaves() );							// Send the parked attack teams out together.
 
 #ifdef DEBUG_LOGGING
@@ -4286,6 +4287,23 @@ void AIPlayer::doExpansion( void )
 	* is nothing to save and every machine lands on the same frame. */
 static const Int ECONOMY_CHECK_RATE = 10 * LOGICFRAMES_PER_SECOND;
 
+/** How often the power is looked at, and the margin that counts as thin.  Five seconds because a
+	* plant takes about that long to matter and an outage costs the whole base; the reserve is about
+	* what one more building will draw, so the plant is ordered before the building that needs it. */
+static const Int POWER_CHECK_RATE = 5 * LOGICFRAMES_PER_SECOND;
+static const Int POWER_RESERVE = 5;
+
+/** How far behind the base a new power plant goes, in base radii, measured away from the enemy. */
+static const Real POWER_SETBACK = 0.75f;
+
+/** And how far in front of it a bought base defense goes, on the same line the other way. */
+static const Real DEFENSE_STANDOFF = 1.0f;
+
+/** What rations those: one purchase every ninth economy pass, which is a minute and a half, and a
+	* ceiling on the guns standing at once counting the ones the build list put there. */
+static const Int DEFENSE_BUY_PASSES = 9;
+static const Int MAX_BASE_DEFENSES = 10;
+
 /** Tries on each ring when looking for somewhere to put a purchase down.  Every try is a legality
 	* check that costs about a millisecond, so this bounds the spike rather than the search. */
 static const Int PLACEMENT_ANGLES = 12;
@@ -4371,6 +4389,136 @@ static Bool priorityBuildPending( Player *player, const ThingTemplate *tmpl )
 	return FALSE;
 }
 
+/** A plant of this player's is already going up.  One halfway built is the answer to the outage
+	* arriving, and queueing a second one is a war factory this player will not be able to buy. */
+static void findPowerUnderConstruction( Object *obj, void *userData )
+{
+	Bool *building = (Bool *)userData;
+	if( obj->isKindOf( KINDOF_FS_POWER ) && !obj->isKindOf( KINDOF_CASH_GENERATOR )
+			&& obj->testStatus( OBJECT_STATUS_UNDER_CONSTRUCTION ) )
+		*building = TRUE;
+}
+
+/** Base defenses this player already owns, going up or standing. */
+static void countBaseDefenses( Object *obj, void *userData )
+{
+	Int *count = (Int *)userData;
+	if( obj->isKindOf( KINDOF_FS_BASE_DEFENSE ) && !obj->isEffectivelyDead() )
+		++(*count);
+}
+
+//----------------------------------------------------------------------------------------------------------
+/** Which way the trouble comes from, as a unit vector out of this base: towards the nearest enemy,
+	* at the best address this player has for him.
+	*
+	* The nearest one, not the one it has decided to attack - those are different questions. An
+	* attack target is picked on what it is worth and can be on the far side of the map, and a wall
+	* built facing that has its back to the neighbour who is actually next door.
+	*
+	* enemyStartGuess is what answers "where is he": a base it has scouted, or the start position it
+	* has not yet been able to rule out. Reading the enemy's object list directly would put a
+	* defence line exactly where the enemy is standing without anybody having gone to look, which is
+	* the map-reading this AI had taken out of it everywhere else. */
+//----------------------------------------------------------------------------------------------------------
+Bool AIPlayer::enemyDirection( Coord3D *dir )
+{
+	Coord3D target;
+	Bool found = FALSE;
+	Real bestDistanceSqr = 0.0f;
+
+	for( Int i = 0; i < ThePlayerList->getPlayerCount(); ++i )
+	{
+		Player *them = ThePlayerList->getNthPlayer( i );
+		if( them == m_player || m_player->getRelationship( them->getDefaultTeam() ) != ENEMIES )
+			continue;
+		if( !them->hasAnyObjects() )
+			continue;
+
+		Coord3D theirs;
+		if( !enemyStartGuess( i, &theirs ) )
+			continue;
+
+		const Real distanceSqr = sqr( theirs.x - m_baseCenter.x ) + sqr( theirs.y - m_baseCenter.y );
+		if( !found || distanceSqr < bestDistanceSqr )
+		{
+			target = theirs;
+			bestDistanceSqr = distanceSqr;
+			found = TRUE;
+		}
+	}
+
+	if( !found )
+	{
+		// nobody left to face, so face the middle, which is the way every skirmish start faces
+		Region3D bounds;
+		TheTerrainLogic->getMaximumPathfindExtent( &bounds );
+		target.x = bounds.lo.x + bounds.width() * 0.5f;
+		target.y = bounds.lo.y + bounds.height() * 0.5f;
+		target.z = 0;
+	}
+
+	dir->x = target.x - m_baseCenter.x;
+	dir->y = target.y - m_baseCenter.y;
+	dir->z = 0;
+	if( dir->length() < 1.0f )
+		return FALSE;
+
+	dir->normalize();
+	return TRUE;
+}
+
+//----------------------------------------------------------------------------------------------------------
+/** Keeping the lights on, which the plan does not.  The build list carries a fixed number of power
+	* plants and the scripts never add one, so a base that loses two of them to a raid sits
+	* underpowered - radar dark, base defenses offline, the superweapon's clock stopped - until the
+	* rebuild timer comes round, and then the rebuild goes back to the exact spot the raid already
+	* knows the way to.  A plant is the cheapest building on the list and the one thing every other
+	* building depends on, so it is worth buying one before the meter reads zero.
+	*
+	* Two decisions here.  Build when the margin is thin rather than when the power is already out,
+	* because a plant takes time to go up and the base is disabled for all of it.  And put it behind
+	* the base, on the far side from whoever this player is fighting, so the raid that comes for it
+	* has to cross the whole base first - which is the half of the answer the rebuild timer can
+	* never give. */
+//----------------------------------------------------------------------------------------------------------
+void AIPlayer::doPower( void )
+{
+	const Int phase = computeUpdatePhase( m_player->getPlayerIndex(), POWER_CHECK_RATE );
+	if( (TheGameLogic->getFrame() + phase) % POWER_CHECK_RATE != 0 )
+		return;
+
+	if( !m_player->getCanBuildBase() || !m_baseCenterSet )
+		return;
+
+	const Energy *energy = m_player->getEnergy();
+	if( energy->getProduction() >= energy->getConsumption() + POWER_RESERVE )
+		return;
+
+	Bool building = FALSE;
+	m_player->iterateObjects( findPowerUnderConstruction, &building );
+	if( building )
+		return;
+
+	Object *dozer = NULL;
+	m_player->iterateObjects( findAnyDozer, &dozer );
+	if( dozer == NULL )
+		return;
+
+	const ThingTemplate *tmpl = buildableOfKind( dozer, GUI_COMMAND_DOZER_CONSTRUCT, KINDOF_FS_POWER );
+	if( tmpl == NULL || tmpl->isKindOf( KINDOF_CASH_GENERATOR ) || priorityBuildPending( m_player, tmpl ) )
+		return;
+
+	Coord3D spot = m_baseCenter;
+	Coord3D dir;
+	if( enemyDirection( &dir ) )
+	{
+		spot.x -= dir.x * m_baseRadius * POWER_SETBACK;
+		spot.y -= dir.y * m_baseRadius * POWER_SETBACK;
+	}
+
+	placeNear( tmpl, &spot, 0.0f );
+}
+
 //----------------------------------------------------------------------------------------------------------
 /** A bank of a hundred thousand is an army and an economy that were never bought.  The skirmish build
 	* list is a fixed plan - two war factories and a barracks - and the scripts never add to it, so
@@ -4436,6 +4584,37 @@ void AIPlayer::doEconomy( void )
 	{
 		const ThingTemplate *tmpl = buildableOfKind( dozer, GUI_COMMAND_DOZER_CONSTRUCT, INCOME[ i ] );
 		if( tmpl && !priorityBuildPending( m_player, tmpl ) && placeNear( tmpl, &m_baseCenter, m_baseRadius ) )
+			return;
+	}
+
+	/* And a gun on the side the trouble comes from.  Production and income go round the base center,
+		 the power goes behind it, and this goes out in front, so money that keeps arriving thickens
+		 the base in the order a base wants to be thick in: the defenses first, everything else
+		 standing behind them.
+
+		 Rationed twice over, because the first version of this was not rationed at all: a rich AI
+		 bought one every ten seconds for the rest of the match and ended up living in a wall of
+		 bunkers. One every few minutes, and never past the point where another gun is worth less
+		 than the tank it could have been. */
+	if( (TheGameLogic->getFrame() / ECONOMY_CHECK_RATE) % DEFENSE_BUY_PASSES != 0 )
+		return;
+
+	Int defenses = 0;
+	m_player->iterateObjects( countBaseDefenses, &defenses );
+	if( defenses >= MAX_BASE_DEFENSES )
+		return;
+
+	const ThingTemplate *defense = buildableOfKind( dozer, GUI_COMMAND_DOZER_CONSTRUCT, KINDOF_FS_BASE_DEFENSE );
+	if( defense && !priorityBuildPending( m_player, defense ) )
+	{
+		Coord3D spot = m_baseCenter;
+		Coord3D dir;
+		if( enemyDirection( &dir ) )
+		{
+			spot.x += dir.x * m_baseRadius * DEFENSE_STANDOFF;
+			spot.y += dir.y * m_baseRadius * DEFENSE_STANDOFF;
+		}
+		if( placeNear( defense, &spot, 0.0f ) )
 			return;
 	}
 }

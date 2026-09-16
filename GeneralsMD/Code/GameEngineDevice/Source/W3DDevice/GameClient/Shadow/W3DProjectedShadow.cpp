@@ -924,7 +924,33 @@ void W3DProjectedShadowManager::queueDecal(W3DProjectedShadow *shadow)
 		//Find size of heightmap sub-rectangle affected by shadow
 		//If user supplied size values, ignore bounding box
 
-		objPos.Z=0.0f;	//we don't care about object height since shadows project top-down
+		/* An aircraft's shadow belongs where the sun puts it, not underneath the aircraft. A decal is
+			 laid flat on the terrain and this used to throw the object's height away, so a Raptor at a
+			 hundred feet towed its shadow along directly below itself - the one place the sun cannot
+			 put it outside of noon on the equator, and the thing that makes a plane read as a sticker
+			 on the map rather than as something flying over it.
+
+			 So the decal slides down the ray to the sun by as much as the object's height asks for.
+			 Anything standing on the ground is unmoved, because its height is nought; a helicopter
+			 drifts its shadow out to the side, and a plane's shadow runs along well ahead of or behind
+			 it depending on the hour the map is set at.
+
+			 Not for something on a bridge: that decal is already drawn at the bridge's own height, and
+			 sliding it sideways would drop the shadow in the river. */
+		if (layerHeight == 0.0f && TheW3DShadowManager != NULL && TheTerrainLogic != NULL)
+		{
+			const Real heightAboveGround = objPos.Z - TheTerrainLogic->getGroundHeight(objPos.X, objPos.Y);
+			const Vector3 &toSun = TheW3DShadowManager->getLightPosWorld(0);
+			const Real MIN_SUN_HEIGHT = 0.01f;		// a sun on the horizon casts a shadow of infinite length
+			if (heightAboveGround > 0.0f && toSun.Z > MIN_SUN_HEIGHT)
+			{
+				const Real alongRay = heightAboveGround / toSun.Z;
+				objPos.X -= toSun.X * alongRay;
+				objPos.Y -= toSun.Y * alongRay;
+			}
+		}
+
+		objPos.Z=0.0f;	//the decal itself is flat on the terrain
 
 		uVector=objXform.Get_X_Vector();
 

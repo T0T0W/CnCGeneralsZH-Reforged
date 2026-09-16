@@ -6252,6 +6252,24 @@ ProjectileUpdateInterface* Object::getProjectileUpdateInterface() const
 // ------------------------------------------------------------------------------------------------
 // Simply find the special power module that is currently allowing plotting of positions to target.
 // ------------------------------------------------------------------------------------------------
+// ------------------------------------------------------------------------------------------------
+// The building this object is in the middle of taking, and how far through it is. Asked of the
+// capturing unit because that is where the clock lives: a building being captured is told nothing
+// about it until it changes hands.
+// ------------------------------------------------------------------------------------------------
+Bool Object::getCaptureProgress( ObjectID *targetID, Real *progress ) const
+{
+	for( BehaviorModule** u = m_behaviors; *u; ++u )
+	{
+		SpecialPowerUpdateInterface *spInterface = (*u)->getSpecialPowerUpdateInterface();
+		if( spInterface && spInterface->getCaptureProgress( targetID, progress ) )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+// ------------------------------------------------------------------------------------------------
 SpecialPowerUpdateInterface* Object::findSpecialPowerWithOverridableDestinationActive( SpecialPowerType type ) const
 {
 	for( BehaviorModule** u = m_behaviors; *u; ++u )

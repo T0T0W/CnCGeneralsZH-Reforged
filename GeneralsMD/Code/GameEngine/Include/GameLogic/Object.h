@@ -360,6 +360,7 @@ public:
 	SpecialPowerModuleInterface* findAnyShortcutSpecialPowerModuleInterface() const;
 	SpecialAbilityUpdate* findSpecialAbilityUpdate( SpecialPowerType type ) const;
 	SpecialPowerCompletionDie* findSpecialPowerCompletionDie() const;
+	Bool getCaptureProgress( ObjectID *targetID, Real *progress ) const;	///< the building this one is taking, and how far through it is
 	SpecialPowerUpdateInterface* findSpecialPowerWithOverridableDestinationActive( SpecialPowerType type = SPECIAL_INVALID ) const;
 	SpecialPowerUpdateInterface* findSpecialPowerWithOverridableDestination( SpecialPowerType type = SPECIAL_INVALID ) const;
 

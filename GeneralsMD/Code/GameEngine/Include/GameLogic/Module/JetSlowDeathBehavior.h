@@ -99,6 +99,7 @@ protected:
 
 	UnsignedInt m_timerDeathFrame;					///< fame we died on
 	UnsignedInt m_timerOnGroundFrame;				///< frame we landed on the ground on
+	UnsignedInt m_fallDeadlineFrame;				///< how long the fall may hold the explosion back for
 
 	Real m_rollRate;												///< our roll rate
 

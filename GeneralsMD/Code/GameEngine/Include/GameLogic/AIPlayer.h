@@ -311,6 +311,13 @@ protected:
 		* expansion when every one of a kind is busy, another income building when production keeps up,
 		* and money units (China's hackers) from any factory standing idle. */
 	virtual void doEconomy(void);
+
+	/** Buy a power plant before the margin runs out rather than after, and put it on the far side of
+		* the base from whoever this player is fighting. */
+	virtual void doPower(void);
+
+	Bool enemyDirection(Coord3D *dir);	///< unit vector from this base towards the nearest enemy's best known address
+
 	void buyMoneyUnit(void);
 	Bool placeNear(const ThingTemplate *tmpl, const Coord3D *center, Real innerRadius);	///< a legal, safe spot on a ring round center, queued for a dozer
 	Real knownFirepowerAlongPath(Waypoint *way);	///< what this AI has seen that can shoot, along an approach

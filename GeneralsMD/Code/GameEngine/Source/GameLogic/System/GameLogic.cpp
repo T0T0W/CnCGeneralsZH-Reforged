@@ -2126,12 +2126,19 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// Note - We construct the multiplayer start spot name manually here, so change this if you
 	//        change TheKey_Player_1_Start etc.  mdc
 	AsciiString startingCamName = TheNameKeyGenerator->keyToName(TheKey_InitialCameraPosition);
+	Bool watchingFromNowhere = FALSE;
 	if (game)
 	{
 		GameSlot *slot = game->getSlot(localSlot);
 		DEBUG_ASSERTCRASH(slot, ("Starting a LAN game without ourselves!"));
-		
-		if (slot->isHuman())
+
+		//
+		// An observer has no start position, so this built the name "Player_0_Start", found no such
+		// waypoint, and fell through to the corner of the map below - which is where every match
+		// watched from the stands used to open, looking at nothing.
+		//
+		watchingFromNowhere = slot->getPlayerTemplate() == PLAYERTEMPLATE_OBSERVER;
+		if (slot->isHuman() && !watchingFromNowhere)
 		{
 			Int startPos = slot->getStartPos();
 			startingCamName.format("Player_%d_Start", startPos+1); // start pos waypoints are 1-based
@@ -2142,7 +2149,7 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	// update the loadscreen 
 	updateLoadProgress(LOAD_PROGRESS_POST_STARTING_CAMERA);
 
-	Waypoint *way = findNamedWaypoint(startingCamName);
+	Waypoint *way = watchingFromNowhere ? NULL : findNamedWaypoint(startingCamName);
 	if (way)
 	{
 		Coord3D pos = *way->getLocation();
@@ -2150,14 +2157,19 @@ void GameLogic::startNewGame( Bool loadingSaveGame )
 	}
 	else
 	{
-		// Just look somewhere.  lookAt does some terrain specific setup, so it is good
-		// to call it.  jba
+		//
+		// Nowhere of our own to look: watching rather than playing, or a map with no camera
+		// waypoint on it. The middle of the map is the one answer that is right for both of those,
+		// where the corner the game used to pick was right for neither.
+		//
+		Region3D extent;
+		TheTerrainLogic->getExtent( &extent );
 		Coord3D pos;
-		pos.x = 50;
-		pos.y = 50;
+		pos.x = extent.lo.x + extent.width() * 0.5f;
+		pos.y = extent.lo.y + extent.height() * 0.5f;
 		pos.z = 0;
 		TheTacticalView->lookAt( &pos );
-		DEBUG_LOG(("Failed to find initial camera position waypoint %s\n", startingCamName.str()));
+		DEBUG_ASSERTLOG(watchingFromNowhere, ("Failed to find initial camera position waypoint %s\n", startingCamName.str()));
 	}
 
 	// Set up the camera height based on the map height & globalData.
@@ -4032,6 +4044,134 @@ static void peaceTimeTick( void )
 	}
 }
 
+/* A civilian building is nobody's property and everybody's cover.  Infantry take one, get burned
+	 out of it, and the next squad inherits a wreck: no dozer will ever touch it, because a neutral
+	 building is on no player's build list and a captured one is not on its captor's either.  The
+	 same goes for the tech buildings a match is fought over - an oil derrick changes hands four
+	 times and spends the rest of the game at a tenth of its health.
+
+	 So they mend themselves.  Two seconds without a hit and the walls go back up, a fixed fraction
+	 of full health a second, whether the building is standing empty, holding somebody's riflemen or
+	 flying somebody's flag.
+
+	 Once a second, off the same object walk peace time uses.  Tech buildings and garrisonable
+	 structures are the test; KINDOF_CAPTURABLE is not, because it sits on every faction structure
+	 as well - Black Lotus takes those - and would hand every command center on the map a free
+	 repair crew. */
+static void neutralBuildingRepairTick( void )
+{
+	const UnsignedInt now = TheGameLogic->getFrame();
+	if( now % LOGICFRAMES_PER_SECOND != 0 )
+		return;
+
+	const UnsignedInt quietFrames = 2 * LOGICFRAMES_PER_SECOND;
+	const Real repairFractionPerSecond = 0.03f;
+
+	for( Object *obj = TheGameLogic->getFirstObject(); obj != NULL; obj = obj->getNextObject() )
+	{
+		if( !obj->isKindOf( KINDOF_STRUCTURE ) || obj->isEffectivelyDead() )
+			continue;
+		if( obj->testStatus( OBJECT_STATUS_UNDER_CONSTRUCTION ) )
+			continue;
+
+		ContainModuleInterface *contain = obj->getContain();
+		const Bool mendsItself = obj->isKindOf( KINDOF_TECH_BUILDING )
+													|| obj->isKindOf( KINDOF_TECH_BASE_DEFENSE )
+													|| ( contain != NULL && contain->isGarrisonable() );
+		if( !mendsItself )
+			continue;
+
+		BodyModuleInterface *body = obj->getBodyModule();
+		if( body->getHealth() >= body->getMaxHealth() )
+			continue;
+		if( body->getLastDamageTimestamp() + quietFrames > now )
+			continue;
+
+		obj->attemptHealing( body->getMaxHealth() * repairFractionPerSecond, obj );
+	}
+}
+
+/** A unit that can still take something off a wreck besides the money in it. */
+static Bool wantsSalvageUpgrade( const Object *obj )
+{
+	if( obj->isKindOf( KINDOF_WEAPON_SALVAGER ) && !obj->testWeaponSetFlag( WEAPONSET_CRATEUPGRADE_TWO ) )
+		return TRUE;
+	if( obj->isKindOf( KINDOF_ARMOR_SALVAGER ) && !obj->testArmorSetFlag( ARMORSET_CRATE_UPGRADE_TWO ) )
+		return TRUE;
+
+	return FALSE;
+}
+
+/* Somebody goes and gets the salvage.  A crate dropped by a wreck is money and a free upgrade lying
+	 on the ground, and the game asked you to notice it, work out which of your units was allowed to
+	 take it, and drive that one over it by hand, in the middle of the fight that made it.  Nobody
+	 does that, so most salvage on most maps timed out where it fell.
+
+	 Whoever is standing nearest and has nothing else to do goes and takes it, once a second.  A unit
+	 that can still be upgraded off it wins over one that cannot, however far back it is standing,
+	 because the upgrade is worth more than the walk; failing that the nearest idle unit takes the
+	 cash.  Only idle units, so this never pulls a unit out of a fight or off an order, and the trip
+	 itself makes the unit busy, which is what stops it being ordered again on the next pass.
+
+	 A dozer and a harvester are left alone: both have a job of their own that earns more than the
+	 crate does.  An aircraft is left alone too, because a crate cannot be claimed from the air. */
+static void salvageCrateTick( void )
+{
+	const UnsignedInt now = TheGameLogic->getFrame();
+	if( now % LOGICFRAMES_PER_SECOND != 0 )
+		return;
+
+	const Real SALVAGE_CALL_RADIUS = 250.0f;
+
+	for( Object *crate = TheGameLogic->getFirstObject(); crate != NULL; crate = crate->getNextObject() )
+	{
+		if( !crate->isSalvageCrate() || crate->isDestroyed() )
+			continue;
+
+		PartitionFilterAlive alive;
+		PartitionFilterSameMapStatus sameMap( crate );
+		PartitionFilter *filters[] = { &alive, &sameMap, NULL };
+
+		SimpleObjectIterator *iter = ThePartitionManager->iterateObjectsInRange( crate, SALVAGE_CALL_RADIUS,
+																						FROM_CENTER_2D, filters, ITER_SORTED_NEAR_TO_FAR );
+		MemoryPoolObjectHolder hold( iter );
+
+		Object *collector = NULL;
+		Bool collectorUpgrades = FALSE;
+		for( Object *them = iter->first(); them != NULL; them = iter->next() )
+		{
+			if( them->isKindOf( KINDOF_STRUCTURE ) || them->isKindOf( KINDOF_AIRCRAFT ) )
+				continue;
+			if( them->isKindOf( KINDOF_DOZER ) || them->isKindOf( KINDOF_HARVESTER ) )
+				continue;
+			if( them->isContained() || them->isEffectivelyDead() || them->isNeutralControlled() )
+				continue;
+
+			AIUpdateInterface *ai = them->getAI();
+			if( ai == NULL || !ai->isIdle() )
+				continue;
+
+			const Player *owner = them->getControllingPlayer();
+			if( owner == NULL || crate->getShroudedStatus( owner->getPlayerIndex() ) >= OBJECTSHROUD_FOGGED )
+				continue;
+
+			const Bool upgrades = wantsSalvageUpgrade( them );
+			if( collector == NULL || ( upgrades && !collectorUpgrades ) )
+			{
+				collector = them;
+				collectorUpgrades = upgrades;
+			}
+
+			// the iterator runs near to far, so the first one that can be upgraded is the best answer
+			if( collectorUpgrades )
+				break;
+		}
+
+		if( collector )
+			collector->getAI()->aiMoveToPosition( crate->getPosition(), CMD_FROM_AI );
+	}
+}
+
 void GameLogic::update( void )
 {
 	USE_PERF_TIMER(GameLogic_update)
@@ -4107,6 +4247,12 @@ void GameLogic::update( void )
 
 	// the lobby's peace time, if the host set one
 	peaceTimeTick();
+
+	// and the buildings nobody repairs
+	neutralBuildingRepairTick();
+
+	// ... and the salvage nobody collects
+	salvageCrateTick();
 
 	/* The scripted measurement harness.  Keyed to the logic frame rather than to the render pass, so the same
 		 scenario file plays out on the same frames however fast the machine draws - which is the whole

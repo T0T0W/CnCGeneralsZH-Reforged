@@ -161,6 +161,10 @@ protected:
 	inline Bool isSlowDeathActivated() const { return (m_flags & (1<<SLOW_DEATH_ACTIVATED)) != 0; }
 	inline UnsignedInt getDestructionFrame() const { return m_destructionFrame; }
 
+	/** Move the moment of destruction, for a subclass whose death ends somewhere rather than at a
+		* time - an aircraft's ends at the ground. */
+	inline void setDestructionFrame(UnsignedInt frame) { m_destructionFrame = frame; }
+
 private:
 	
 	enum
