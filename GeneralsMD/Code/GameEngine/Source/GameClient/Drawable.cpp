@@ -4416,14 +4416,6 @@ void Drawable::drawHealthBar(const IRegion2D* healthBarRegion)
 				logicFps = LOGICFRAMES_PER_SECOND;
 			Int secondsLeft = REAL_TO_INT_CEIL( totalFrames * (1.0f - pct * 0.01f) / logicFps );
 
-			// everything behind the head of the queue has not started yet, so each costs its full
-			// build time (an entry builds its whole quantity at once, so quantity does not scale it)
-			Int queuedFrames = 0;
-			for( const ProductionEntry *q = pu->nextProduction( pe ); q != NULL; q = pu->nextProduction( q ) )
-				queuedFrames += q->getProductionType() == PRODUCTION_UNIT
-												? q->getProductionObject()->calcTimeToBuild( player )
-												: q->getProductionUpgrade()->calcTimeToBuild( player );
-
 			// one shared string: draw() renders immediately, and the manager lives for the whole app
 			static DisplayString *prodTimeString = NULL;
 			if( prodTimeString == NULL )
@@ -4433,13 +4425,8 @@ void Drawable::drawHealthBar(const IRegion2D* healthBarRegion)
 																TheGlobalLanguageData->adjustFontSize( TheInGameUI->getDrawableCaptionPointSize() - 2 ),
 																FALSE ) );
 			}
-			// "52s (70s)": this one, then the whole queue. Nothing behind it, no parentheses.
 			UnicodeString text;
-			if( queuedFrames > 0 )
-				text.format( L"%ds (%ds)", secondsLeft,
-										 secondsLeft + REAL_TO_INT_CEIL( INT_TO_REAL( queuedFrames ) / logicFps ) );
-			else
-				text.format( L"%ds", secondsLeft );
+			text.format( L"%ds", secondsLeft );
 			if( prodTimeString->getText().compare( text ) != 0 )
 				prodTimeString->setText( text );
 			Int textW, textH;
@@ -4449,25 +4436,6 @@ void Drawable::drawHealthBar(const IRegion2D* healthBarRegion)
 
 			// whatever comes next goes above the seconds, not through them
 			stackY = prodY - textH - 1;
-
-			// how many entries the queue holds, right-aligned on the bar (one is not worth saying)
-			if( pu->getProductionCount() > 1 )
-			{
-				static DisplayString *prodCountString = NULL;
-				if( prodCountString == NULL )
-				{
-					prodCountString = TheDisplayStringManager->newDisplayString();
-					prodCountString->setFont( prodTimeString->getFont() );
-				}
-				UnicodeString countText;
-				countText.format( L"x%d", pu->getProductionCount() );
-				if( prodCountString->getText().compare( countText ) != 0 )
-					prodCountString->setText( countText );
-				Int countW, countH;
-				prodCountString->getSize( &countW, &countH );
-				prodCountString->draw( healthBarRegion->hi.x - countW, prodY - countH,
-															 GameMakeColor( 255, 255, 255, 255 ), GameMakeColor( 0, 0, 0, 255 ) );
-			}
 		}
 
 		//
