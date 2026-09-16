@@ -450,8 +450,8 @@ found and fixed â€” EA's own, not port damage.**
 - Health bars are in the owner's colour instead of green to red. A building going up fills its bar in that same colour as it rises, so a glance across the map says whose expansion it is - the seconds written over it already say it is not finished. A disabled building keeps the blue.
 - A building's bar sits above its roof rather than inside its art.
 - A unit that is inside a transport and also disabled wears the blue bar. Being carried and being knocked out were asked as one question, so the two together answered no: a squad EMP'd inside a bunker, or hacked while riding a Battle Bus, looked perfectly healthy from outside.
-- The progress bar stacked over the health bar is white, wherever it turns up - a factory turning out a tank, a silo charging, a supply drop counting down to its payout. It was yellow, which is a colour the game already spends on your own units and on damage, and a strip of it sitting directly above a coloured health bar read as part of the same bar.
 - A building being captured wears a capture clock under its health bar, filling in the colour of whoever is taking it. The building flashes while a rifleman works on it, which says somebody is at the door and nothing about whether that is nearly over: the choice between driving across to shoot him and carrying on with your fight was made blind. The bar runs from the moment he reaches the door to the moment the building changes hands, and Black Lotus hacking one gets the same bar.
+- The progress bar stacked over the health bar is white, wherever it turns up - a factory turning out a tank, a silo charging, a supply drop counting down to its payout. It was yellow, which is a colour the game already spends on your own units and on damage, and a strip of it sitting directly above a coloured health bar read as part of the same bar.
 - Every garrisonable building shows how full it is, whoever holds it.
 - A vehicle's load stays private.
 - What you have selected wears a white frame just outside its bar, so a selection is still readable in a crowd where every unit carries a bar - and the bar itself keeps its owner colour all the way round.
@@ -522,13 +522,13 @@ found and fixed â€” EA's own, not port damage.**
 - Double-tapping 0 jumps the camera to that group.
 - The mouse wheel no longer cancels a camera move already in progress.
 
-## Peace time, if the host wants it
 ## The buildings nobody repairs, repair themselves
 
 - Civilian buildings and tech buildings patch their own walls. Nobody else was ever going to: a neutral building is on no player's build list, a captured one is not on its captor's either, and no dozer in the game will touch either of them. So the first squad to be burned out of a hospital left it a wreck for the rest of the match, and an oil derrick that changed hands four times spent the game at a tenth of its health.
 - Two seconds without taking a hit and the building starts mending, three percent of its full health a second, until it is whole or somebody shoots it again. It makes no difference whether it is standing empty, holding somebody's riflemen or flying somebody's flag.
 - Your own buildings are not in this. A command center is a faction structure with a dozer of its own, and it repairs the way it always did.
 
+## Peace time, if the host wants it
 
 - A new lobby setting next to starting cash: three, five, ten or fifteen minutes of truce at the head of the match, or none, which is how the game has always played. LAN and online carry it, only the host can change it, and everyone in the room sees the choice before the game starts.
 - While it runs, nobody can attack anybody. Not a rush, not a scout taking a pot shot on the way past, not a shell fired at empty ground in the hope the splash counts.
@@ -716,8 +716,8 @@ found and fixed â€” EA's own, not port damage.**
 - Infantry shadows are built from the pose: arms, head, weapon, moving with him.
 - `UseShadowVolumesForSkins = No` puts the old flat blobs back.
 - Scuds, rockets and falling bombs cast a shadow running along the ground.
-- A big smoke cloud darkens the ground under it and fades as it does.
 - An aircraft's shadow lands where the sun puts it, not underneath the aircraft. Every plane and helicopter in the game's own data asks for a sun "no lower than 89 degrees", so each one cast its shadow straight down and towed it along directly below itself at any height, while the tank beside it was lit by the map's real sun and threw its shadow off to the side. Aircraft now take the same sun as everything else: a helicopter's shadow slides out from under it as it climbs, and a plane's runs ahead of or behind it depending on the hour the map is set at. On a map lit by a very low sun the shadow is held to what a 30 degree sun would cast, so it does not stretch across half the screen. The flat blob shadows under missiles and bombs follow the same ray.
+- A big smoke cloud darkens the ground under it and fades as it does.
 - The soft blob shadow for trees and scenery had never been drawn at all.
 - Every one of the 128 tree types casts now, plus the bushes and palms.
 - A tree's shadow is the tree. Trunk, crown, and the gaps between the leaves, lying along the

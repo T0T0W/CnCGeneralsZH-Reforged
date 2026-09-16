@@ -77,10 +77,10 @@ OPTION_BOOL_ACCESSORS( m_shadowsForProjectiles )
 OPTION_BOOL_ACCESSORS( m_shadowsForProps )
 OPTION_BOOL_ACCESSORS( m_shadowsForParticles )
 OPTION_BOOL_ACCESSORS( m_particleGroundBounce )
-
 OPTION_BOOL_ACCESSORS( m_showProductionStrip )
 OPTION_BOOL_ACCESSORS( m_showSkillStrip )
 OPTION_BOOL_ACCESSORS( m_showSuperweaponStrip )
+
 //-----------------------------------------------------------------------------
 static const unsigned TheMsaaSamples[ OPTION_MSAA_LEVEL_COUNT ] = { 0, 2, 4, 8, 16 };
 
@@ -370,14 +370,6 @@ const OptionDef TheOptionCatalog[] =
 		OPTION_BOOL, APPLY_RESTART, 0, 1,
 		get_m_particleGroundBounce, set_m_particleGroundBounce },
 
-	{ NULL, NULL, NULL, OPTION_BOOL, APPLY_LIVE, 0, 0, NULL, NULL }
-};
-
-const Int TheOptionCatalogCount = (sizeof( TheOptionCatalog ) / sizeof( TheOptionCatalog[ 0 ] )) - 1;
-
-//-----------------------------------------------------------------------------
-const OptionDef *findOptionDef( const char *iniKey )
-{
 	// The strips over the battlefield while watching a match.  They have no control in the options
 	// menu: a spectator switches them from the drop-down in the top left corner, which writes them
 	// back itself.  Playing, every strip is drawn whatever these say.
@@ -393,6 +385,14 @@ const OptionDef *findOptionDef( const char *iniKey )
 		OPTION_BOOL, APPLY_LIVE, 0, 1,
 		get_m_showSuperweaponStrip, set_m_showSuperweaponStrip },
 
+	{ NULL, NULL, NULL, OPTION_BOOL, APPLY_LIVE, 0, 0, NULL, NULL }
+};
+
+const Int TheOptionCatalogCount = (sizeof( TheOptionCatalog ) / sizeof( TheOptionCatalog[ 0 ] )) - 1;
+
+//-----------------------------------------------------------------------------
+const OptionDef *findOptionDef( const char *iniKey )
+{
 	for( Int i = 0; i < TheOptionCatalogCount; ++i )
 		if( stricmp( TheOptionCatalog[ i ].iniKey, iniKey ) == 0 )
 			return &TheOptionCatalog[ i ];
