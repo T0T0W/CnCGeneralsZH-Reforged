@@ -280,6 +280,7 @@ private:
 	Coord2D m_scrollAmount;													///< scroll speed
 	CameraScrollClock m_scrollClock;	///< elapsed render time, also sampled while idle
 	Real m_scrollAmountCutoff;											///< scroll speed at which we do not adjust height
+	Real m_scrollWheelHeight;												///< height the wheel asked for during a scroll that the zoom has not eased through yet
 
 	Real m_groundLevel;															///< height of ground.
 	

@@ -195,6 +195,7 @@ W3DView::W3DView()
 
 	m_recalcCamera = false;
 	m_zoomAnchorValid = false;
+	m_scrollWheelHeight = 0.0f;
 
 }  // end W3DView
 
@@ -1525,10 +1526,22 @@ void W3DView::update(void)
 					m_zoom += zoomAdj;
 					recalcCamera = true;
 				}
+				m_scrollWheelHeight = 0.0f;
+			}
+			else if (m_scrollWheelHeight != 0.0f)
+			{
+				// the wheel still moves the camera while it pans; the terrain under it does not
+				Real heightAdj = m_scrollWheelHeight*cameraAdjustSpeed;
+				if (fabs(heightAdj) < 0.01f)
+					heightAdj = m_scrollWheelHeight;
+				m_scrollWheelHeight -= heightAdj;
+				m_zoom += heightAdj / m_cameraOffset.z;
+				recalcCamera = true;
 			}
 		}
 		else
 		{
+			m_scrollWheelHeight = 0.0f;
 			// we're not scrolling; settle toward desired height above ground
 			Real zoomAdj = (m_zoom - desiredZoom)*cameraAdjustSpeed;
 			Real zoomAdjAbs = fabs(zoomAdj);
@@ -2218,6 +2231,7 @@ void W3DView::setDefaultView(Real pitch, Real angle, Real maxHeight)
 //-------------------------------------------------------------------------------------------------
 void W3DView::setHeightAboveGround(Real z)
 {
+	const Real previousHeightAboveGround = m_heightAboveGround;
 	m_heightAboveGround = z;
 
   // if our zoom is limited, we will stay within a predefined distance from the terrain
@@ -2231,6 +2245,11 @@ void W3DView::setHeightAboveGround(Real z)
 			m_heightAboveGround = m_maxHeightAboveGround * ZOOM_OUT_LIMIT_FACTOR;
 
 	}  // end if
+
+	// A fast scroll does not settle the zoom on the terrain, so it would not move towards this height
+	// either; update() eases the wheel's part of it on its own until the scroll ends.
+	if (TheInGameUI->isScrolling())
+		m_scrollWheelHeight += m_heightAboveGround - previousHeightAboveGround;
 
 	stopDoingScriptedCamera();
 	m_cameraConstraintValid = false; // recalc it.
