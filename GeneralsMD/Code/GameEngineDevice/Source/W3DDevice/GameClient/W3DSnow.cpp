@@ -58,13 +58,15 @@ W3DSnowManager::~W3DSnowManager()
 // into a screen-aligned quad was taken out of the API, and the replacement is a geometry shader the
 // backend does not have.  The snow already carries a second path that builds those quads on the CPU
 // and draws them through DX8Wrapper, so a presenting D3D11 run takes that one and gets its snow.
-static Bool snowUsesPointSprites(void)
+static Bool snowWantsPointSprites(void)
 {
-	if (Direct3D11_Present_Is_Enabled())
-		return FALSE;
-
 	return TheWeatherSetting->m_usePointSprites
 		&& DX8Wrapper::Get_Current_Caps()->Support_PointSprites();
+}
+
+static Bool snowUsesPointSprites(void)
+{
+	return !Direct3D11_Present_Is_Enabled() && snowWantsPointSprites();
 }
 
 void W3DSnowManager::init( void )
@@ -495,11 +497,16 @@ void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int 
 	};
 
 
-	//pre-multiple the offsets by particle size
-	for (Int i=0; i<4; i++)
-	{
-		vertex_offsets[i] *= m_quadSize;
-	}
+	// A snowy map tunes its flakes for point sprites: SnowPointSize with a SnowMaxPointSize of 10 or
+	// 16 pixels, and SnowQuadSize mostly left at the 0.5 default.  Taken as a world size, that 0.5
+	// grows without limit on a flake next to the camera, which is how D3D11 drew snowflakes the size
+	// of a building.  When the map asked for sprites the quad gets the size D3D9 gave the sprite:
+	// SnowPointSize * viewport height / eye distance pixels, clamped, turned back into view units.
+	Bool sizeLikePointSprites = snowWantsPointSprites();
+	Int deviceWidth, deviceHeight, deviceBits;
+	Bool deviceWindowed;
+	WW3D::Get_Device_Resolution(deviceWidth, deviceHeight, deviceBits, deviceWindowed);
+	Real viewportHeight = (Real)deviceHeight;
 
 	Matrix4x4 identity(true);
 	DX8Wrapper::Set_Transform(D3DTS_VIEW,identity);	
@@ -556,9 +563,16 @@ void W3DSnowManager::renderAsQuads(RenderInfoClass &rinfo, Int cubeOriginX, Int 
 					snowCenterVS.X += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleX + (Real)x);
 					snowCenterVS.Y += m_amplitude * WWMath::Fast_Sin( h0 * m_frequencyScaleY + (Real)y);
 
+					Real flakeSize = m_quadSize;
+					if (sizeLikePointSprites)
+					{
+						Real flakePixels = WWMath::Clamp(m_pointSize * viewportHeight / snowCenterVS.Length(), m_minPointSize, m_maxPointSize);
+						flakeSize = flakePixels * 2.0f * -snowCenterVS.Z / (proj[1][1] * viewportHeight);
+					}
+
 					for (Int i=0; i<4; i++)
 					{
-						*(Vector3 *)verts=snowCenterVS + vertex_offsets[i];
+						*(Vector3 *)verts=snowCenterVS + vertex_offsets[i] * flakeSize;
 						verts->nx=0;	//keep AGP write-combining active
 						verts->ny=0;
 						verts->nz=0;

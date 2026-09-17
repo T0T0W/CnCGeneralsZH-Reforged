@@ -779,6 +779,10 @@ found and fixed â€” EA's own, not port damage.**
   EA logo was dropped to sixteen bit on the way in, on any machine - the test that was meant to
   limit that to a 2003 low-memory PC is commented out in the same line - and it was dropped there
   even on a device that had just reported it could not do sixteen bit at all.
+- Snow falls as snow again. On the new renderer every flake near the camera was drawn as big as a
+  power plant, because each winter map sized its flakes in screen pixels, capped at 10 or 16, and the
+  new renderer read a different figure from the same file that has no cap at all. Flakes on Bitter
+  Winter are the same size as they are on the old renderer now.
 
 ## It does not crash
 
