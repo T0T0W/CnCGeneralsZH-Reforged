@@ -41,8 +41,18 @@
 #include "GameLogic/Module/SupplyWarehouseDockUpdate.h"
 #include "GameLogic/Module/UpdateModule.h"
 
-ResourceGatheringManager::ResourceGatheringManager()
+ResourceGatheringManager::ResourceGatheringManager() :
+	m_suppliesDepletedVoicePlayed( FALSE )
 {
+}
+
+Bool ResourceGatheringManager::claimSuppliesDepletedVoice()
+{
+	if( m_suppliesDepletedVoicePlayed )
+		return FALSE;
+
+	m_suppliesDepletedVoicePlayed = TRUE;
+	return TRUE;
 }
 
 ResourceGatheringManager::~ResourceGatheringManager()

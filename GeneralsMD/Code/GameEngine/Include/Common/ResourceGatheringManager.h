@@ -56,6 +56,8 @@ public:
 	void addSupplyWarehouse( Object *newWarehouse );		///< Warehouse created, or this is starrt of game recording
 	void removeSupplyWarehouse( Object *oldWarehouse );	///< Warehouse that doesn't replinish has run out of Supply
 
+	Bool claimSuppliesDepletedVoice();	///< TRUE only the first time a gatherer asks, so the depleted voice plays once a game
+
 protected:
 
 	Object *findBestSupplyCenterInList(Object *queryObject);
@@ -72,6 +74,9 @@ private:
 
 	objectIDList m_supplyWarehouses;
 	objectIDList m_supplyCenters;
+
+	// Audio only: left out of crc, and xfer so a save format stays unchanged; a loaded game may play it once more.
+	Bool m_suppliesDepletedVoicePlayed;
 
 };
 
