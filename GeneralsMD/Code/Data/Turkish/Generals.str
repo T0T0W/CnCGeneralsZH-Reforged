@@ -15410,7 +15410,7 @@ GUI:WasdCamera
 END
 
 TOOLTIP:WasdCamera
-"W A S D kamerayı gezdirir. F saldırır, G durdurur, H saldırarak ilerler, J konumu korur, K gözcü koyar; komut çubuğunun üst sırası Q E R T Y U I olur. Yalnızca Modern girişte."
+"W A S D kamerayı gezdirir. F saldırır, G durdurur, H saldırarak ilerler, J gözcü koyar, K konumu korur; komut çubuğunun üst sırası Q E R T Y U I olur. Yalnızca Modern girişte."
 END
 
 GUI:OrderLines

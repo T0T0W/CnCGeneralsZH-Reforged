@@ -851,7 +851,7 @@ GUI:WasdCamera
 END
 
 TOOLTIP:WasdCamera
-"W A S D move the camera. F attacks, G stops, H attack-moves, J holds position and K guards, and the command bar's top row reads Q E R T Y U I. Modern input only."
+"W A S D move the camera. F attacks, G stops, H attack-moves, J guards and K holds position, and the command bar's top row reads Q E R T Y U I. Modern input only."
 END
 
 GUI:OrderLines
