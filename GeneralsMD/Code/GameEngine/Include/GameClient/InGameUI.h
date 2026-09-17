@@ -446,7 +446,7 @@ public:  // ********************************************************************
 		ObjectID owner;					///< the selected unit this one belongs to
 		UnsignedInt bornMs;			///< when the marker first appeared, so it can be slid in
 	};
-	const std::vector<OrderHint>& getOrderHints( void ) const { return m_orderHints; }
+	const std::vector<OrderHint>& getOrderHints( void ) const { return m_drawnOrderHints; }
 
 	// Where each ally's mouse is pointing.  A network game only: the position arrives about ten
 	// times a second on a side channel of its own, carries nothing the simulation reads, and is
@@ -1055,7 +1055,8 @@ protected:
 	Bool												m_isFormationDragging;												///< TRUE while a formation line is being drawn (fork)
 	std::vector<ICoord2D>				m_formationDragPoints;												///< the traced curve, in pixels, first point is where it started
 	Int													m_formationDragSpacing;												///< pixels a new point has to earn, doubled each time the curve fills up
-	std::vector<OrderHint>			m_orderHints;																	///< who is going where, for drawing
+	std::vector<OrderHint>			m_orderHints;																	///< who is going where, one per unit and queued point
+	std::vector<OrderHint>			m_drawnOrderHints;														///< the same, units headed the same way bunched into one
 
 	AllyCursor									m_allyCursors[ MAX_PLAYER_COUNT ];						///< where every ally's mouse was last seen (fork)
 	UnsignedInt									m_allyCursorSentMs;														///< wall clock of the last position this machine sent
@@ -1082,6 +1083,8 @@ protected:
 
 	void updateFormationHints( void );													///< recompute who goes where from the curve being drawn
 	void updateOrderHints( void );															///< read the selection's own goals, once a frame
+	void collectOrderHints( void );															///< one hint per selected unit and queued point
+	void bunchOrderHints( void );																///< merge the hints of units going the same way
 	void updateShiftAttackQueue( void );												///< send the next queued attack once the current one is over
 	void addOrderHint( OrderHint& hint, const std::vector<OrderHint>& previous );	///< keep a marker's age across the frame the list is rebuilt on
 	Bool getHeldAircraftOrder( const Object *obj, OrderHintKind& kind, Coord3D& to ) const;	///< the order an aircraft is sitting on until it is airborne

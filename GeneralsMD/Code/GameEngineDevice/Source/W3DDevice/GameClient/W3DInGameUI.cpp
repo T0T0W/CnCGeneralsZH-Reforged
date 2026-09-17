@@ -929,9 +929,9 @@ void W3DInGameUI::drawAttackCircle( void )
 
 //-------------------------------------------------------------------------------------------------
 /** The thread is coloured by what it is for: anything that ends in a shot is red, an attack move
-	* is pink, a post to be held is blue, everything else is green.  The marker on the end of it is a
-	* dot in the same colour, and an order that ends in a shot wears a ring instead, so the shape
-	* still says which is which to somebody who cannot tell the red from the green. */
+	* is pink, a post to be held is blue, everything else is green.  The marker on the end of it is
+	* the plain pointer in the same colour - one shape for every order, so the colour is the whole
+	* message.  A dot and a ring were tried in its place and players wanted the pointer back. */
 //-------------------------------------------------------------------------------------------------
 static UnsignedInt orderHintLineColor( InGameUI::OrderHintKind kind )
 {
@@ -955,97 +955,141 @@ static UnsignedInt orderHintMarkerColor( InGameUI::OrderHintKind kind )
 	return orderHintLineColor( kind ) | 0xFF000000;
 }
 
-static Bool orderHintEndsInAShot( InGameUI::OrderHintKind kind )
+struct OrderCursorArt
 {
-	return kind == InGameUI::ORDER_HINT_ATTACK || kind == InGameUI::ORDER_HINT_FORCE_ATTACK ||
-				 kind == InGameUI::ORDER_HINT_ATTACK_GROUND;
-}
-
-static Real edgeCoverage( Real edge )
-{
-	return edge < 0.0f ? 0.0f : ( edge > 1.0f ? 1.0f : edge );
-}
+	const Image *image;
+	ICoord2D hotSpot;
+	Bool tried;
+};
+static OrderCursorArt s_orderCursorArt[ Mouse::NUM_MOUSE_CURSORS ];
 
 //-------------------------------------------------------------------------------------------------
-/** A marker is drawn once into a texture several times the size it is shown at, so the shrink on
-	* the way to the screen leaves a soft edge at any resolution.  The body is near white and takes
-	* the order's colour from the tint; the outline is near black and stays dark on any ground. */
+/** Turn one Windows cursor into something the 2D renderer can draw.  Mouse.ini's Image entries
+	* name mapped images that do not exist in the shipped data, and the Texture entries name .ANI
+	* files rather than textures - so the art the player is actually holding only exists as an HCURSOR.
+	* Pull the first frame's bits out of it and keep them as a texture. */
 //-------------------------------------------------------------------------------------------------
-static const Image *buildOrderMarkerImage( Bool ring )
+static const Image *loadOrderCursorImage( Mouse::MouseCursor cursor, ICoord2D *hotSpot )
 {
-	const Int size = 64;
-	const Real centre = size * 0.5f;
-	const Real outer = size * 0.47f;						// outside edge of the outline
-	const Real body = outer * 0.72f;						// where the outline gives way to the body
-	const Real hole = outer * 0.38f;						// inside edge of a ring's inner outline
-	const Real holeBody = hole + ( outer - body );	// where that inner outline gives way to the body
-	const Real OUTLINE_GREY = 24.0f;
-	const Real BODY_GREY = 245.0f;
+	const AsciiString& name = TheMouse->m_cursorInfo[ cursor ].textureName;
+	if( name.isEmpty() )
+		return NULL;
 
-	TextureClass *texture = MSGNEW("TextureClass") TextureClass( size, size, WW3D_FORMAT_A8R8G8B8, MIP_LEVELS_1 );
-	SurfaceClass *surface = texture->Get_Surface_Level();
-	Int pitch;
-	UnsignedByte *bits = (UnsignedByte *)surface->Lock( &pitch );
-	for( Int y = 0; y < size; ++y )
+	char path[ 256 ];
+	snprintf( path, ARRAY_SIZE(path), "data\\cursors\\%s.ANI", name.str() );
+
+	HCURSOR hcursor = LoadCursorFromFile( path );
+	if( hcursor == NULL )
+		return NULL;
+
+	ICONINFO info;
+	if( GetIconInfo( hcursor, &info ) == FALSE )
+		return NULL;
+
+	const Image *result = NULL;
+
+	BITMAP bm;
+	if( info.hbmColor && GetObject( info.hbmColor, sizeof( BITMAP ), &bm ) )
 	{
-		UnsignedInt *pixel = (UnsignedInt *)( bits + y * pitch );
-		for( Int x = 0; x < size; ++x )
-		{
-			const Real dx = x + 0.5f - centre;
-			const Real dy = y + 0.5f - centre;
-			const Real distance = (Real)sqrt( dx * dx + dy * dy );
-			Real alpha = edgeCoverage( outer + 0.5f - distance );
-			Real light = edgeCoverage( body + 0.5f - distance );
-			if( ring )
+		const Int w = bm.bmWidth;
+		const Int h = bm.bmHeight;
+
+		BITMAPINFO bi;
+		memset( &bi, 0, sizeof( bi ) );
+		bi.bmiHeader.biSize = sizeof( BITMAPINFOHEADER );
+		bi.bmiHeader.biWidth = w;
+		bi.bmiHeader.biHeight = -h;			// negative means top down, which is the order a texture wants
+		bi.bmiHeader.biPlanes = 1;
+		bi.bmiHeader.biBitCount = 32;
+		bi.bmiHeader.biCompression = BI_RGB;
+
+		UnsignedInt *color = NEW UnsignedInt[ w * h ];
+		UnsignedInt *mask = NEW UnsignedInt[ w * h ];
+
+		HDC dc = GetDC( NULL );
+		GetDIBits( dc, info.hbmColor, 0, h, color, &bi, DIB_RGB_COLORS );
+		GetDIBits( dc, info.hbmMask, 0, h, mask, &bi, DIB_RGB_COLORS );
+		ReleaseDC( NULL, dc );
+
+		//
+		// a 32-bit cursor carries its own alpha; an older one leaves it zero and says what is
+		// transparent in the AND mask instead, where a white pixel is a hole
+		//
+		Bool hasAlpha = FALSE;
+		for( Int i = 0; i < w * h; ++i )
+			if( color[ i ] & 0xFF000000 )
 			{
-				alpha *= edgeCoverage( distance - ( hole - 0.5f ) );
-				light *= edgeCoverage( distance - ( holeBody - 0.5f ) );
+				hasAlpha = TRUE;
+				break;
 			}
-			const UnsignedInt grey = (UnsignedInt)REAL_TO_INT( OUTLINE_GREY + light * ( BODY_GREY - OUTLINE_GREY ) );
-			const UnsignedInt opacity = (UnsignedInt)REAL_TO_INT( alpha * 255.0f );
-			pixel[ x ] = ( opacity << 24 ) | ( grey << 16 ) | ( grey << 8 ) | grey;
-		}
+
+		if( hasAlpha == FALSE )
+			for( Int i = 0; i < w * h; ++i )
+				color[ i ] |= (mask[ i ] & 0x00FFFFFF) ? 0x00000000 : 0xFF000000;
+
+		TextureClass *texture = MSGNEW("TextureClass") TextureClass( w, h, WW3D_FORMAT_A8R8G8B8, MIP_LEVELS_1 );
+		SurfaceClass *surface = texture->Get_Surface_Level();
+		Int pitch;
+		UnsignedByte *bits = (UnsignedByte *)surface->Lock( &pitch );
+		for( Int row = 0; row < h; ++row )
+			memcpy( bits + row * pitch, color + row * w, w * sizeof( UnsignedInt ) );
+		surface->Unlock();
+		REF_PTR_RELEASE( surface );
+
+		delete [] color;
+		delete [] mask;
+
+		Image *image = newInstance(Image);
+		Region2D uv;
+		uv.lo.x = 0.0f;
+		uv.lo.y = 0.0f;
+		uv.hi.x = 1.0f;
+		uv.hi.y = 1.0f;
+		image->setStatus( IMAGE_STATUS_RAW_TEXTURE );
+		image->setRawTextureData( texture );
+		image->setUV( &uv );
+		image->setTextureWidth( w );
+		image->setTextureHeight( h );
+		ICoord2D size;
+		size.x = w;
+		size.y = h;
+		image->setImageSize( &size );
+
+		hotSpot->x = info.xHotspot;
+		hotSpot->y = info.yHotspot;
+		result = image;
 	}
-	surface->Unlock();
-	REF_PTR_RELEASE( surface );
 
-	Image *image = newInstance(Image);
-	Region2D uv;
-	uv.lo.x = 0.0f;
-	uv.lo.y = 0.0f;
-	uv.hi.x = 1.0f;
-	uv.hi.y = 1.0f;
-	image->setStatus( IMAGE_STATUS_RAW_TEXTURE );
-	image->setRawTextureData( texture );
-	image->setUV( &uv );
-	image->setTextureWidth( size );
-	image->setTextureHeight( size );
-	ICoord2D dimensions;
-	dimensions.x = size;
-	dimensions.y = size;
-	image->setImageSize( &dimensions );
-	return image;
+	if( info.hbmColor )
+		DeleteObject( info.hbmColor );
+	if( info.hbmMask )
+		DeleteObject( info.hbmMask );
+
+	return result;
 }
 
 //-------------------------------------------------------------------------------------------------
-/** The dot for anything that goes somewhere, the ring for anything that ends in a shot.  Built the
-	* first time each is drawn. */
+/** The marker on a destination is the cursor the player would be holding if they were pointing at
+	* it.  Built once. */
 //-------------------------------------------------------------------------------------------------
-static const Image *orderMarkerImage( Bool ring )
+static const Image *orderCursorImage( Mouse::MouseCursor cursor, ICoord2D *hotSpot )
 {
-	static const Image *s_dot = NULL;
-	static const Image *s_ring = NULL;
-	const Image *&image = ring ? s_ring : s_dot;
-	if( image == NULL )
-		image = buildOrderMarkerImage( ring );
-	return image;
+	OrderCursorArt& art = s_orderCursorArt[ cursor ];
+	if( art.tried == FALSE )
+	{
+		art.image = loadOrderCursorImage( cursor, &art.hotSpot );
+		art.tried = TRUE;
+	}
+
+	*hotSpot = art.hotSpot;
+	return art.image;
 }
 
 //-------------------------------------------------------------------------------------------------
-/** One faint line per selected unit, from where it stands to where it is going, with the order's
-	* marker sitting on the destination.  Green for a move, pink for an attack-move, red for an
-	* attack.  The goals are read off the units every frame, so the lines last as long as the orders
-	* do and go when the units arrive or the selection changes. */
+/** One faint line per bunch of selected units going the same way, from where they stand to where
+	* they are going, with the order's own cursor sitting on the destination.  Green for a move, pink
+	* for an attack-move, red for an attack.  The goals are read off the units every frame, so the
+	* lines last as long as the orders do and go when the units arrive or the selection changes. */
 //-------------------------------------------------------------------------------------------------
 void W3DInGameUI::drawOrderHints( void )
 {
@@ -1059,9 +1103,7 @@ void W3DInGameUI::drawOrderHints( void )
 	// has just been given announces itself instead of appearing fully formed.  Wall clock rather
 	// than frames: the picture is uncapped, so a frame count would run at the frame rate.
 	const UnsignedInt MARKER_SLIDE_MS = 130;
-	const Real MARKER_SLIDE_PIXELS = 8.0f;		// at 800x600, like the diameter
-	const Real MARKER_DIAMETER = 11.0f;
-	const Real uiScale = TheUIScale();
+	const Real MARKER_SLIDE_PIXELS = 13.0f;
 
 	const UnsignedInt nowMs = timeGetTime();
 
@@ -1092,16 +1134,19 @@ void W3DInGameUI::drawOrderHints( void )
 		if( TheGlobalData->m_showOrderLines )
 			TheDisplay->drawLine( from.x, from.y, to.x, to.y, width, lineColor );
 
-		// the marker sits centred on the destination, and grows with the screen the way a health bar
-		// does
-		const Image *image = orderMarkerImage( orderHintEndsInAShot( it->kind ) );
+		// the marker is the plain pointer, tinted: its white body takes the order colour and the
+		// dark outline stays.  The hot spot is the pixel the player aims with, so that is the pixel
+		// that goes on the destination - a pointer hung by its top left corner points at the wrong
+		// ground
+		ICoord2D hotSpot;
+		const Image *image = orderCursorImage( Mouse::ARROW, &hotSpot );
 		if( image )
 		{
-			const Int w = REAL_TO_INT( MARKER_DIAMETER * uiScale );
-			const Int h = w;
-			const Int slide = REAL_TO_INT_FLOOR( ( 1.0f - eased ) * MARKER_SLIDE_PIXELS * uiScale );
-			const Int x = to.x - w / 2 + slide;
-			const Int y = to.y - h / 2 + slide;
+			const Int w = image->getImageWidth();
+			const Int h = image->getImageHeight();
+			const Int slide = REAL_TO_INT_FLOOR( ( 1.0f - eased ) * MARKER_SLIDE_PIXELS );
+			const Int x = to.x - hotSpot.x + slide;
+			const Int y = to.y - hotSpot.y + slide;
 
 			// the tint carries the fade as well as the order's colour
 			const UnsignedInt markerColor = ( orderHintMarkerColor( it->kind ) & 0x00FFFFFF )

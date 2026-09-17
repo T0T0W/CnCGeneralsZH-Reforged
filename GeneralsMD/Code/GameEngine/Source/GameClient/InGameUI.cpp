@@ -3684,12 +3684,23 @@ static Bool getGuardedSpot( const AIUpdateInterface *ai, Coord3D& spot )
 //-------------------------------------------------------------------------------------------------
 void InGameUI::updateOrderHints( void )
 {
+	// a formation line being drawn shows every unit's own station, which is the whole point of it
 	if( m_isFormationDragging )
 	{
 		updateFormationHints();
+		m_drawnOrderHints = m_orderHints;
 		return;
 	}
 
+	collectOrderHints();
+	bunchOrderHints();
+}
+
+//-------------------------------------------------------------------------------------------------
+/** One hint per selected unit, and one more per queued point it still owes. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::collectOrderHints( void )
+{
 	// last frame's markers, kept only so this frame's can inherit their age (see addOrderHint)
 	std::vector<OrderHint> previous;
 	previous.swap( m_orderHints );
@@ -3700,6 +3711,11 @@ void InGameUI::updateOrderHints( void )
 	{
 		Object *obj = (*it)->getObject();
 		if( !obj || obj->getControllingPlayer() != local )
+			continue;
+
+		// an angry mob's members each chase a spot round the nexus, which holds the real order, so
+		// only the nexus draws: one line for the mob rather than one per rioter
+		if( obj->isKindOf( KINDOF_IGNORED_IN_GUI ) )
 			continue;
 
 		AIUpdateInterface *ai = obj->getAIUpdateInterface();
@@ -3730,7 +3746,17 @@ void InGameUI::updateOrderHints( void )
 				hint.kind = ORDER_HINT_WAYPOINT;
 				break;
 
+			// An attack move and a shot at the ground both end on the point that was clicked, which the
+			// order keeps as its goal position.  The end of the unit's path is somewhere else: a free
+			// cell next to it for a mover, the centre of a cell in range for a gun.  The attack move's
+			// path is also thrown away every time the unit stops to fight, so reading the path left the
+			// thread pointing at whatever the fight was about
 			case AI_ATTACK_MOVE_TO:
+				hint.kind = ORDER_HINT_ATTACK_MOVE;
+				resolvedGoal = *ai->getGoalPosition();
+				goalResolved = TRUE;
+				break;
+
 			case AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_INDIVIDUALS:
 			case AI_ATTACKFOLLOW_WAYPOINT_PATH_AS_TEAM:
 			case AI_HUNT:
@@ -3748,6 +3774,11 @@ void InGameUI::updateOrderHints( void )
 				break;
 
 			case AI_ATTACK_POSITION:
+				hint.kind = ORDER_HINT_ATTACK_GROUND;
+				resolvedGoal = *ai->getGoalPosition();
+				goalResolved = TRUE;
+				break;
+
 			case AI_ATTACK_AREA:
 				hint.kind = ORDER_HINT_ATTACK_GROUND;
 				break;
@@ -3901,6 +3932,64 @@ void InGameUI::updateOrderHints( void )
 		}
 
 		addShiftAttackQueueTail( hint, previous );
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Units on the same kind of order that stand together and are headed to the same place draw one
+	* thread between them, from their average position to their average destination.  Twenty tanks
+	* sent across the map were twenty threads laid almost on top of each other; a selection spread
+	* over the map still draws one thread per knot of units, so a flank sent separately stays
+	* visible. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::bunchOrderHints( void )
+{
+	// about ten pathfinding cells: a knot of four or five tanks, or a flood of destinations round
+	// one click
+	const Real BUNCH_RADIUS = 100.0f;
+	const Real bunchRadiusSqr = BUNCH_RADIUS * BUNCH_RADIUS;
+
+	m_drawnOrderHints.clear();
+	std::vector<Int> memberCounts;
+
+	for( std::vector<OrderHint>::const_iterator hint = m_orderHints.begin();
+			 hint != m_orderHints.end(); ++hint )
+	{
+		Bool joined = FALSE;
+		for( size_t i = 0; i < m_drawnOrderHints.size(); ++i )
+		{
+			OrderHint& bunch = m_drawnOrderHints[ i ];
+			if( bunch.kind != hint->kind )
+				continue;
+			const Real fromX = bunch.from.x - hint->from.x;
+			const Real fromY = bunch.from.y - hint->from.y;
+			if( fromX * fromX + fromY * fromY > bunchRadiusSqr )
+				continue;
+			const Real toX = bunch.to.x - hint->to.x;
+			const Real toY = bunch.to.y - hint->to.y;
+			if( toX * toX + toY * toY > bunchRadiusSqr )
+				continue;
+
+			// running averages, so the bunch is compared against its middle rather than its first unit
+			const Real share = 1.0f / (Real)( ++memberCounts[ i ] );
+			bunch.from.x += ( hint->from.x - bunch.from.x ) * share;
+			bunch.from.y += ( hint->from.y - bunch.from.y ) * share;
+			bunch.from.z += ( hint->from.z - bunch.from.z ) * share;
+			bunch.to.x += ( hint->to.x - bunch.to.x ) * share;
+			bunch.to.y += ( hint->to.y - bunch.to.y ) * share;
+			bunch.to.z += ( hint->to.z - bunch.to.z ) * share;
+
+			// the oldest member's age, so a unit joining a standing order does not slide the marker in again
+			bunch.bornMs = min( bunch.bornMs, hint->bornMs );
+			joined = TRUE;
+			break;
+		}
+
+		if( !joined )
+		{
+			m_drawnOrderHints.push_back( *hint );
+			memberCounts.push_back( 1 );
+		}
 	}
 }
 
