@@ -57,6 +57,7 @@
 #include "GameLogic/Module/StealthUpdate.h"
 #include "GameLogic/Module/SpecialPowerUpdateModule.h"
 #include "GameLogic/ObjectIter.h"
+#include "GameLogic/TerrainLogic.h"
 
 #ifdef _INTERNAL
 // for occasional debugging...
@@ -1641,12 +1642,10 @@ static void crowdClearLanes( std::list<Object *>& members )
 /** Hand every member of a group the distance it should sit off the centre of the road, for the
 		crowd model only.
 
-		The same arithmetic groupMoveToPosition does inline, extracted because the computer's armies
-		never go through that function: an AI team moves with groupTightenToPosition
-		(AIPlayer.cpp:3505), which handed nobody a lane, and a unit with no lane is a unit crowdSteer
-		returns out of on its first line.  So every steering rule in the crowd model was reachable by
-		the player and by nothing else, and the self-play harness was measuring the collision rules in
-		AIUpdate::blockedBy while reporting on the crowd model. */
+		groupMoveToPosition does the same arithmetic inline because it also has to feed the older
+		lane share (setPendingLane).  Everything else that marches a group - tighten, attack-move,
+		and the waypoint follow a wave actually leaves on - comes through here.  A unit with no lane
+		is a unit crowdSteer returns out of on its first line. */
 static void crowdSeedLanes( std::list<Object *>& members, const Coord3D& center, const Coord3D *pos )
 {
 	crowdClearLanes( members );		// whatever this order hands out replaces the last one entirely
@@ -1704,6 +1703,39 @@ static void crowdSeedLanes( std::list<Object *>& members, const Coord3D& center,
 	if (TheGlobalData->m_showLanes)
 		DEBUG_LOG(("SHOWLANES crowdSeedLanes: members=%d lanes=%d spacing=%.1f bias=%.1f\n",
 			count, lanes, spacing, bias));
+}
+
+/** Where a waypoint-follow should spread across.  doWaves parks the team, then asks for the closest
+		point on the approach path, which is often under their feet: crowdSeedLanes then sees no
+		direction and hands nobody a lane.  The first link is the next point they will actually drive
+		at. */
+static const Coord3D *crowdWaypointAim( const Coord3D& center, const Waypoint *way )
+{
+	if (way == NULL)
+		return NULL;
+	const Coord3D *pos = way->getLocation();
+	Coord2D d;
+	d.x = pos->x - center.x;
+	d.y = pos->y - center.y;
+	if (d.length() > 1.0f)
+		return pos;
+	if (way->getNumLinks() > 0)
+	{
+		const Waypoint *next = way->getLink( 0 );
+		if (next != NULL)
+			return next->getLocation();
+	}
+	return pos;
+}
+
+static void crowdSeedLanesAlongWaypoint( AIGroup *group, std::list<Object *>& members, const Waypoint *way )
+{
+	if (group == NULL || way == NULL)
+		return;
+	Coord2D min, max;
+	Coord3D center;
+	group->getMinMaxAndCenter( &min, &max, &center );
+	crowdSeedLanes( members, center, crowdWaypointAim( center, way ) );
 }
 
 /**
@@ -2293,6 +2325,7 @@ void AIGroup::groupTightenToPosition( const Coord3D *pos, Bool addWaypoint, Comm
  */
 void AIGroup::groupFollowWaypointPath( const Waypoint *way, CommandSourceType cmdSource )
 {
+	crowdSeedLanesAlongWaypoint( this, m_memberList, way );
 	std::list<Object *>::iterator i;
 	for( i = m_memberList.begin(); i != m_memberList.end(); ++i )
 	{
@@ -2309,6 +2342,7 @@ void AIGroup::groupFollowWaypointPath( const Waypoint *way, CommandSourceType cm
  */
 void AIGroup::groupFollowWaypointPathExact( const Waypoint *way, CommandSourceType cmdSource )
 {
+	crowdSeedLanesAlongWaypoint( this, m_memberList, way );
 	std::list<Object *>::iterator i;
 	for( i = m_memberList.begin(); i != m_memberList.end(); ++i )
 	{
@@ -2358,6 +2392,9 @@ void AIGroup::groupMoveToAndEvacuateAndExit( const Coord3D *pos, CommandSourceTy
  */
 void AIGroup::groupFollowWaypointPathAsTeam( const Waypoint *way, CommandSourceType cmdSource )
 {
+	/* A wave leaves on this order, not on groupMoveToPosition.  Without a lane every member drives
+		 the centre of the same road, which is the single file the crowd model was written to stop. */
+	crowdSeedLanesAlongWaypoint( this, m_memberList, way );
 	std::list<Object *>::iterator i;
 	for( i = m_memberList.begin(); i != m_memberList.end(); ++i )
 	{
@@ -2374,6 +2411,7 @@ void AIGroup::groupFollowWaypointPathAsTeam( const Waypoint *way, CommandSourceT
  */
 void AIGroup::groupFollowWaypointPathAsTeamExact( const Waypoint *way, CommandSourceType cmdSource )
 {
+	crowdSeedLanesAlongWaypoint( this, m_memberList, way );
 	std::list<Object *>::iterator i;
 	for( i = m_memberList.begin(); i != m_memberList.end(); ++i )
 	{
