@@ -223,6 +223,7 @@ void CleanupHazardUpdate::fireWhenReady()
 				//re-evaluate by forcing a new scan.
 				m_nextScanFrames = GameLogicRandomValue( 0, 3 );
 				m_bestTargetID = INVALID_ID;
+				m_inRange = false;	// or every later out-of-range target rescans and drops too
 				if( !m_nextScanFrames )
 				{
 					scanClosestTarget();

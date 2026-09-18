@@ -89,6 +89,7 @@ StealthUpdateModuleData::StealthUpdateModuleData()
     m_enemyDetectionEvaEvent = EVA_Invalid;
     m_ownDetectionEvaEvent = EVA_Invalid;
     m_grantedBySpecialPower = FALSE;
+    m_useRiderStealth = FALSE;
 }
 
 
@@ -618,7 +619,9 @@ UpdateSleepTime StealthUpdate::update( void )
 	Object *self = getObject();
 	Object *stealthOwner = calcStealthOwner();
 
-	UnsignedInt stealthDelay;
+	// our own delay unless a rider's stealth module overrides it below; a rider without one left
+	// this as stack garbage
+	UnsignedInt stealthDelay = getStealthUpdateModuleData()->m_stealthDelay;
 
 	if( self == stealthOwner )
 	{
@@ -875,7 +878,9 @@ void StealthUpdate::markAsDetected(UnsignedInt numFrames)
 	Object *self = getObject();
 	Object *stealthOwner = calcStealthOwner();
 
-	UnsignedInt stealthDelay, orderIdlesToAttack;
+	// our own rules unless a rider's stealth module overrides them below
+	UnsignedInt stealthDelay = getStealthUpdateModuleData()->m_stealthDelay;
+	UnsignedInt orderIdlesToAttack = getStealthUpdateModuleData()->m_orderIdleEnemiesToAttackMeUponReveal;
 	if( self == stealthOwner )
 	{
 		const StealthUpdateModuleData *data = getStealthUpdateModuleData();
@@ -1058,7 +1063,7 @@ void StealthUpdate::changeVisualDisguise()
 
 		const ThingTemplate *tTemplate = self->getTemplate();
 
-		TheThingFactory->newDrawable( tTemplate );
+		draw = TheThingFactory->newDrawable( tTemplate );	// the old one was just freed
 		if( draw )
 		{
 			TheGameLogic->bindObjectAndDrawable(self, draw);

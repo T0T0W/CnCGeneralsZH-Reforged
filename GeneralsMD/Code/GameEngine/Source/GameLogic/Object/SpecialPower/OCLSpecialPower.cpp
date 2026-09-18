@@ -152,7 +152,9 @@ OCLSpecialPower::~OCLSpecialPower( void )
 //-------------------------------------------------------------------------------------------------
 void OCLSpecialPower::doSpecialPowerAtLocation( const Coord3D *loc, Real angle, UnsignedInt commandOptions )
 {
-	if (getObject()->isDisabled())
+	// the whole refusal, not just disabled: the base call below returns early on a paused power or a
+	// Pro Rules refusal, but the OCL further down was created anyway, with no recharge started
+	if (isRefused())
 		return;
 
 	// sanity
@@ -206,7 +208,9 @@ void OCLSpecialPower::doSpecialPowerAtLocation( const Coord3D *loc, Real angle, 
 			break;
 		case USE_OWNER_OBJECT:
 			creationCoord.set( &targetCoord );
-			ObjectCreationList::create( ocl, getObject(), &creationCoord, &targetCoord, angle, false );
+			// (Bool)FALSE picks the createOwner overload; with the Real angle beside it, false became
+			// lifetimeFrames = 0 and a new transport was made after all
+			ObjectCreationList::create( ocl, getObject(), &creationCoord, &targetCoord, (Bool)FALSE );
 			break;
 		case CREATE_ABOVE_LOCATION:
 			// this is the case where the special power stuff originates above the location of the mouse click
@@ -233,7 +237,7 @@ void OCLSpecialPower::doSpecialPowerAtObject( Object *obj, UnsignedInt commandOp
 // ------------------------------------------------------------------------------------------------
 void OCLSpecialPower::doSpecialPower( UnsignedInt commandOptions )
 {
-	if (getObject()->isDisabled())
+	if (isRefused())
 		return;
 
 	Coord3D creationCoord;

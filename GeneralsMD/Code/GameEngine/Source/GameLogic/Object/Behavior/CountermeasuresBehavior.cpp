@@ -172,6 +172,8 @@ ObjectID CountermeasuresBehavior::calculateCountermeasureToDivertTo( const Objec
 	if( !m_counterMeasures.empty() )
 	{
 		--it;
+		// step back on every pass: stepping only past missing flares weighed the newest flare
+		// volleySize times, and could walk off the front of a short list
 		while( iteratorMax-- )
 		{
 			Object *obj = TheGameLogic->findObjectByID( *it );
@@ -184,10 +186,9 @@ ObjectID CountermeasuresBehavior::calculateCountermeasureToDivertTo( const Objec
 					closestFlare = obj;
 				}
 			}
-			else
-			{
-				--it;
-			}
+			if( it == m_counterMeasures.begin() )
+				break;
+			--it;
 		}
 	}
 
@@ -390,7 +391,7 @@ void CountermeasuresBehavior::xfer( Xfer *xfer )
 	// extend base class
 	UpgradeMux::upgradeMuxXfer( xfer );
 
-	if( currentVersion >= 2 )
+	if( version >= 2 )
 	{
 		xfer->xferSTLObjectIDVector( &m_counterMeasures );
 		xfer->xferUnsignedInt( &m_availableCountermeasures );

@@ -146,11 +146,20 @@ public:
 	virtual StateReturnType update();
 	virtual StateReturnType onEnter();
 protected:
-	// snapshot interface	STUBBED - no member vars to save. jba.
+	// snapshot interface
 	virtual void crc( Xfer *xfer ){};
-	virtual void xfer( Xfer *xfer ){XferVersion cv = 1;	XferVersion v = cv; xfer->xferVersion( &v, cv );}
+	// version 2: the facing is saved, or a plane loaded on its way out reads a zero vector as a
+	// hard turn and kills itself
+	virtual void xfer( Xfer *xfer )
+	{
+		XferVersion cv = 2;
+		XferVersion v = cv;
+		xfer->xferVersion( &v, cv );
+		if( v >= 2 )
+			xfer->xferCoord3D( &facingDirectionUponDelivery );
+	}
 	virtual void loadPostProcess(){};
-  
+
   Coord3D facingDirectionUponDelivery;
 };
 EMPTY_DTOR(HeadOffMapState)

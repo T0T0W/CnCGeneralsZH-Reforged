@@ -720,7 +720,7 @@ StateReturnType DeliveringState::update() // Kick a dude out every so often
 	}
 
 	//Handle contained payload delivery.
-	if( items )
+	if( items && !items->empty() )
 	{
 		Object* item = items->front();
 
@@ -1036,7 +1036,7 @@ void ConsiderNewApproachState::onExit( StateExitType status )
 	}
 
 	// go back to normal.
-	ai->getCurLocomotor()->setAllowInvalidPosition(true);
+	ai->getCurLocomotor()->setAllowInvalidPosition(false);
 }
 
 //-------------------------------------------------------------------------------------------------

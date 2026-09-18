@@ -53,6 +53,7 @@ SupplyCenterProductionExitUpdate::SupplyCenterProductionExitUpdate( Thing *thing
 {
 	// no rally point has been set
 	m_rallyPointExists = false;
+	m_rallyPoint.zero();
 	setWakeFrame(getObject(), UPDATE_SLEEP_FOREVER);
 }
 
@@ -143,7 +144,7 @@ void SupplyCenterProductionExitUpdate::exitObjectViaDoor( Object *newObj, ExitDo
 			//GPS scrambler. We want that to take precendence.
 			if( getObject()->testStatus( OBJECT_STATUS_STEALTHED ) )
 			{
-				if( stealth->isTemporaryGrant() || !newObj->testStatus( OBJECT_STATUS_CAN_STEALTH ) )
+				if( stealth && ( stealth->isTemporaryGrant() || !newObj->testStatus( OBJECT_STATUS_CAN_STEALTH ) ) )
 				{
 					stealth->receiveGrant( TRUE, md->m_grantTemporaryStealthFrames );
 				}

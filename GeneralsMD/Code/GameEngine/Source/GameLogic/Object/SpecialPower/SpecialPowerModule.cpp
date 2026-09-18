@@ -741,10 +741,16 @@ void SpecialPowerModule::doSpecialPowerAtObject( Object *obj, UnsignedInt comman
 }  
 
 //-------------------------------------------------------------------------------------------------
+Bool SpecialPowerModule::isRefused() const
+{
+	return m_pausedCount > 0 || getObject()->isDisabled() || proRulesRefuse( getObject(), getSpecialPowerTemplate() );
+}
+
+//-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 void SpecialPowerModule::doSpecialPowerAtLocation( const Coord3D *loc, Real angle, UnsignedInt commandOptions )
 {
-	if (m_pausedCount > 0 || getObject()->isDisabled() || proRulesRefuse( getObject(), getSpecialPowerTemplate() )) {
+	if (isRefused()) {
 		return;
 	}
 

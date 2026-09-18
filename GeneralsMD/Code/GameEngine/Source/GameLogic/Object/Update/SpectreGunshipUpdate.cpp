@@ -207,6 +207,9 @@ Bool SpectreGunshipUpdate::initiateIntentToDoSpecialPower(const SpecialPowerTemp
 		UnsignedInt now = TheGameLogic->getFrame();
 		m_specialPowerModule->setReadyFrame( now );
    	m_initialTargetPosition.set( targetPos );
+		// a fresh gunship, so these were (0,0,0): the AI's and scripts' gunships aimed at the map corner
+		m_overrideTargetDestination.set( targetPos );
+		m_gattlingTargetPosition.set( targetPos );
 		setLogicalStatus( GUNSHIP_STATUS_INSERTING );
 	}
 

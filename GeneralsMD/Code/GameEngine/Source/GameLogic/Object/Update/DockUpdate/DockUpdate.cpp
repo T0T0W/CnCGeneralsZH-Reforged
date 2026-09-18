@@ -422,8 +422,19 @@ UpdateSleepTime DockUpdate::update()
 	// forever and this dock never granted entry to anyone again - the classic "supply center stops
 	// accepting trucks" stall.
 	//
+	// Clear what cancelDock() would have: a stale m_dockerInside makes a crippled warehouse kill the
+	// next truck while it is still outside.
 	if( m_activeDocker != INVALID_ID && TheGameLogic->findObjectByID( m_activeDocker ) == NULL )
+	{
 		m_activeDocker = INVALID_ID;
+		m_dockerInside = FALSE;
+		ModelConditionFlags clear;
+		clear.set( MODELCONDITION_DOCKING_ENDING );
+		clear.set( MODELCONDITION_DOCKING_BEGINNING );
+		clear.set( MODELCONDITION_DOCKING_ACTIVE );
+		clear.set( MODELCONDITION_DOCKING );
+		getObject()->clearModelConditionFlags( clear );
+	}
 
 	if( m_activeDocker == INVALID_ID  &&  !m_dockCrippled )
 	{
@@ -529,11 +540,14 @@ void DockUpdate::loadDockPositions()
 			if( m_numberApproachPositions != DYNAMIC_APPROACH_VECTOR_FLAG )
 			{
 				// Dynamic means no bones
+				// Only the bones found are written, and an INI count above the array would overrun it;
+				// copying unwritten stack slots put garbage (and a desync) into the approach positions.
 				Coord3D approachBones[DEFAULT_APPROACH_VECTOR_SIZE];
-				m_numberApproachPositionBones = myDrawable->getPristineBonePositions( "DockWaiting", 1, approachBones, NULL, m_numberApproachPositions);
+				Int maxBones = min( m_numberApproachPositions, (Int)DEFAULT_APPROACH_VECTOR_SIZE );
+				m_numberApproachPositionBones = myDrawable->getPristineBonePositions( "DockWaiting", 1, approachBones, NULL, maxBones );
 				if( m_numberApproachPositions == m_approachPositions.size() )//safeguard: will always be true
 				{
-					for( Int copyIndex = 0; copyIndex < m_numberApproachPositions; ++copyIndex )
+					for( Int copyIndex = 0; copyIndex < m_numberApproachPositionBones; ++copyIndex )
 					{
 						m_approachPositions[copyIndex] = approachBones[copyIndex];
 					}
@@ -631,6 +645,8 @@ void DockUpdate::xfer( Xfer *xfer )
 		// Vector of Bool gets packed as bitfield internally
 		Bool unpack = m_approachPositionReached[vectorIndex];
 		xfer->xferBool( &unpack );
+		if( xfer->getXferMode() == XFER_LOAD )
+			m_approachPositionReached[vectorIndex] = unpack;
 	}
 
 	// active docker

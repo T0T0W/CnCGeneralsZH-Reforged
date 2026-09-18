@@ -870,6 +870,7 @@ private:
 	Coord3D			m_rescueTo;									///< the free ground a wedged unit is backing out to.
 	UnsignedInt	m_rescueUntil;							///< frame that manoeuvre gives up (0 = not backing out).
 	UnsignedInt	m_rescueCool;								///< no second drastic thing before this frame.
+	Bool				m_repathAsked;							///< crowdRepath ran this doLocomotor; keep its blocked count for the move state.
 	Real				m_bumpSpeedLimit;						///< Max speed after bumping a unit.
 	UnsignedInt	m_ignoreCollisionsUntil;		///< Timer to cheat if we get stuck.
 	/**

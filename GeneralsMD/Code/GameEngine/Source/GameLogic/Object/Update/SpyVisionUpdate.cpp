@@ -196,7 +196,12 @@ void SpyVisionUpdate::doActivationWork( Player *playerToSetFor, Bool setting )
 	const SpyVisionUpdateModuleData *data = getSpyVisionUpdateModuleData();
 	if( playerToSetFor == NULL  ||  ThePlayerList == NULL )
 		return;
-	
+
+	// setVisionSpied is reference counted: switching on twice (a power fired while it is already
+	// on) and off once left the enemy spied for good
+	if( setting == m_currentlyActive )
+		return;
+
 	for (Int i=0; i < ThePlayerList->getPlayerCount(); ++i)
 	{
 		Player *player = ThePlayerList->getNthPlayer(i);

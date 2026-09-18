@@ -200,8 +200,8 @@ void EMPUpdate::doDisableAttack( void )
 		}
 	}
 
-	SimpleObjectIterator *iter;
-	Object *curVictim;
+	SimpleObjectIterator *iter = NULL;
+	Object *curVictim = NULL;
 
 	if (radius > 0.0f)
 	{
@@ -379,15 +379,26 @@ void EMPUpdate::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: the timers and scale, or a load re-times the pulse from the load frame and disables twice */
 // ------------------------------------------------------------------------------------------------
 void EMPUpdate::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
+
+	if( version >= 2 )
+	{
+		UpdateModule::xfer( xfer );
+		xfer->xferUnsignedInt( &m_dieFrame );
+		xfer->xferUnsignedInt( &m_tintEnvFadeFrames );
+		xfer->xferUnsignedInt( &m_tintEnvPlayFrame );
+		xfer->xferReal( &m_targetScale );
+		xfer->xferReal( &m_currentScale );
+	}
 
 }  // end xfer
 
@@ -503,8 +514,8 @@ void LeafletDropBehavior::doDisableAttack( void )
 	Real curVictimDistSqr;
 	const Coord3D *pos = object->getPosition();
 
-	SimpleObjectIterator *iter;
-	Object *curVictim;
+	SimpleObjectIterator *iter = NULL;
+	Object *curVictim = NULL;
 
 	if (radius > 0.0f)
 	{

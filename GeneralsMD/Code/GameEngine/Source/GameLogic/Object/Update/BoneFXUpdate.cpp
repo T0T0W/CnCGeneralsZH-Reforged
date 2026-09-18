@@ -448,8 +448,18 @@ void BoneFXUpdate::doParticleSystemAtBone(const ParticleSystemTemplate *particle
 	Object *building = getObject();
 
 	ParticleSystem *psys = TheParticleSystemManager->createParticleSystem(particleSystemTemplate);
-	if (psys != NULL) 
+	if (psys != NULL)
 	{
+		// drop the systems that have already died: a repeating emitter otherwise grows this list for
+		// the whole match, and its saved count is only an UnsignedShort
+		std::vector<ParticleSystemID>::iterator live = m_particleSystemIDs.begin();
+		while (live != m_particleSystemIDs.end())
+		{
+			if (TheParticleSystemManager->findParticleSystem(*live) == NULL)
+				live = m_particleSystemIDs.erase(live);
+			else
+				++live;
+		}
 		m_particleSystemIDs.push_back(psys->getSystemID());
 		psys->setPosition(bonePosition);
 		psys->attachToObject(building);

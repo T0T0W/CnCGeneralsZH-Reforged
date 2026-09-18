@@ -167,7 +167,12 @@ found and fixed â€” EA's own, not port damage.**
 - A unit that was driving somewhere when you saved is still driving there when you load. One flag was written to the save twice and another not at all, so every loaded unit came back claiming to stand still, and everything that asks - a bike waiting for its rider, a mob following its leader, an ability that breaks if you move - believed it.
 - A game saved after losing a supply center loads again. When a truck looked for somewhere to drop its cash and found a center that had been destroyed, it took the center off one list and counted it off the other, so the save recorded the wrong number of supply docks and could not be read back.
 - Your units decide the same way on both machines whether to chase what they spotted on their own. That answer was read from uninitialised memory, so the same order could send one player's tank after a target and leave the other's standing.
-- A shell already in the air finishes its flight after a load instead of going off in the launcher's face.
+- A shell already in the air finishes its flight after a load instead of going off in the launcher's face. It keeps the launcher's veterancy bonus too, and a smart bomb keeps homing.
+- Supply trucks queued at a dock carry on after a load. Their place in the queue was written to the save and never read back, so every dock stopped letting anyone in until a thirty-second timeout sent the trucks round again.
+- A cargo plane or bomber on its way off the map at save time flies on after a load. Its heading was not saved, so the first turn read as a sharp one and the plane was destroyed where it was.
+- An EMP pulse, a bike being scuttled, a building's evacuation side and a horde's bonus all come back from a save as they went in.
+- Where a supply dock's waiting spots are is the same on every machine. A dock with fewer spots in its model than in its data filled the rest from leftover memory, a different place on each computer.
+- A building's toppling bursts are timed the same on every machine. They were timed off the picture's random numbers and created game objects, so two players could see different debris.
 - An aircraft carrier remembers the order it was given, and each runway its own ramp.
 - A barracks that has already put its mob on the street does not put a second one out after a load.
 - Effects tied together - a smoke column and its embers - stay tied together across a save.
@@ -313,12 +318,26 @@ found and fixed â€” EA's own, not port damage.**
 - A unit lifts the fog only half as far again as its guns reach: enough to spot what it is about to fight, not enough to scout. A rifleman used to see well past the range of his rifle, so any cheap soldier was a scout. Artillery that outshoots its own eyes still needs a spotter, and units with no weapon at all, like bulldozers and supply trucks, keep the sight they had. Buildings are unchanged.
 - Hills and buildings block sight. A tank at the foot of a ridge used to see straight through it to the far side, and a squad in a city saw through every block around it. Now the fog stays on whatever a ridge, a building or a tree hides, yours, the enemy's or a civilian's, and a unit on high ground looks down over everything below it. Aircraft fly above it all and see past. Soldiers garrisoned in a building still see out of it; its own walls do not blind them.
 - High ground pays. A tank on a ridge now shoots, sees and picks its targets further down the slope than it could on the flat: three steps of range for every step of height over its target, up to twice its usual reach. Firing uphill costs nothing, and aircraft get no bonus from flying. Defences count too, and the range ring you see while placing one bends outward wherever the ground falls away, so you can site a Gattling Cannon on a hill and see exactly what it covers.
+- The five soldiers in an Overlord's battle bunker live through the Overlord's death again. A rule added in this build, that nobody gets out of a vehicle which is itself being carried, caught the bunker too, so all five died on the spot where they used to take half damage and climb out.
+- Pro Rules hold for the nuke and the carpet bomb whoever fires them. The refusal stopped the recharge but not the missile: a computer player or a map script could launch a neutron missile the rules forbid, and because the timer never started, launch it again straight away.
+- A Spectre gunship called in by the computer or a map script circles its target. Its aim point and its gun's aim point were only set for a gunship you called yourself, so theirs lined up on the corner of the map and walked across from there before the howitzer could fire.
+- A campaign's scripted drop from a B-52 or a cargo plane already in the air uses that plane. The instruction to leave the plane alone reached the game as a lifetime of zero, and a second transport was made at the drop point.
+- A radar upgrade finished while its building was knocked out counted twice, and you kept the radar after the building was gone. It counts once.
+- A unit built to survive on one hit point survives armour too. The cap was applied to the raw shot, before armour multiplied it, so anything weak to the weapon still died. The Battle Bus had it worse: the killing blow ran its death, then its second life revived it anyway.
+- A building cleared by a Neutron Shell forgets the stealthed GLA soldiers it held. It kept counting them, so the Rangers who moved in next could be walked in on by an enemy and thrown out.
+- A Point Defence Laser leads a fast missile the way its data says it should. The predicted position was worked out and then the distance was measured to where the missile already was. It also stopped firing one last shot at a missile that had just left its range.
+- An Angry Mob bought at a barracks walks out one at a time, as the stagger in its data asks. The delay between members was calculated and thrown away, so the whole mob appeared at the door at once. A mob that loses its leader can take back the stragglers, which nothing could do before because every name in the list was skipped.
+- A missile fooled by flares goes for the nearest flare of the last volley. It weighed the newest flare several times over and never looked at the others.
+- A toppling building crushes the strip across its fall at any angle. The line was only square to the fall when the building fell along an axis; at forty-five degrees it ran down the length of the building and missed the units beside it.
+- A transport killed by the blast of a Terrorist riding in it puts the other passengers out. They were handed back to a vehicle that had already died and were deleted with it, unseen.
+- Something that knocks a unit off its feet lets it stand again. The flailing pose could outlast the stun and stay for good.
 
 ## One crate, one collector
 
 - Salvage gets collected. A wreck leaves money and a free upgrade lying on the ground, and the game asked you to spot it in the middle of the fight that made it, work out which of your units was allowed to take it, and drive that one over it by hand. Nobody does that, so most salvage on most maps timed out where it fell. Whoever is standing nearest with nothing to do goes and gets it now: a unit that can still be upgraded off it goes first, however far back it is standing, and failing that the nearest idle unit takes the cash. Only idle units, so nothing is ever pulled out of a fight or off an order, and dozers and harvesters are left to the job they are already earning at.
 - And anybody can take the money. A salvage crate could only be picked up by a unit that salvages, so one dropped among troops who could not use it was money that belonged to nobody. The parts still only go to a salvager - the weapon, the armour, the promotion - but the cash goes to whoever drives over it.
 - A crate pays once per frame, not once per soldier who touched it.
+- A unit that kills something carrying a crate now goes for the crate. The game noted the crate, then forgot which one before it looked, so the "pick up what I just dropped" order at seven places in the code never once fired.
 - A thrown vehicle's crash damage hits the pile once, not once per unit.
 - A dying unit is no longer promoted by its last kill.
 - Healing no longer counts as damage, so a medic stops revealing its stealth unit.
@@ -810,6 +829,11 @@ found and fixed â€” EA's own, not port damage.**
 - Poison clouds, mine clearing, garrison kills and crew-killing weapons: all traced and fixed.
 - Blowing up a full transport is survivable now, in every remaining variant.
 - A unit can no longer load into a vehicle that no longer exists.
+- Selling or losing an airfield under a jet on its takeoff roll no longer takes the game down. The jet takes off.
+- A Particle Uplink Cannon fired by a script along a path no longer crashes at the path's last waypoint.
+- A damage effect whose attacker died first no longer crashes the game, and neither does a flash-bang into a building with fewer soldiers than it was meant to kill.
+- A disguised bomb truck losing its disguise used to rebuild itself onto the image it had just thrown away. It gets a fresh one now.
+- A second exit order while a railed transport is still pushing a unit out no longer leaves the first one frozen half out of the door, unselectable, for the rest of the match.
 - A unit that kills itself survives its own turn now.
 - Sniping an empty bike, formation moves and hacker evasion no longer crash.
 - An order naming a player who is not there is dropped instead of crashing.
@@ -1012,6 +1036,13 @@ found and fixed â€” EA's own, not port damage.**
 - A tracked unit braking while sitting exactly on the spot it was sent to divided nothing by
   nothing. The result stayed in its brakes and was multiplied into the next push it was given, and
   a vehicle handed a number that is not a number goes somewhere no player asked for.
+- A wedged tank backs out along its route, not towards the corner of the map. The check that
+  decides whether a unit is getting anywhere, and the sideways and backwards escape it tries when it
+  is not, both measured against a point that was always the map's origin. And when that escape asked
+  for a new route, the request was wiped out in the same frame, so the route never came. Over twenty
+  brutal battles on Twilight Flame, units spent 8% less time wedged and 4% less time blocked, with 14%
+  more new routes actually planned. One of those twenty went the other way: a unit sat stuck for most
+  of the match, and why is not known yet.
 
 ## Long orders stopped hitching
 

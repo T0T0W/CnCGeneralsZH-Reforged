@@ -124,18 +124,25 @@ void SmartBombTargetHomingUpdate::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: the target, or a bomb falling at save time drops unguided after the load */
 // ------------------------------------------------------------------------------------------------
 void SmartBombTargetHomingUpdate::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
 	// extend base class
 	UpdateModule::xfer( xfer );
+
+	if( version >= 2 )
+	{
+		xfer->xferBool( &m_targetReceived );
+		xfer->xferCoord3D( &m_target );
+	}
 
 
 }  // end xfer

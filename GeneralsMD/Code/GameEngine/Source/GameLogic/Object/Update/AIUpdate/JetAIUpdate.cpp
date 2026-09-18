@@ -872,17 +872,26 @@ public:
 			//As it approaches the end of the runway, the plane will gain more lift, even if it's already
 			//going quickly. Using speed for lift is bad in the case of the aircraft carrier, because
 			//we don't want it to take off quickly.
-			ParkingPlaceBehaviorInterface::PPInfo ppinfo;
-			pp->calcPPInfo( jet->getID(), &ppinfo );
-			Coord3D vector = ppinfo.runwayEnd;
-			vector.sub( jet->getPosition() );
-			Real dist = vector.length();
-			
-			Real ratio = 1.0f - (dist / ppinfo.runwayTakeoffDist);
-			ratio *= ratio; //dampen it....
-			if (ratio < 0.0f) ratio = 0.0f;
-			if (ratio > 1.0f) ratio = 1.0f;
-			jetAI->getCurLocomotor()->setMaxLift(m_maxLift * ratio);
+			// the airfield can be sold or destroyed under a jet on its takeoff roll: no runway left
+			// to measure against, so give it full lift and let it go
+			if (pp)
+			{
+				ParkingPlaceBehaviorInterface::PPInfo ppinfo;
+				pp->calcPPInfo( jet->getID(), &ppinfo );
+				Coord3D vector = ppinfo.runwayEnd;
+				vector.sub( jet->getPosition() );
+				Real dist = vector.length();
+
+				Real ratio = 1.0f - (dist / ppinfo.runwayTakeoffDist);
+				ratio *= ratio; //dampen it....
+				if (ratio < 0.0f) ratio = 0.0f;
+				if (ratio > 1.0f) ratio = 1.0f;
+				jetAI->getCurLocomotor()->setMaxLift(m_maxLift * ratio);
+			}
+			else
+			{
+				jetAI->getCurLocomotor()->setMaxLift(m_maxLift);
+			}
 		}
 
 		StateReturnType ret = AIFollowPathState::update();

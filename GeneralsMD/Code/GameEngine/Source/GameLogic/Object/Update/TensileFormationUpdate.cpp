@@ -302,7 +302,7 @@ UpdateSleepTime TensileFormationUpdate::update( void )
 
 
 	Object *tree = ThePartitionManager->getClosestObject( &newPos, getObject()->getGeometryInfo().getMajorRadius(), FROM_CENTER_2D );
-	if (tree->isKindOf( KINDOF_SHRUBBERY ))
+	if (tree && tree != getObject() && tree->isKindOf( KINDOF_SHRUBBERY ))	// nothing in reach comes back NULL
 		tree->topple( &m_inertia, m_inertia.length(), 1 );//No Bounce
 
 

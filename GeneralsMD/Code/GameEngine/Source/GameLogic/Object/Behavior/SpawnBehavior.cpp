@@ -240,7 +240,7 @@ UpdateSleepTime SpawnBehavior::update( void )
 					--burstInitCount;
 					birthFrame += (listIndex*SPAWN_DELAY_MIN_FRAMES);
 				}
-				m_replacementTimes.push_back( runtimeProduced  );// Set all spawns to be created in rapid succession
+				m_replacementTimes.push_back( birthFrame );// Set all spawns to be created in rapid succession
 			}
 			else
 				m_replacementTimes.push_back( listIndex );// Set all spawns to be created as soon as possible
@@ -596,18 +596,20 @@ Object *SpawnBehavior::reclaimOrphanSpawn( void )
 	// This block scans the list for matchTemplates 
 	//
 
+	// Closest over every template, so reset once. compare() is zero on a match: the old test skipped
+	// every name that differed from the previous one, which was every name, and nothing was reclaimed.
 	OrphanData orphanData;
+	orphanData.m_source = getObject();
+	orphanData.m_closest = NULL;
+	orphanData.m_closestDistSq = BIG_DISTANCE;
 	AsciiString prevName = "";
 	for (std::vector<AsciiString>::const_iterator tempName = md->m_spawnTemplateNameData.begin();
-			tempName != md->m_spawnTemplateNameData.end(); 
+			tempName != md->m_spawnTemplateNameData.end();
 			++tempName)
 	{
-		if (prevName.compare(*tempName)) // the list may have redundancy, this will skip some of it
+		if (prevName.compare(*tempName) == 0) // the list may have redundancy, this will skip some of it
 			continue;
-		orphanData.m_matchTemplate = TheThingFactory->findTemplate( *tempName );;
-		orphanData.m_source = getObject();
-		orphanData.m_closest = NULL;
-		orphanData.m_closestDistSq = BIG_DISTANCE;
+		orphanData.m_matchTemplate = TheThingFactory->findTemplate( *tempName );
 		player->iterateObjects( findClosestOrphan, &orphanData );
 		prevName = *tempName;
 	}
@@ -1008,9 +1010,12 @@ void SpawnBehavior::computeAggregateStates(void)
 
 	// HEALTH BOX POSITION *****************************
 	// pick a centered, average spot to draw the health box 
-	avgSpawnPos.scale(1.0f / spawnCount);
-	avgSpawnPos.sub(obj->getPosition());
-	obj->setHealthBoxOffset(avgSpawnPos);
+	if ( spawnCount )	// no living members: 1/0 made the offset NaN
+	{
+		avgSpawnPos.scale(1.0f / spawnCount);
+		avgSpawnPos.sub(obj->getPosition());
+		obj->setHealthBoxOffset(avgSpawnPos);
+	}
 
 
 

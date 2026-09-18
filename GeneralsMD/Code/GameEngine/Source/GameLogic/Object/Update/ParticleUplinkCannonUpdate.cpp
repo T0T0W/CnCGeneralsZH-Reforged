@@ -590,9 +590,13 @@ UpdateSleepTime ParticleUplinkCannonUpdate::update()
 							//Advance to the next waypoint.
 							Int linkCount = way->getNumLinks();
 							Int which = GameLogicRandomValue( 0, linkCount-1 );
-							way = way->getLink( which );
-							m_nextDestWaypointID = way->getID();
-							m_overrideTargetDestination.set( way->getLocation() );
+							// the last waypoint of a path has no links: stay on it, as initiateIntentToDoSpecialPower does
+							Waypoint *next = way->getLink( which );
+							if( next )
+							{
+								m_nextDestWaypointID = next->getID();
+								m_overrideTargetDestination.set( next->getLocation() );
+							}
 						}
 					}
 				}
@@ -955,7 +959,7 @@ void ParticleUplinkCannonUpdate::createGroundToOrbitLaser( UnsignedInt growthFra
 	if( beam )
 	{
 		TheGameClient->destroyDrawable( beam );
-		m_orbitToTargetBeamID = INVALID_DRAWABLE_ID;
+		m_groundToOrbitBeamID = INVALID_DRAWABLE_ID;
 	}
 
 	if( data->m_particleBeamLaserName.isNotEmpty() )
@@ -1119,7 +1123,7 @@ Bool ParticleUplinkCannonUpdate::calculateUpBonePositions()
 		{
 			obj->convertBonePosToWorldPos( &pos, &mtx, &m_connectorNodePosition, &mtx );
 		}
-		if( data->m_connectorBoneName.isNotEmpty() && draw->getCurrentClientBonePositions( data->m_fireBoneName.str(), 0, &pos, &mtx, 1 ) )
+		if( data->m_fireBoneName.isNotEmpty() && draw->getCurrentClientBonePositions( data->m_fireBoneName.str(), 0, &pos, &mtx, 1 ) )
 		{
 			obj->convertBonePosToWorldPos( &pos, &mtx, &m_laserOriginPosition, &mtx );
 		}

@@ -182,7 +182,7 @@ public:
 		return STATE_CONTINUE;
 	}
 
-	void onExit()
+	virtual void onExit( StateExitType status )
 	{
 		Object *owner = getMachineOwner();
 		owner->clearStatus( MAKE_OBJECT_STATUS_MASK( OBJECT_STATUS_RIDER8 ) );
@@ -519,6 +519,10 @@ public:
 		for (Int i = 0; i < numRopes; ++i)
 		{
 			RopeInfo info;
+			// a missing rope template leaves no drawable: zero lengths so update() never animates it
+			info.ropeSpeed = 0.0f;
+			info.ropeLen = 0.0f;
+			info.ropeLenMax = 0.0f;
 
 			obj->convertBonePosToWorldPos( NULL, &dropMtx[i], NULL, &info.dropStartMtx );
 			

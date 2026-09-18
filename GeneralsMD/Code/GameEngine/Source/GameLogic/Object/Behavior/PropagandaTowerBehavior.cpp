@@ -299,7 +299,8 @@ void PropagandaTowerBehavior::onDie( const DamageInfo *damageInfo )
 void PropagandaTowerBehavior::effectLogic( Object *obj, Bool giving,
 																					 const PropagandaTowerBehaviorModuleData *modData )
 {
-	Bool effectUpgraded = getObject()->getControllingPlayer()->hasUpgradeComplete( m_upgradeRequired );
+	// no UpgradeRequired leaves this NULL, which doScan already allows for
+	Bool effectUpgraded = m_upgradeRequired && getObject()->getControllingPlayer()->hasUpgradeComplete( m_upgradeRequired );
 
 	// if giving the effect
 	if( giving )

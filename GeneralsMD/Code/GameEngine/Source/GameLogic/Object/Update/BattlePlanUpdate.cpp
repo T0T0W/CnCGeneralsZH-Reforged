@@ -665,7 +665,7 @@ void BattlePlanUpdate::setStatus( TransitionStatus newStatus )
 					obj->setModelConditionState( MODELCONDITION_DOOR_1_CLOSING );
 					obj->getDrawable()->setAnimationLoopDuration( data->m_bombardmentPlanAnimationFrames );
 					m_nextReadyFrame = now + data->m_bombardmentPlanAnimationFrames;
-					if( m_bombardmentUnpack.getEventName().isNotEmpty() )
+					if( m_bombardmentPack.getEventName().isNotEmpty() )
 					{
 						m_bombardmentPack.setObjectID( obj->getID() );
 						m_bombardmentPack.setPlayingHandle( TheAudio->addAudioEvent( &m_bombardmentPack ) );
@@ -675,7 +675,7 @@ void BattlePlanUpdate::setStatus( TransitionStatus newStatus )
 					obj->setModelConditionState( MODELCONDITION_DOOR_2_CLOSING );
 					obj->getDrawable()->setAnimationLoopDuration( data->m_holdTheLinePlanAnimationFrames );
 					m_nextReadyFrame = now + data->m_holdTheLinePlanAnimationFrames;
-					if( m_holdTheLineUnpack.getEventName().isNotEmpty() )
+					if( m_holdTheLinePack.getEventName().isNotEmpty() )
 					{
 						m_holdTheLinePack.setObjectID( obj->getID() );
 						m_holdTheLinePack.setPlayingHandle( TheAudio->addAudioEvent( &m_holdTheLinePack ) );
@@ -685,7 +685,7 @@ void BattlePlanUpdate::setStatus( TransitionStatus newStatus )
 					obj->setModelConditionState( MODELCONDITION_DOOR_3_CLOSING );
 					obj->getDrawable()->setAnimationLoopDuration( data->m_searchAndDestroyPlanAnimationFrames );
 					m_nextReadyFrame = now + data->m_searchAndDestroyPlanAnimationFrames;
-					if( m_searchAndDestroyUnpack.getEventName().isNotEmpty() )
+					if( m_searchAndDestroyPack.getEventName().isNotEmpty() )
 					{
 						m_searchAndDestroyPack.setObjectID( obj->getID() );
 						m_searchAndDestroyPack.setPlayingHandle( TheAudio->addAudioEvent( &m_searchAndDestroyPack ) );

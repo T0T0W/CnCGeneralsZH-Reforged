@@ -694,7 +694,8 @@ StateReturnType DozerActionDoActionState::update( void )
 			{
 
 				// issue repair complete message, we might want to remove this later cause it could be annoying
-				TheInGameUI->message( "DOZER:RepairComplete" );
+				if( dozer->isLocallyControlled() )
+					TheInGameUI->message( "DOZER:RepairComplete" );
 
 				// we're now complete
 				complete = TRUE;
@@ -2356,15 +2357,7 @@ void DozerAIUpdate::onDelete( void )
 {
 	Int i;
 
-	// cancel any of the tasks we had queued up
-	for( i = DOZER_TASK_FIRST; i < DOZER_NUM_TASKS; ++i )
-	{
-		
-		if( isTaskPending( (DozerTask)i ) )
-			cancelTask( (DozerTask)i );
-			
-	}  // end for i
-
+	// before the cancel below, which forgets every target ID
 	for( i = 0; i < DOZER_NUM_TASKS; i++ )
 	{
 		Object* goalObject = TheGameLogic->findObjectByID(m_task[i].m_targetObjectID);
@@ -2373,6 +2366,15 @@ void DozerAIUpdate::onDelete( void )
 			goalObject->clearModelConditionState(MODELCONDITION_ACTIVELY_BEING_CONSTRUCTED);
 		}
 	}
+
+	// cancel any of the tasks we had queued up
+	for( i = DOZER_TASK_FIRST; i < DOZER_NUM_TASKS; ++i )
+	{
+
+		if( isTaskPending( (DozerTask)i ) )
+			cancelTask( (DozerTask)i );
+
+	}  // end for i
 }
 
 //-------------------------------------------------------------------------------------------------

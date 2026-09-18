@@ -176,18 +176,22 @@ void InactiveBody::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: m_dieCalled, or a loaded object that already died runs its die modules again */
 // ------------------------------------------------------------------------------------------------
 void InactiveBody::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
 	// base class
 	BodyModule::xfer( xfer );
+
+	if( version >= 2 )
+		xfer->xferBool( &m_dieCalled );
 
 }  // end xfer
 

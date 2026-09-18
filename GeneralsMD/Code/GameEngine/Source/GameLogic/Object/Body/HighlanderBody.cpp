@@ -54,8 +54,14 @@ HighlanderBody::~HighlanderBody( void )
 void HighlanderBody::attemptDamage( DamageInfo *damageInfo )
 {
 	// Bind to one hitpoint remaining afterwards, unless it is Unresistable damage
+	// Clamp what lands, not what the weapon carries: armour and the damage scalar are applied after
+	// this, so a raw clamp to health-1 still killed through any armour coefficient above 100%.
 	if( damageInfo->in.m_damageType != DAMAGE_UNRESISTABLE )
-		damageInfo->in.m_amount = min( damageInfo->in.m_amount, getHealth() - 1 );
+	{
+		Real landed = estimateDamage( damageInfo->in ) * getDamageScalar();
+		if( landed > getHealth() - 1 && landed > 0.0f )
+			damageInfo->in.m_amount *= ( getHealth() - 1 ) / landed;
+	}
 
 	ActiveBody::attemptDamage(damageInfo);
 }

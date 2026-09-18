@@ -179,7 +179,8 @@ void StructureToppleUpdate::beginStructureTopple(const DamageInfo *damageInfo)
 		m_delayBurstLocation.z = TheTerrainLogic->getGroundHeight(m_delayBurstLocation.x, m_delayBurstLocation.y);
 
 		doToppleStartFX(building, damageInfo);
-		m_nextBurstFrame = now + GameClientRandomValue(d->m_minToppleBurstDelay, d->m_maxToppleBurstDelay);
+		// logic random: each burst runs doPhaseStuff(STPHASE_DELAY), which creates OCL objects
+		m_nextBurstFrame = now + GameLogicRandomValue(d->m_minToppleBurstDelay, d->m_maxToppleBurstDelay);
 
 		m_toppleState = TOPPLESTATE_WAITINGFORTOPPLESTART;
 
@@ -228,8 +229,8 @@ UpdateSleepTime StructureToppleUpdate::update( void )
 		UnsignedInt now = TheGameLogic->getFrame();
 		if (now >= m_nextBurstFrame) {
 			doToppleDelayBurstFX();
-			// This uses a game client random value because the delay bursts are purely visual and aural effects.
-			m_nextBurstFrame = now + GameClientRandomValue(d->m_minToppleBurstDelay, d->m_maxToppleBurstDelay);
+			// Logic random, not client: the burst also fires the STPHASE_DELAY OCLs, which are logic objects.
+			m_nextBurstFrame = now + GameLogicRandomValue(d->m_minToppleBurstDelay, d->m_maxToppleBurstDelay);
 		}
 		if (now >= m_toppleFrame) {
 			m_toppleState = TOPPLESTATE_TOPPLING;
@@ -276,8 +277,8 @@ UpdateSleepTime StructureToppleUpdate::update( void )
 
 		if (now >= m_nextBurstFrame) {
 			doToppleDelayBurstFX();
-			// This uses a game client random value because the delay bursts are purely visual and aural effects.
-			m_nextBurstFrame = now + GameClientRandomValue(d->m_minToppleBurstDelay, d->m_maxToppleBurstDelay);
+			// Logic random, not client: the burst also fires the STPHASE_DELAY OCLs, which are logic objects.
+			m_nextBurstFrame = now + GameLogicRandomValue(d->m_minToppleBurstDelay, d->m_maxToppleBurstDelay);
 		}
 
 		Object *building = getObject();
@@ -434,7 +435,8 @@ void StructureToppleUpdate::doDamageLine(Object *building, const WeaponTemplate*
 
 	for (Real i = -facingWidth; i < facingWidth; i += WEAPON_SPACING_PARALLEL) 
 	{
-		target.x = building->getPosition()->x + jcos + (i * Sin(toppleAngle));
+		// across the fall line: (-sin, cos) is perpendicular to (cos, sin), (sin, cos) only at 0 and 90 degrees
+		target.x = building->getPosition()->x + jcos - (i * Sin(toppleAngle));
 		target.y = building->getPosition()->y + jsin + (i * Cos(toppleAngle));
 		target.z = TheTerrainLogic->getGroundHeight(target.x, target.y);
 
@@ -446,7 +448,7 @@ void StructureToppleUpdate::doDamageLine(Object *building, const WeaponTemplate*
 	}
 
 	// Make sure there are weapons fired and FX done on the edge of the building.
-	target.x = building->getPosition()->x + jcos + (facingWidth * Sin(toppleAngle));
+	target.x = building->getPosition()->x + jcos - (facingWidth * Sin(toppleAngle));
 	target.y = building->getPosition()->y + jsin + (facingWidth * Cos(toppleAngle));
 	target.z = TheTerrainLogic->getGroundHeight(target.x, target.y);
 

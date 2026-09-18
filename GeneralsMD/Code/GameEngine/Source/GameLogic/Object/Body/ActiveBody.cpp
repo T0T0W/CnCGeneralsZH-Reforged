@@ -562,10 +562,16 @@ void ActiveBody::attemptDamage( DamageInfo *damageInfo )
 			amount = m_currentHealth;
 		}
 
-		if (!alreadyHandled) 
+		if (!alreadyHandled)
 		{
 			// do the damage simplistic damage subtraction
 			internalChangeHealth( -amount );
+		}
+		else
+		{
+			// health did not move; without this m_prevHealth is whatever the last real hit left, and a
+			// subdual or status hit re-ran onDamage and the fear roll off that stale number
+			m_prevHealth = m_currentHealth;
 		}
 
 #ifdef ALLOW_SURRENDER
@@ -1070,7 +1076,8 @@ void ActiveBody::createParticleSystems( const AsciiString &boneBaseName,
 		// pick a bone index to place this particle system at
 		// MDC: moving to GameLogicRandomValue.  This does not need to be synced, but having it so makes searches *so* much nicer.
 		// DTEH: Moved back to GameClientRandomValue because of desync problems. July 27th 2003.
-		Int boneIndex = GameClientRandomValue( 0, maxSystems - i - 1 );
+		// over the bones still free, not the systems still to place: that range only ever reached the first maxSystems bones
+		Int boneIndex = GameClientRandomValue( 0, numBones - i - 1 );
 
 		// find the actual bone location to use and mark that bone index as used
 		Int count = 0;

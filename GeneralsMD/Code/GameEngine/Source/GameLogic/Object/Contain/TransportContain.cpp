@@ -578,7 +578,9 @@ Bool TransportContain::isSpecificRiderFreeToExit(Object* specificObject)
 
 	// If this transport is itself inside something, its passengers have nowhere to step out to -
 	// they would appear inside whatever is carrying us.
-	if (me->isContained())
+	// Not an Overlord or Helix though: their bunker is a transport riding inside them, and treating
+	// it like a truck in a Chinook killed all five soldiers outright whenever the Overlord died.
+	if (me->isContained() && !me->getContainedBy()->getContain()->isSpecialOverlordStyleContainer())
 		return FALSE;
 
   // I can always kick people out if I am in the air, I know what I'm doing

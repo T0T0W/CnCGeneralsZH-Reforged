@@ -473,6 +473,12 @@ void OpenContain::killAllContained( void )
     if ( rider )
     {
 	    it = list.erase(it);
+      // the counts removeFromContainViaIterator keeps: left alone, a building cleared this way
+      // still counted its dead stealth garrison and let the next enemy in on top of new riders
+      if( rider->isKindOf( KINDOF_STEALTH_GARRISON ) )
+        m_stealthUnitsContained--;
+      if( rider->isKindOf( KINDOF_HERO ) )
+        m_heroUnitsContained--;
 
       onRemoving( rider );
 	    rider->onRemovedFrom( getObject() );
@@ -1310,7 +1316,7 @@ void OpenContain::putObjAtNextFirePoint( Object *obj )
 		AsciiString firepoint("FIREPOINT");
 		char suffix[8];
 		itoa( m_firePointNext + 1, suffix, 10 );//+1 from bone names starting at 1, not zero like my array
-		if( m_firePointNext < 10 )
+		if( m_firePointNext + 1 < 10 )	// pad on the number the name uses, not the index
 		{
 			firepoint.concat('0');
 		}
@@ -1521,6 +1527,11 @@ void OpenContain::processDamageToContained(Real percentDamage)
 
 		if( object->isEffectivelyDead() )
 		{
+			// the same counts killAllContained keeps
+			if( object->isKindOf( KINDOF_STEALTH_GARRISON ) )
+				m_stealthUnitsContained--;
+			if( object->isKindOf( KINDOF_HERO ) )
+				m_heroUnitsContained--;
 			onRemoving( object );
 			object->onRemovedFrom( getObject() );
 			it = list.erase( it );
@@ -1534,6 +1545,11 @@ void OpenContain::processDamageToContained(Real percentDamage)
 	// and hand back whoever survived
 	m_containList.swap( list );
 	m_containListSize = (UnsignedInt)m_containList.size();
+
+	// A dying rider can kill the container while the list is parked; its onDie then found nothing
+	// to put out, and the survivors just handed back would be deleted with it, unseen.
+	if( getObject()->isEffectivelyDead() )
+		removeAllContained();
 }
 
 //-------------------------------------------------------------------------------------------------

@@ -107,7 +107,7 @@ UpdateSleepTime FloatUpdate::update( void )
 		const Coord3D *pos = getObject()->getPosition();
 		
 		// get the height of the water here
-		Real waterZ;
+		Real waterZ = pos->z;	// isUnderwater leaves it alone where there is no water
 		TheTerrainLogic->isUnderwater( pos->x, pos->y, &waterZ );
 
 		// snap to the water surface

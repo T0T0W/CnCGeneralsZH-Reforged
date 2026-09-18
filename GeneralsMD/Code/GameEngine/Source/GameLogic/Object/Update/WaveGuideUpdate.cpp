@@ -60,6 +60,7 @@ WaveGuideUpdateModuleData::WaveGuideUpdateModuleData( void )
 {
 	//Added By Sadullah Nader
 	//Initialization(s) inserted
+	m_bridgeParticle = NULL;
 	m_bridgeParticleAngleFudge = 0.0f;
 	m_randomSplashSoundFrequency = 0;
 	m_waveDelay = 0.0f;
@@ -553,7 +554,7 @@ void WaveGuideUpdate::doDamage( void )
 	const WaveGuideUpdateModuleData *modData = getWaveGuideUpdateModuleData();
 
 	// get our position forward unit direction vector
-//	const Coord3D *unitForward = waveGuide->getUnitDirectionVector2D();
+	const Coord3D *unitForward = waveGuide->getUnitDirectionVector2D();
 
 	// iterate over all our sample points and kill stuff around us
 	for( Int i = 0; i < m_shapePointCount; i++ )
@@ -604,9 +605,9 @@ void WaveGuideUpdate::doDamage( void )
 			// get the cosine of the angle between the our forward direction and the vector to the obj
 			// otherwise known as a dot product
 			//
-			angle = v.x * m_transformedShapePoints[ i ].x +
-							v.y * m_transformedShapePoints[ i ].y +
-							v.z * m_transformedShapePoints[ i ].z;
+			// against the forward direction: dotting with the sample point's world position made
+			// "behind the wave" depend on where the map origin is
+			angle = v.x * unitForward->x + v.y * unitForward->y;
 
 			//
 			// we will only do damage if the object is "behind" the wave ... that is, behind

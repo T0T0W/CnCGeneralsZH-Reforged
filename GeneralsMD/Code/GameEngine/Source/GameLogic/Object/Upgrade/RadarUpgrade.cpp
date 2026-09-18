@@ -131,8 +131,10 @@ void RadarUpgrade::upgradeImplementation( void )
 
 	Player *player = getObject()->getControllingPlayer();
 
-	// update the player with another radar facility
-	player->addRadar( md->m_isDisableProof );
+	// update the player with another radar facility; while disabled, Object::onDisabledEdge adds it
+	// on re-enable, and adding it here as well counted it twice (radar kept after the building died)
+	if( !getObject()->isDisabled() )
+		player->addRadar( md->m_isDisableProof );
 
 	// find the radar update module of this object
 	NameKeyType radarUpdateKey = NAMEKEY( "RadarUpdate" );

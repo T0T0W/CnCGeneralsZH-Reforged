@@ -335,6 +335,7 @@ AIUpdateInterface::AIUpdateInterface( Thing *thing, const ModuleData* moduleData
 	m_rescueTo.zero();
 	m_rescueUntil = 0;
 	m_rescueCool = 0;
+	m_repathAsked = FALSE;
 	m_bumpSpeedLimit = FAST_AS_POSSIBLE;
 	m_ignoreCollisionsUntil = 0;
 	m_queueForPathFrame = 0;
@@ -1014,8 +1015,8 @@ Object* AIUpdateInterface::checkForCrateToPickup()
 {
 	if (m_crateCreated != INVALID_ID) 
 	{
-		m_crateCreated = INVALID_ID; // we have processed it, so clear it.
 		Object* crate = TheGameLogic->findObjectByID(m_crateCreated);
+		m_crateCreated = INVALID_ID; // we have processed it, so clear it.
 		if (crate) 
 		{
 			for (BehaviorModule** m = crate->getBehaviorModules(); *m; ++m)
@@ -1932,6 +1933,7 @@ Bool AIUpdateInterface::computePath( PathfindServicesInterface *pathServices, Co
 		// this way out skips the reset at the bottom, and a flag left on would answer for whoever
 		// asks the pathfinder next
 		TheAI->pathfinder()->setIgnoreUnderConstruction( FALSE );
+		TheAI->pathfinder()->setIgnoreObstacleID( INVALID_ID );
 		return computeQuickPath(destination);
 	}
 
@@ -2215,6 +2217,7 @@ Bool AIUpdateInterface::computeAttackPath( PathfindServicesInterface *pathServic
 								&objPos, false, 0.2f, true );
 				}
 				if (m_path==NULL) {
+					TheAI->pathfinder()->setIgnoreObstacleID( INVALID_ID );
 					return false;
 				}
 			}
@@ -2760,6 +2763,7 @@ void AIUpdateInterface::crowdRepath( void )
 {
 	Pathfinder::bumpCrowdRepath();
 	m_blockedFrames = 2 * LOGICFRAMES_PER_SECOND + 1;
+	m_repathAsked = TRUE;
 	m_isBlockedAndStuck = FALSE;
 	m_crowdQueued = 0;
 	m_noProgress = 0;
@@ -3740,6 +3744,10 @@ UpdateSleepTime AIUpdateInterface::doLocomotor( void )
 							// layer is a possible bridge in the path.  Check & set the layer if applicable.
 							TheAI->pathfinder()->updateLayer(getObject(), info.layer);
 						}
+						// updateProgress and the rescue ladder read this as "where the route sends us";
+						// setLocomotorGoalPositionOnPath() zeroes it, so without this they measured
+						// against the map's origin corner
+						m_locomotorGoalData = goalPos;
 				 
 						Real speed = m_desiredSpeed;
 						Real myMaxSpeed = m_curLocomotor->getMaxSpeedForCondition(getObject()->getBodyModule()->getDamageState());
@@ -3833,10 +3841,13 @@ UpdateSleepTime AIUpdateInterface::doLocomotor( void )
 			}
 		}
 		
-		if (!blocked && m_blockedFrames>1) 
+		// a repath asked for this frame is carried in m_blockedFrames; clamping it here threw it away
+		// before the move state could read it
+		if (!blocked && m_blockedFrames>1 && !m_repathAsked)
 		{
 			m_blockedFrames = 1;
 		}
+		m_repathAsked = FALSE;
 
 		// After our movement for the frame, update our AirborneTarget flag.
 		if(getObject()->getHeightAboveTerrain() > m_curLocomotor->getAirborneTargetingHeight() )
@@ -4133,7 +4144,7 @@ void AIUpdateInterface::joinTeam( void )
 		} else {
 			getStateMachine()->setGoalPosition(ai->getGoalPosition());
 		}
-		StateID	state = getCurrentStateID();
+		StateID	state = ai->getCurrentStateID();
 		setLastCommandSource( CMD_FROM_AI );
 		// Match the state.
 		getStateMachine()->setState( state );

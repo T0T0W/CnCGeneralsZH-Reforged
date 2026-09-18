@@ -1098,7 +1098,7 @@ void BridgeBehavior::createScaffolding( void )
 	angleV.x = rightStart.x - leftStart.x;
 	angleV.y = rightStart.y - leftStart.y;
 	Real leftAngle = angleV.toAngle();
-	Real rightAngle = leftAngle + TWO_PI;
+	Real rightAngle = leftAngle + PI;	// the opposite way; + TWO_PI was the same angle
 
 	// compute vector from left to right across bridge and the reverse
 	Coord3D leftVector;

@@ -114,8 +114,10 @@ void RailedTransportAIUpdate::loadWaypointData( void )
 		if( start && end )
 		{
 
-			m_path[ i ].startWaypointID = start->getID();
-			m_path[ i ].endWaypointID = end->getID();
+			// packed: every reader and the xfer walk 0..m_numPaths-1, so a gap in the numbering
+			// left a zero path in slot 0
+			m_path[ m_numPaths ].startWaypointID = start->getID();
+			m_path[ m_numPaths ].endWaypointID = end->getID();
 			m_numPaths++;
 
 		}  // end if

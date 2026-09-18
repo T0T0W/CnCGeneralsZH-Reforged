@@ -298,7 +298,9 @@ void SlavedUpdate::doAttackLogic( const Object *target )
 	//calculate the closest allowable position.
 	const Coord3D *targetPos = target->getPosition();
 	Real dist = ThePartitionManager->getDistanceSquared( me, targetPos, FROM_BOUNDINGSPHERE_2D );
-	if( dist > sqr( data->m_attackRange ) )
+	// the leash is measured from the master, the same point the clamp below is taken from; measured
+	// from the drone it sent a drone far from a near target to a spot past that target
+	if( ThePartitionManager->getDistanceSquared( master, targetPos, FROM_BOUNDINGSPHERE_2D ) > sqr( data->m_attackRange ) )
 	{
 		//The distance is too far, so calculate the best allowable position.
 		Coord3D vector;
@@ -360,7 +362,8 @@ void SlavedUpdate::doScoutLogic( const Coord3D *mastersDestination )
 
 	//First, determine the scout position. If our master's destination is too far away, then we'll 
 	//calculate the closest allowable position.
-	Real dist = ThePartitionManager->getDistanceSquared( me, mastersDestination, FROM_BOUNDINGSPHERE_2D );
+	// from the master, like the clamp below
+	Real dist = ThePartitionManager->getDistanceSquared( master, mastersDestination, FROM_BOUNDINGSPHERE_2D );
 	if( dist > sqr( data->m_scoutRange ) )
 	{
 		//The distance is too far, so calculate the best allowable position.
@@ -643,7 +646,7 @@ void SlavedUpdate::setRepairState( RepairStates repairState )
 							}
 
 							weldingSys->setPosition( &pos );
-							Real time = (Real)(m_framesToWait * LOGICFRAMES_PER_SECOND);
+							Real time = (Real)m_framesToWait;	// already frames
 							weldingSys->setLifetimeRange( time, time );
 
 							AudioEventRTS soundToPlay = TheAudio->getMiscAudio()->m_repairSparks;	

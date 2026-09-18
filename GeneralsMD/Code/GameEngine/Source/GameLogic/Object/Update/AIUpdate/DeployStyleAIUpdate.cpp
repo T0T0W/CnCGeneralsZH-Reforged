@@ -241,7 +241,7 @@ UpdateSleepTime DeployStyleAIUpdate::update( void )
 		case DEPLOY:
 			if( data->m_manualDeployAnimations )
 			{
-				UnsignedInt totalFrames = getPackTime();
+				UnsignedInt totalFrames = getUnpackTime();	// DEPLOY waits the unpack time, see setMyState
 				UnsignedInt framesLeft = m_frameToWaitForDeploy - now;
 				Drawable *draw = self->getDrawable();
 				if( draw )

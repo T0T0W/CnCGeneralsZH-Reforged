@@ -110,18 +110,23 @@ void FXListDie::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: the upgrade mux, as every other UpgradeMux module saves */
 // ------------------------------------------------------------------------------------------------
 void FXListDie::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
 	// extend base class
 	DieModule::xfer( xfer );
+
+	// extend upgrade mux
+	if( version >= 2 )
+		UpgradeMux::upgradeMuxXfer( xfer );
 
 }  // end xfer
 

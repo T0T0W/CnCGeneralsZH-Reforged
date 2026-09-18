@@ -495,7 +495,7 @@ Bool DumbProjectileBehavior::projectileHandleCollision( Object *other )
 				const ContainedItemsList* items = contain->getContainedItemsList();
 				if (items)
 				{
-					for (ContainedItemsList::const_iterator it = items->begin(); *it != NULL && numKilled < d->m_garrisonHitKillCount; )
+					for (ContainedItemsList::const_iterator it = items->begin(); it != items->end() && numKilled < d->m_garrisonHitKillCount; )
 					{
 						Object* thingToKill = *it++;
 						if (!thingToKill->isEffectivelyDead() && thingToKill->isKindOfMulti(d->m_garrisonHitKillKindof, d->m_garrisonHitKillKindofNot))
@@ -742,7 +742,10 @@ void DumbProjectileBehavior::xfer( Xfer *xfer )
 	// version 2 saves how far along its arc the shell is, and rebuilds the arc on load.  Version 1
 	// saved neither: a shell in flight came back at step zero of a path it no longer had, so it
 	// went off in the launcher's face instead of finishing its flight.
-	XferVersion currentVersion = 2;
+	// version 3 adds the launcher's weapon bonus flags, lost on load so a shell in flight detonated
+	// without veterancy or horde bonus, and the detonated flag, so a DetonateCallsKill shell cannot
+	// go off a second time
+	XferVersion currentVersion = 3;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -795,6 +798,12 @@ void DumbProjectileBehavior::xfer( Xfer *xfer )
 
 	if( version >= 2 )
 		xfer->xferInt( &m_currentFlightPathStep );
+
+	if( version >= 3 )
+	{
+		xfer->xferUnsignedInt( &m_extraBonusFlags );
+		xfer->xferBool( &m_hasDetonated );
+	}
 
 	// the path itself is a vector of points that is not saved; rebuild it from the start, end and
 	// segment count that are, so the step we just read means something

@@ -402,11 +402,17 @@ UpdateSleepTime SlowDeathBehavior::update()
 			return UPDATE_SLEEP_NONE;
 		}
 
-		m_sinkFrame = (Real)m_sinkFrame * timeScale;
-		m_midpointFrame = (Real)m_midpointFrame * timeScale;
-		m_destructionFrame = (Real)m_destructionFrame * timeScale;
+		// These are absolute frames by now (onDie added the start frame), so scale only what is
+		// left of each; scaling the whole number put every death thousands of frames in the past.
+		UnsignedInt scaleFrom = TheGameLogic->getFrame();
+		if (m_sinkFrame > scaleFrom)
+			m_sinkFrame = scaleFrom + (UnsignedInt)((Real)(m_sinkFrame - scaleFrom) * timeScale);
+		if (m_midpointFrame > scaleFrom)
+			m_midpointFrame = scaleFrom + (UnsignedInt)((Real)(m_midpointFrame - scaleFrom) * timeScale);
+		if (m_destructionFrame > scaleFrom)
+			m_destructionFrame = scaleFrom + (UnsignedInt)((Real)(m_destructionFrame - scaleFrom) * timeScale);
 		m_acceleratedTimeScale = timeScale;
-	};	
+	};
 
 	UnsignedInt now = TheGameLogic->getFrame();
 	

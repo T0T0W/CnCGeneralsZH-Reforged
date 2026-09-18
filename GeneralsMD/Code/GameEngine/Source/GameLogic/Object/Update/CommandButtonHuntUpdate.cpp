@@ -290,14 +290,15 @@ Object* CommandButtonHuntUpdate::scanClosestTarget(void)
 			return NULL;  // isn't going to happen.
 		isBlackLotusVehicleHack = 	(spTemplate->getSpecialPowerType() == SPECIAL_BLACKLOTUS_DISABLE_VEHICLE_HACK);
 		isCaptureBuilding = 	(spTemplate->getSpecialPowerType() == SPECIAL_INFANTRY_CAPTURE_BUILDING);
-		if (isCaptureBuilding) 
+		if (isCaptureBuilding)
 		{
 			filters[3] = NULL;  // It's ok (in fact necessary for oil derricks) to capture special buildings.
-			if (spTemplate->getSpecialPowerType() == SPECIAL_TIMED_CHARGES) 
-				isPlaceExplosive = true;
-			if (spTemplate->getSpecialPowerType() == SPECIAL_TANKHUNTER_TNT_ATTACK) 
-				isPlaceExplosive = true;
 		}
+		// outside the capture test: inside it the power type is always capture, so these never set
+		if (spTemplate->getSpecialPowerType() == SPECIAL_TIMED_CHARGES)
+			isPlaceExplosive = true;
+		if (spTemplate->getSpecialPowerType() == SPECIAL_TANKHUNTER_TNT_ATTACK)
+			isPlaceExplosive = true;
 	}
 
 	ObjectIterator *iter = ThePartitionManager->iterateObjectsInRange( me->getPosition(), data->m_scanRange, 

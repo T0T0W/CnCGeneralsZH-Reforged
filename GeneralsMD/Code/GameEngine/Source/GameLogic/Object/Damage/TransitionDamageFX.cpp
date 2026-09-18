@@ -379,7 +379,7 @@ void TransitionDamageFX::onBodyDamageStateChange( const DamageInfo* damageInfo,
 					pos = getLocalEffectPos( &modData->m_OCL[ newState ][ i ].locInfo, draw );
 					getObject()->convertBonePosToWorldPos( &pos, NULL, &pos, NULL );
 					ObjectCreationList::create( modData->m_OCL[ newState ][ i ].ocl, 
-																			getObject(), &pos, damageSource->getPosition(), INVALID_ANGLE );
+																			getObject(), &pos, damageSource ? damageSource->getPosition() : NULL, INVALID_ANGLE );	// the attacker can be dead already
 
 				}  // end if
 

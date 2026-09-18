@@ -229,6 +229,8 @@ PhysicsBehavior::PhysicsBehavior( Thing *thing, const ModuleData* moduleData ) :
 	m_ignoreCollisionsWith = INVALID_ID;
 
 	setAllowBouncing(getPhysicsBehaviorModuleData()->m_allowBouncing);
+	// what a finished bounce restores; never set, so it restored FALSE and AllowBouncing = Yes was lost
+	m_originalAllowBounce = getPhysicsBehaviorModuleData()->m_allowBouncing;
 	setAllowCollideForce(getPhysicsBehaviorModuleData()->m_allowCollideForce);
 
 	m_pui = NULL;
@@ -705,7 +707,9 @@ UpdateSleepTime PhysicsBehavior::update()
            obj->isSignificantlyAboveTerrain() == FALSE )
 			{
 				setStunned(false);
-				getObject()->clearModelConditionState(MODELCONDITION_STUNNED);
+				// tested on last frame's position, so this can run before the landing below ever
+				// swaps flailing for stunned; clear both or the unit flails for good
+				getObject()->clearModelConditionFlags( MAKE_MODELCONDITION_MASK2( MODELCONDITION_STUNNED, MODELCONDITION_STUNNED_FLAILING ) );
 			}
 
     }
@@ -1075,6 +1079,12 @@ void PhysicsBehavior::addVelocityTo( const Coord3D *vel)
 {
 	if (vel != NULL)
 		m_vel.add( vel );
+	// as applyForce does: the cached magnitude is stale, and a sleeping body has to wake to move
+	m_velMag = INVALID_VEL_MAG;
+#ifdef SLEEPY_PHYSICS
+	if (!getFlag(IS_IN_UPDATE))
+		setWakeFrame(getObject(), UPDATE_SLEEP_NONE);
+#endif
 }
 
 //-------------------------------------------------------------------------------------------------

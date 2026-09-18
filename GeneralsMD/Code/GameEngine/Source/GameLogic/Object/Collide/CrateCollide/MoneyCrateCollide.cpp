@@ -81,7 +81,7 @@ Int MoneyCrateCollide::getUpgradedSupplyBoost( Object *other ) const
 		upgradePair info = *it;
 
 		// Check if the player has the desired upgrade. If so return the boost
-		static const UpgradeTemplate *upgradeTemplate = TheUpgradeCenter->findUpgrade( info.type.c_str() );
+		const UpgradeTemplate *upgradeTemplate =TheUpgradeCenter->findUpgrade( info.type.c_str() );
 		if (player && upgradeTemplate && player->hasUpgradeComplete(upgradeTemplate))
 		{
 			return info.amount;

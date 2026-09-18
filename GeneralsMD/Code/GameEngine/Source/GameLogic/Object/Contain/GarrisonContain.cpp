@@ -1802,14 +1802,15 @@ void GarrisonContain::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: m_evacDisposition, a script's left/right evacuation that a load reverted to the centre */
 // ------------------------------------------------------------------------------------------------
 void GarrisonContain::xfer( Xfer *xfer )
 {
 	Int i;
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -1924,6 +1925,9 @@ void GarrisonContain::xfer( Xfer *xfer )
 
 	// exit rally point
 	xfer->xferCoord3D( &m_exitRallyPoint );
+
+	if( version >= 2 )
+		xfer->xferUser( &m_evacDisposition, sizeof( EvacDisposition ) );
 
 }  // end xfer
 

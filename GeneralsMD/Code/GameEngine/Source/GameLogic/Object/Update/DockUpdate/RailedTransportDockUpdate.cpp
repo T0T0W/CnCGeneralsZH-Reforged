@@ -233,6 +233,15 @@ void RailedTransportDockUpdate::unloadAll( void )
 void RailedTransportDockUpdate::unloadSingleObject( Object *obj )
 {
 
+	// one already sliding out: queue this one behind it, or unloadNext() would drop the first
+	// unloader mid-push and leave it HELD and unselectable for good
+	if( m_unloadingObjectID != INVALID_ID )
+	{
+		if( m_unloadCount != UNLOAD_ALL )
+			++m_unloadCount;
+		return;
+	}
+
 	// start the unload process of a single object
 	m_unloadCount = 1;
 	unloadNext();

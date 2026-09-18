@@ -219,6 +219,7 @@ ProductionUpdate::~ProductionUpdate( void )
 
 		production = m_productionQueue;
 		removeFromProductionQueue( production );
+		production->deleteInstance();	// unlinking does not free it
 
 	}  // end while
 
@@ -385,9 +386,11 @@ void ProductionUpdate::cancelUpgrade( const UpgradeTemplate *upgrade )
 	// remove the IN_PRODUCTION status of this upgrade from the player, object upgrades don't
 	// have any other IN_PRODUCTION status other than their existence in the build queue
 	//
-	if( upgrade->getUpgradeType() == UPGRADE_TYPE_PLAYER )
+	// only when it really is in production: removeUpgrade drops the entry whatever its status, so a
+	// player who already owns the upgrade complete (a queue carried over by a change of owner) lost it
+	if( upgrade->getUpgradeType() == UPGRADE_TYPE_PLAYER && refundIt )
 		player->removeUpgrade( upgrade );
-	
+
 }  // end cancelUpgrade
 
 //-------------------------------------------------------------------------------------------------

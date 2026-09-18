@@ -1429,6 +1429,8 @@ void RailroadBehavior::FindPosByPathDistance( Coord3D *pos, const Real dist, con
 	{
 		const TrackPoint *thisPoint = &(*pointIter);
 		++pointIter;// next pointIter in this list, so then...
+		if ( pointIter == pointList->end() )
+			break;// the last point has nothing after it to lie between
 		const TrackPoint *nextPoint = &(*pointIter);
 
 
@@ -1476,9 +1478,9 @@ void RailroadBehavior::FindPosByPathDistance( Coord3D *pos, const Real dist, con
 
 					if ( edge && ! m_inTunnel )
 					{//play my clickety clack sound, `cause I just rode over a join IN the tracks
-						TheAudio->addAudioEvent( &m_clicketyClackSound );
 						m_clicketyClackSound.setPosition( getObject()->getPosition() );
 						m_clicketyClackSound.setVolume( (Real)conductorPullInfo.speed / 10.0f );//assumed max speed
+						TheAudio->addAudioEvent( &m_clicketyClackSound );
 					}
 				}
 

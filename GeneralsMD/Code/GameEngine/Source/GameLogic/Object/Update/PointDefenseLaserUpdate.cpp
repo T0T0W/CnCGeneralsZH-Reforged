@@ -181,6 +181,7 @@ void PointDefenseLaserUpdate::fireWhenReady()
 				//re-evaluate by forcing a new scan.
 				m_nextScanFrames = GameLogicRandomValue( 0, 3 );
 				m_bestTargetID = INVALID_ID;
+				m_inRange = false;	// the fire block below needs it, or a non-zero rescan delay shoots out of range
 				if( !m_nextScanFrames )
 				{
 					scanClosestTarget();
@@ -317,7 +318,7 @@ Object* PointDefenseLaserUpdate::scanClosestTarget()
 					pos.add( other->getPosition() );
 					
 					//Recalculate the distance.
-					fDist = sqrt( ThePartitionManager->getDistanceSquared( me, other, FROM_CENTER_2D ) );
+					fDist = sqrt( ThePartitionManager->getDistanceSquared( me, &pos, FROM_CENTER_2D ) );
 				}
 			}
 

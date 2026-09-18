@@ -153,7 +153,8 @@ UpdateSleepTime PoisonedBehavior::calcSleepTime()
 {
 	// UPDATE_SLEEP requires a count-of-frames, not an absolute-frame, so subtract 'now' 
 	UnsignedInt now = TheGameLogic->getFrame();
-	if (m_poisonOverallStopFrame == 0 || m_poisonOverallStopFrame == now)
+	// <= : a unit the poison killed keeps a stop frame that is already behind us
+	if (m_poisonOverallStopFrame == 0 || m_poisonOverallStopFrame <= now)
 		return UPDATE_SLEEP_FOREVER;
 	return frameToSleepTime(m_poisonDamageFrame, m_poisonOverallStopFrame);
 }

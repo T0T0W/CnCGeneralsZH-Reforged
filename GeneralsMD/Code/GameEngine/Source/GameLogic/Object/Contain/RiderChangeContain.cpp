@@ -469,13 +469,14 @@ void RiderChangeContain::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: m_scuttledOnFrame, or a bike loaded mid-scuttle is never killed and stays unselectable */
 // ------------------------------------------------------------------------------------------------
 void RiderChangeContain::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -490,6 +491,9 @@ void RiderChangeContain::xfer( Xfer *xfer )
 
 	// frame exit not busy
 	xfer->xferUnsignedInt( &m_frameExitNotBusy );
+
+	if( version >= 2 )
+		xfer->xferUnsignedInt( &m_scuttledOnFrame );
 
 }  // end xfer
 

@@ -125,7 +125,10 @@ UpdateSleepTime OCLUpdate::update( void )
 {
 	if( getObject()->isDisabled() )
 	{
-		m_nextCreationFrame++;
+		// push the timer back, but only once it is running: 0 means "start the first delay", and
+		// bumping it off 0 skipped that delay
+		if( m_nextCreationFrame != 0 )
+			m_nextCreationFrame++;
 		return UPDATE_SLEEP_NONE;
 	}
 

@@ -89,7 +89,11 @@ void UndeadBody::attemptDamage( DamageInfo *damageInfo )
 			&& IsHealthDamagingDamage(damageInfo->in.m_damageType)
 			)
 	{
-		damageInfo->in.m_amount = min( damageInfo->in.m_amount, getHealth() - 1 );
+		// clamp what lands, for the same reason as the test above: armour applied after a raw clamp
+		// to health-1 still killed, ran the die modules, and then revived the bus anyway
+		Real landed = estimateDamage( damageInfo->in ) * getDamageScalar();
+		if( landed > getHealth() - 1 && landed > 0.0f )
+			damageInfo->in.m_amount *= ( getHealth() - 1 ) / landed;
 		shouldStartSecondLife = TRUE;
 	}
 

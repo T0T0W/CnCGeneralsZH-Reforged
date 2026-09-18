@@ -206,6 +206,9 @@ void MissileLauncherBuildingUpdate::switchToState(DoorStateType dst)
 //-------------------------------------------------------------------------------------------------
 Bool MissileLauncherBuildingUpdate::initiateIntentToDoSpecialPower( const SpecialPowerTemplate *specialPowerTemplate, const Object *targetObj, const Coord3D *targetPos, const Waypoint *way, UnsignedInt commandOptions )
 {
+	// update() caches this, but a script can fire a map-placed silo before its first update
+	if( !m_specialPowerModule )
+		m_specialPowerModule = getObject()->getSpecialPowerModule( getMissileLauncherBuildingUpdateModuleData()->m_specialPowerTemplate );
 	if( m_specialPowerModule->getSpecialPowerTemplate() != specialPowerTemplate )
 	{
 		return FALSE;

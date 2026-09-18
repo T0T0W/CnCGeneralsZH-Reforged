@@ -397,13 +397,14 @@ void HordeUpdate::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: m_trueHordeMember and m_lastHordeRefreshFrame, which neighbours read for the rub-off test */
 // ------------------------------------------------------------------------------------------------
 void HordeUpdate::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -415,6 +416,12 @@ void HordeUpdate::xfer( Xfer *xfer )
 
 	// has flag
 	xfer->xferBool( &m_hasFlag );
+
+	if( version >= 2 )
+	{
+		xfer->xferBool( &m_trueHordeMember );
+		xfer->xferUnsignedInt( &m_lastHordeRefreshFrame );
+	}
 
 }  // end xfer
 
