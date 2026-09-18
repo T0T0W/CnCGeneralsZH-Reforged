@@ -83,7 +83,8 @@ static const EngineShaderEntry ENGINE_SHADERS[] = {
 	{ ENGINE_SHADER_FLAT_TERRAIN_NOISE_2, "fterrainnoise2.pso", "engine:flatterrainnoise2",
 		FLAT_TERRAIN_OPENING, TERRAIN_NOISE_2_CHAIN },
 	{ ENGINE_SHADER_ROAD_NOISE_2, "roadnoise2.pso", "engine:roadnoise2",
-		ROAD_NOISE_2_OPENING, ROAD_NOISE_2_CHAIN }
+		ROAD_NOISE_2_OPENING, ROAD_NOISE_2_CHAIN },
+	{ ENGINE_SHADER_MONOCHROME, "monochrome.pso", "engine:monochrome", NULL, NULL }
 };
 
 static const unsigned ENGINE_SHADER_COUNT = sizeof(ENGINE_SHADERS) / sizeof(ENGINE_SHADERS[0]);
@@ -309,6 +310,27 @@ static void write_water_reflection(std::string & hlsl)
 		"    float4 current = float4((1.0 - TextureFactor.a * coverage).xxx, TextureFactor.a);\n";
 }
 
+/*
+** The grey the campaign briefings and some cutscenes lay over the whole view, ScreenBWFilter's:
+**
+**     tex t0                ; the frame, rendered into a texture first
+**     dp3 r1, t0, c0        ; c0 is (0.3, 0.59, 0.11), the luminance
+**     mul r1, r1, c1        ; c1 tints it: white, red or green, alpha one
+**     lrp r0, c2, r1, t0    ; c2 is the fade, the same value in all four
+**
+** D3D9 reads the tint and the fade out of c1 and c2.  Here they ride in the texture factor, tint in
+** the colour and fade in the alpha, which ScreenBWFilter sets beside the constants.  c2.w is one
+** whatever the fade, so the alpha comes out as the luminance at every step of it.
+*/
+static void write_monochrome(std::string & hlsl)
+{
+	write_pixel_preamble(hlsl);
+	hlsl +=
+		"    float luminance = saturate(dot(texel0.rgb, float3(0.3, 0.59, 0.11)));\n"
+		"    float4 tinted = saturate(luminance * float4(TextureFactor.rgb, 1.0));\n"
+		"    float4 current = lerp(texel0, tinted, float4(TextureFactor.aaa, 1.0));\n";
+}
+
 // Every ps_1_1 instruction clamps its result to zero and one, so each step saturates and not only
 // the last: a chain that overflows in the middle and comes back down is a different colour with the
 // clamps than without them.
@@ -390,6 +412,9 @@ bool EngineShader_Pixel_Program(EngineShaderProgram program,
 	}
 	else if (program == ENGINE_SHADER_WATER_REFLECTION) {
 		write_water_reflection(hlsl);
+	}
+	else if (program == ENGINE_SHADER_MONOCHROME) {
+		write_monochrome(hlsl);
 	}
 	else {
 		return false;

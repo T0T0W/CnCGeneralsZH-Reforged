@@ -67,7 +67,8 @@ enum EngineShaderProgram
 	ENGINE_SHADER_FLAT_TERRAIN_BASE,
 	ENGINE_SHADER_FLAT_TERRAIN_NOISE,
 	ENGINE_SHADER_FLAT_TERRAIN_NOISE_2,
-	ENGINE_SHADER_ROAD_NOISE_2
+	ENGINE_SHADER_ROAD_NOISE_2,
+	ENGINE_SHADER_MONOCHROME
 };
 
 // The name the engine loaded the shader under: a path for the ones that ship as files

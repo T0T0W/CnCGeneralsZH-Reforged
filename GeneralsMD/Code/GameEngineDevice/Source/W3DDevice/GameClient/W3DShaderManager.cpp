@@ -672,6 +672,9 @@ Int ScreenBWFilter::set(enum FilterModes mode)
 
 		DX8Wrapper::_Get_D3D_Device()->SetPixelShaderConstantF(1,   color, 1);
 		DX8Wrapper::_Get_D3D_Device()->SetPixelShaderConstantF(2,	D3DXVECTOR4(m_curFadeValue, m_curFadeValue, m_curFadeValue, 1.0f), 1);
+		//the Direct3D 11 transcription of monochrome.pso never sees c1 and c2, so it reads the
+		//tint from the texture factor's colour and the fade from its alpha
+		DX8Wrapper::Set_DX8_Render_State(D3DRS_TEXTUREFACTOR, DX8Wrapper::Convert_Color(Vector4(color.x, color.y, color.z, m_curFadeValue)));
 /*		DX8Wrapper::_Get_D3D_Device()->SetPixelShaderConstantF(2,   D3DXVECTOR4(150.0f/255.0f, 150.0f/255.0f, 150.0f/255.0f, 0.0f), 1);
 		DX8Wrapper::_Get_D3D_Device()->SetPixelShaderConstantF(3,   D3DXVECTOR4((765.0f/450.0f)/3, (765.0f/450.0f)/3, (765.0f/450.0f)/3, 1.0f), 1);
 		DX8Wrapper::_Get_D3D_Device()->SetPixelShaderConstantF(4,   D3DXVECTOR4(0.5f, 0.5f, 0.5f, 0), 1);

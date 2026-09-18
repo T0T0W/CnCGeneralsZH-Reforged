@@ -68,6 +68,7 @@ TEST(engineshader_names_a_shader_by_its_file_whatever_case_the_path_is_in)
 	CHECK(EngineShader_From_File("shaders\\terrainnoise2.pso") == ENGINE_SHADER_TERRAIN_NOISE_2);
 	CHECK(EngineShader_From_File("shaders\\fterrain0.pso") == ENGINE_SHADER_FLAT_TERRAIN_BASE);
 	CHECK(EngineShader_From_File("shaders\\roadnoise2.pso") == ENGINE_SHADER_ROAD_NOISE_2);
+	CHECK(EngineShader_From_File("shaders\\monochrome.pso") == ENGINE_SHADER_MONOCHROME);
 }
 
 // Every program the table names has to write something, or a draw that binds it is refused with a
@@ -79,7 +80,7 @@ TEST(engineshader_writes_every_program_it_names)
 		ENGINE_SHADER_TERRAIN, ENGINE_SHADER_TERRAIN_NOISE, ENGINE_SHADER_TERRAIN_NOISE_2,
 		ENGINE_SHADER_FLAT_TERRAIN, ENGINE_SHADER_FLAT_TERRAIN_BASE,
 		ENGINE_SHADER_FLAT_TERRAIN_NOISE, ENGINE_SHADER_FLAT_TERRAIN_NOISE_2,
-		ENGINE_SHADER_ROAD_NOISE_2
+		ENGINE_SHADER_ROAD_NOISE_2, ENGINE_SHADER_MONOCHROME
 	};
 
 	for (unsigned index = 0; index < sizeof(PIXEL_PROGRAMS) / sizeof(PIXEL_PROGRAMS[0]); ++index) {
@@ -94,7 +95,6 @@ TEST(engineshader_writes_every_program_it_names)
 TEST(engineshader_has_no_program_for_a_shader_nobody_transcribed)
 {
 	CHECK(EngineShader_From_File("shaders\\wave.vso") == ENGINE_SHADER_NONE);
-	CHECK(EngineShader_From_File("shaders\\monochrome.pso") == ENGINE_SHADER_NONE);
 	CHECK(EngineShader_From_File("environment water ps.1.1") == ENGINE_SHADER_NONE);
 	CHECK(EngineShader_From_File("Treesomething.vso") == ENGINE_SHADER_NONE);
 	CHECK(EngineShader_From_File(NULL) == ENGINE_SHADER_NONE);
@@ -148,6 +148,17 @@ TEST(engineshader_fades_the_water_reflection_towards_white_by_the_texture_factor
 	CHECK(contains(hlsl, "float coverage = saturate((1.0 - dot(texel0.rgb, float3(0.333333, 0.333333, 0.333333))) * 4.0);"));
 	CHECK(contains(hlsl, "float4 current = float4((1.0 - TextureFactor.a * coverage).xxx, TextureFactor.a);"));
 	CHECK(!contains(hlsl, "* texel3"));
+}
+
+// dp3 r1, t0, c0 ; mul r1, r1, c1 ; lrp r0, c2, r1, t0.  Without it the briefing grey was a refused
+// draw over a frame that went into a texture and never came out, which is a black screen.
+TEST(engineshader_greys_the_frame_by_the_texture_factors_tint_and_fade)
+{
+	std::string hlsl;
+	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_MONOCHROME, plain_pipeline(), hlsl));
+	CHECK(contains(hlsl, "float luminance = saturate(dot(texel0.rgb, float3(0.3, 0.59, 0.11)));"));
+	CHECK(contains(hlsl, "float4 tinted = saturate(luminance * float4(TextureFactor.rgb, 1.0));"));
+	CHECK(contains(hlsl, "float4 current = lerp(texel0, tinted, float4(TextureFactor.aaa, 1.0));"));
 }
 
 // D3D9 applies the alpha test and the fog around a bound pixel shader and D3D11 applies neither, so
@@ -365,4 +376,8 @@ TEST(engineshader_writes_programs_the_compiler_accepts)
 	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_WATER_REFLECTION, pipeline, reflection));
 	CHECK(compiles(compile, reflection, EngineShader_Name(ENGINE_SHADER_WATER_REFLECTION),
 		PIXEL_PROFILE));
+
+	std::string monochrome;
+	CHECK(EngineShader_Pixel_Program(ENGINE_SHADER_MONOCHROME, pipeline, monochrome));
+	CHECK(compiles(compile, monochrome, EngineShader_Name(ENGINE_SHADER_MONOCHROME), PIXEL_PROFILE));
 }
