@@ -83,16 +83,22 @@ void Win32BIGFileSystem::init() {
     // GeneralsZH...
     DEBUG_ASSERTCRASH(installPath != "", ("Be 1337! Go install Generals!"));
 #endif
-    if (installPath=="")
+    // Zero Hour is not standalone: the base game's bigs carry most of the art,
+    // audio and the music tracks, and the CD check in AudioManager::init spins
+    // on a "Missing CD" prompt without them.  A retail install registers the
+    // key above; the Steam build does not, it ships the base game's bigs in a
+    // ZH_Generals subdirectory next to the exe instead.  Fall back to that
+    // layout so a copied-over Steam install works with no registry writes.
+    //
+    // A registered folder that holds no Textures.big gets the same fallback.  An uninstalled
+    // retail or First Decade copy leaves its key behind, and trusting it loaded no base archive
+    // at all: the water and the ground came up magenta and black on the shell map.
+    AsciiString baseTextures = installPath;
+    baseTextures.concat("Textures.big");
+    if (installPath=="" || !TheLocalFileSystem->doesFileExist(baseTextures.str()))
     {
-      // Zero Hour is not standalone: the base game's bigs carry most of the art,
-      // audio and the music tracks, and the CD check in AudioManager::init spins
-      // on a "Missing CD" prompt without them.  A retail install registers the
-      // key above; the Steam build does not, it ships the base game's bigs in a
-      // ZH_Generals subdirectory next to the exe instead.  Fall back to that
-      // layout so a copied-over Steam install works with no registry writes.
+      DEBUG_LOG(("Win32BIGFileSystem::init - no base game archives in the registered folder '%s', trying ZH_Generals\\\n", installPath.str()));
       installPath = "ZH_Generals\\";
-      DEBUG_LOG(("Win32BIGFileSystem::init - no Generals install registered, trying %s\n", installPath.str()));
     }
     // Loaded second on purpose: loadIntoDirectoryTree does not overwrite, so the
     // Zero Hour bigs already in the tree win over the base game's copies.

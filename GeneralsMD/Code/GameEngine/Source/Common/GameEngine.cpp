@@ -710,6 +710,17 @@ void GameEngine::init( int argc, char *argv[] )
 			_exit(1);
 		}
 
+		// The water and most of the ground are the base game's, in its Textures.big and Terrain.big.
+		// Without them the game still starts, onto a shell map of magenta water and black hills.
+		if (!TheFileSystem->doesFileExist("Art\\Textures\\TWWater01.dds"))
+		{
+			DEBUG_LOG(("GameEngine::init - Art\\Textures\\TWWater01.dds is in no archive, the base game's are missing\n"));
+
+			extern int MessageBoxWrapper( LPCSTR lpText, LPCSTR lpCaption, UINT uType );
+			MessageBoxWrapper( "The original Generals game files are missing.\n\nZero Hour needs them next to it: a Steam install keeps them in the ZH_Generals folder beside generals.exe, with Textures.big and Terrain.big among them. Verify the game's files in Steam, or reinstall Command & Conquer Generals.", "Command & Conquer Generals Zero Hour", MB_OK | MB_TASKMODAL | MB_ICONERROR );
+			_exit(1);
+		}
+
 		initSubsystem(TheWritableGlobalData, "TheWritableGlobalData", MSGNEW("GameEngineSubsystem") GlobalData(), &xferCRC, "Data\\INI\\Default\\GameData.ini", "Data\\INI\\GameData.ini");
 
 
