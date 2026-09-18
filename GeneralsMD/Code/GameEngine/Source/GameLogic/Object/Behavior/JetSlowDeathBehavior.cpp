@@ -279,6 +279,13 @@ UpdateSleepTime JetSlowDeathBehavior::update( void )
 			const Real fallingLift = -TheGlobalData->m_gravity * (1.0f - fallFraction);
 			const Real currentLift = locomotor->getMaxLift( us->getBodyModule()->getDamageState() );
 			locomotor->setMaxLift( currentLift + (fallingLift - currentLift) * LIFT_BLEED_PER_FRAME );
+
+			/* Ultra-accurate flying may take three times the lift, which is still more than gravity,
+				 and a delivery plane flies it all the way off the map once its load is down; a jet on
+				 final approach does too. Shot down on the way home, a B-52 burned and blew apart at
+				 cruising height. Its AI keeps running while it falls and can switch the mode back on,
+				 so it goes off every frame. */
+			locomotor->setUltraAccurate( FALSE );
 		}
 
 		/* And the explosion waits for the ground. The base class destroys the object on a timer
