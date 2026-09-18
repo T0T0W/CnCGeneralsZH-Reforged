@@ -1212,17 +1212,17 @@ found and fixed â€” EA's own, not port damage.**
   map is one field of noise, and the bases are found in it: the flattest ground first, then
   whichever good ground is furthest from everything already taken. Some seeds give you four corners
   and some give you a long diagonal, and where the fighting happens is different every time.
-- Nobody starts with their back against the edge of the map. Taking the site furthest from every
-  base already placed walks the next one into a corner, so a seventh of the map is now kept clear
+- Nobody starts with their back against the edge of the map. A seventh of the map is kept clear
   of start positions on every side: there is ground behind a base to fall back into, and a way
-  round it for whoever is attacking.
-- It is a map, not a field. The ground comes in layers: a flat shelf to build and fight on, a cliff
-  down to the next one, and ramps cut where the route between two players has to change level, so
-  taking the high ground means holding a ramp. Lakes sit in the hollows with a shoreline that
-  wanders rather than a circle drawn on the grass, dirt covers the high ground, rock breaks through
-  where it turns steep, and woods stand thick in the middle and thin at the edges. The ground
-  changes texture the way ground does, with one blending into the next instead of meeting it at a
-  straight line.
+  round it for whoever is attacking. On a packed map the seats sit on a circle so the last
+  players are not the ones walked into the corners.
+- It is a map, not a field. The ground rolls the way Twilight Flame does: hills you can drive, a
+  ridge that drops off, a hollow the water sits in. High ground is still worth holding, but it is
+  a hill, not a table with a cliff off every side. Water follows the valleys: a lake in a hollow
+  and a stream running down to it, not a round puddle stamped on the grass. Dirt covers the high
+  ground, rock breaks through where it turns steep, and woods stand thick in the middle and thin at
+  the edges. The ground changes texture the way ground does, with one blending into the next instead
+  of meeting it at a straight line.
 - The maps are twice the size they were. A two-player map is a quarter of a million square feet of
   ground, an eight-player one nearly three times that, which is room to manoeuvre round a flank
   instead of running into the enemy on the way out of your own base.
@@ -1244,8 +1244,12 @@ found and fixed â€” EA's own, not port damage.**
   can hear it from the bank. The ground around a lake is above the water it holds, which sounds
   obvious and was not: lakes are cut into the lowest ground on the map, and the land further out
   used to lie lower than the water, so a lake read as a puddle sitting on top of the map.
-- Everybody opens with the same money. One supply dock beside each base, a second one out between
-  you and your nearest neighbour to fight over, and two oil derricks apiece within reach of home.
+- Everybody opens with the same money. The dock beside your base sits the same walk from home as
+  everybody else's, on the same compass from the middle of the map. The one out in the field sits
+  on your side of the line to whoever is nearest, not on the one flat cell the first seat used to
+  take. Two oil derricks sit on your flanks and two small supply piles on the diagonals, so one
+  player does not draw the lot in their yard. Things on the map face the compass: forty-five
+  degrees, not a random spin.
 - The number that made the map is in its name, so the same number always makes the same map, on
   every machine. Two people who type it get the same ground, and a map worth keeping can be found
   again.
@@ -1254,10 +1258,9 @@ found and fixed â€” EA's own, not port damage.**
   entry in the map cache. The name still says which map it is, so the replay of a generated match
   plays back on any machine: it rebuilds the same ground from the same name, and so does anybody
   who joins.
-- The generated maps are out of the skirmish map list for now. The generator still deals a seed a
-  match should not be played on - a supply dock behind a cliff, a start with one way out - and a
-  map list is the wrong place to meet one. They are still there on the command line, where
-  `-randommap` names the seed being played, and `-randommaps` puts the rows back in the list.
+- A supply dock behind a cliff, and a start with one way out, were why the generated maps left
+  the skirmish list. Those seeds do not come out any more. The rows stay off the list until we
+  put them back; `-randommap` still names the seed, and `-randommaps` puts the rows in.
 
 ---
 

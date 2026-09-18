@@ -6623,6 +6623,7 @@ struct RMGParse
 	std::vector<Coord3D> m_waterPoints;			///< first point of each water area
 	std::vector< std::vector<Coord3D> > m_waterPolygons;	///< and every point of it
 	std::vector<Coord3D> m_objectPositions;
+	std::vector<Real> m_objectAngles;
 	std::vector<Int> m_objectFlags;				///< the road flags, for the objects that carry them
 
 	RMGParse() :
@@ -6806,7 +6807,7 @@ static Bool RMGParseObject( DataChunkInput &file, DataChunkInfo *info, void * )
 	loc.x = file.readReal();
 	loc.y = file.readReal();
 	loc.z = file.readReal();
-	file.readReal();									// angle
+	Real angle = file.readReal();
 	Int flags = file.readInt();
 	AsciiString name = file.readAsciiString();
 	Dict d = file.readDict();
@@ -6814,6 +6815,7 @@ static Bool RMGParseObject( DataChunkInput &file, DataChunkInfo *info, void * )
 	theRMGParse.m_numObjects++;
 	theRMGParse.m_objectNames.push_back( name );
 	theRMGParse.m_objectPositions.push_back( loc );
+	theRMGParse.m_objectAngles.push_back( angle );
 	theRMGParse.m_objectFlags.push_back( flags );
 
 	if( d.getType( NAMEKEY( "waypointID" ) ) == Dict::DICT_INT )
@@ -6951,7 +6953,7 @@ TEST(a_generated_map_reads_back_through_the_engines_own_chunk_reader)
 	CHECK_EQ( numDerricks, 4 * 2 );
 	CHECK( numProps > 20 );
 
-	// Lakes go in the hollows the noise left, so how many fit is the map's business, but a map
+	// Lakes flood the hollows the noise left, so how many fit is the map's business, but a map
 	// this size has to have found somewhere for at least one.
 	CHECK( theRMGParse.m_numWaterAreas >= 1 );
 	CHECK( theRMGParse.m_numWaterAreas <= 4 );
@@ -7129,6 +7131,52 @@ TEST(the_cliffs_are_where_the_layout_put_them_and_never_between_two_players)
 				}
 			}
 
+			// Away from the start pads the ground has to roll. A map that is still a stack of
+			// tables has almost no cells whose 5x5 neighbourhood varies by more than a byte.
+			Int rolling = 0;
+			Int sampled = 0;
+			for( Int y = theRMGParse.m_border + 2; y < height - theRMGParse.m_border - 3; y += 3 )
+			{
+				for( Int x = theRMGParse.m_border + 2; x < width - theRMGParse.m_border - 3; x += 3 )
+				{
+					Bool nearStart = FALSE;
+					for( Int i = 0; i < players; i++ )
+					{
+						Int sx = (Int)(theRMGParse.m_waypointPositions[i].x / MAP_XY_FACTOR + 0.5f)
+							+ theRMGParse.m_border;
+						Int sy = (Int)(theRMGParse.m_waypointPositions[i].y / MAP_XY_FACTOR + 0.5f)
+							+ theRMGParse.m_border;
+						Int dx = x - sx;
+						Int dy = y - sy;
+						if( dx * dx + dy * dy <= 30 * 30 )
+						{
+							nearStart = TRUE;
+							break;
+						}
+					}
+					if( nearStart )
+						continue;
+
+					Int lo = 255, hi = 0;
+					for( Int dy = -2; dy <= 2; dy++ )
+					{
+						for( Int dx = -2; dx <= 2; dx++ )
+						{
+							Int h = theRMGParse.m_heights[(y + dy) * width + x + dx];
+							if( h < lo ) lo = h;
+							if( h > hi ) hi = h;
+						}
+					}
+
+					sampled++;
+					if( hi - lo >= 2 && hi - lo <= 16 )
+						rolling++;
+				}
+			}
+
+			CHECK( sampled > 0 );
+			CHECK( rolling * 3 > sampled );			// at least a third of the open ground rolls
+
 			// Every other start has to come back from player one's flood fill.
 			std::vector<char> seen;
 			RMGFloodFillFromFirstStart( seen );
@@ -7192,8 +7240,8 @@ TEST(start_positions_land_inside_the_map_with_room_between_them)
 			CHECK( p.y > margin && p.y < extent - margin );
 		}
 
-		/* No two players may start on top of each other.  The starts are chosen out of the noise
-			rather than laid on a ring, so the guarantee is a floor and not a spacing: a base disc
+		/* No two players may start on top of each other.  Two and four players are chosen out of
+			the noise; six and eight sit on a ring snapped to that noise. Either way a base disc
 			is 26 cells across, and two of them have to leave room for something in between. */
 		for( i = 0; i < players; i++ )
 		{
@@ -7356,19 +7404,201 @@ TEST(every_player_gets_two_supply_docks_and_two_derricks_whatever_the_seed)
 			RandomMapGenerator::generate( settings, bytes );
 			parseGeneratedMap( bytes );
 
-			Int numSupplyDocks = 0, numDerricks = 0;
+			Int numSupplyDocks = 0, numDerricks = 0, numPiles = 0;
 			for( Int i = 0; i < (Int)theRMGParse.m_objectNames.size(); i++ )
 			{
 				if( theRMGParse.m_objectNames[i].compare( "SupplyDock" ) == 0 )
 					numSupplyDocks++;
 				else if( theRMGParse.m_objectNames[i].compare( "TechOilDerrick" ) == 0 )
 					numDerricks++;
+				else if( theRMGParse.m_objectNames[i].compare( "SupplyPileSmall" ) == 0 )
+					numPiles++;
 			}
 
 			CHECK_EQ( numSupplyDocks, players * 2 );
 			CHECK_EQ( numDerricks, players * 2 );
+			CHECK_EQ( numPiles, players * 2 );
 		}
 	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Home docks sit on one ring. A seed that hands one player a dock at 18 cells and the next
+	player the same dock at 30 is the independent-search leftover Age of Empires does not do. */
+//-------------------------------------------------------------------------------------------------
+TEST(home_docks_sit_on_the_same_ring_for_every_player)
+{
+	CHECK( bootOnce() );
+
+	static const Int thePlayers[] = { 2, 4, 8 };
+	const Int numPlayers = sizeof(thePlayers) / sizeof(thePlayers[0]);
+
+	for( Int p = 0; p < numPlayers; p++ )
+	{
+		Int players = thePlayers[p];
+		RandomMapSettings settings;
+		settings.m_numPlayers = players;
+		settings.m_playableCells = RandomMapGenerator::cellsFor( RANDOM_MAP_SIZE_NORMAL, players );
+		settings.m_seed = 11 + players;
+
+		std::vector<char> bytes;
+		RandomMapGenerator::generate( settings, bytes );
+		parseGeneratedMap( bytes );
+
+		CHECK_EQ( (Int)theRMGParse.m_waypointPositions.size(), players );
+
+		Real nearestDock[8];
+		for( Int i = 0; i < players; i++ )
+		{
+			Real best = 1.0e9f;
+			for( Int k = 0; k < (Int)theRMGParse.m_objectNames.size(); k++ )
+			{
+				if( theRMGParse.m_objectNames[k].compare( "SupplyDock" ) != 0 )
+					continue;
+				Real dx = theRMGParse.m_waypointPositions[i].x - theRMGParse.m_objectPositions[k].x;
+				Real dy = theRMGParse.m_waypointPositions[i].y - theRMGParse.m_objectPositions[k].y;
+				Real d = sqrtf( dx * dx + dy * dy );
+				if( d < best )
+					best = d;
+			}
+			nearestDock[i] = best;
+			CHECK( best > 16.0f * MAP_XY_FACTOR );
+			CHECK( best < 36.0f * MAP_XY_FACTOR );
+		}
+
+		Real lo = nearestDock[0], hi = nearestDock[0];
+		for( Int i = 1; i < players; i++ )
+		{
+			if( nearestDock[i] < lo ) lo = nearestDock[i];
+			if( nearestDock[i] > hi ) hi = nearestDock[i];
+		}
+		CHECK( hi - lo < 12.0f * MAP_XY_FACTOR );
+	}
+}
+
+static Real RMGNearestOf( const Coord3D& from, const char *templateName )
+{
+	Real best = 1.0e9f;
+	for( Int k = 0; k < (Int)theRMGParse.m_objectNames.size(); k++ )
+	{
+		if( theRMGParse.m_objectNames[k].compare( templateName ) != 0 )
+			continue;
+		Real dx = from.x - theRMGParse.m_objectPositions[k].x;
+		Real dy = from.y - theRMGParse.m_objectPositions[k].y;
+		Real d = sqrtf( dx * dx + dy * dy );
+		if( d < best )
+			best = d;
+	}
+	return best;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Derricks and small piles sit on the same compass from every start, so one seat cannot
+	open with them in the yard and another with them a lake away. */
+//-------------------------------------------------------------------------------------------------
+TEST(derricks_and_piles_are_as_even_as_the_home_docks)
+{
+	CHECK( bootOnce() );
+
+	static const Int thePlayers[] = { 2, 4, 8 };
+	for( Int p = 0; p < 3; p++ )
+	{
+		Int players = thePlayers[p];
+		RandomMapSettings settings;
+		settings.m_numPlayers = players;
+		settings.m_playableCells = RandomMapGenerator::cellsFor( RANDOM_MAP_SIZE_NORMAL, players );
+		settings.m_seed = 11 + players;
+
+		std::vector<char> bytes;
+		RandomMapGenerator::generate( settings, bytes );
+		parseGeneratedMap( bytes );
+
+		Real dLo = 1.0e9f, dHi = 0.0f, pLo = 1.0e9f, pHi = 0.0f;
+		for( Int i = 0; i < players; i++ )
+		{
+			Real derrick = RMGNearestOf( theRMGParse.m_waypointPositions[i], "TechOilDerrick" );
+			Real pile = RMGNearestOf( theRMGParse.m_waypointPositions[i], "SupplyPileSmall" );
+			if( derrick < dLo ) dLo = derrick;
+			if( derrick > dHi ) dHi = derrick;
+			if( pile < pLo ) pLo = pile;
+			if( pile > pHi ) pHi = pile;
+		}
+
+		CHECK( dHi - dLo < 14.0f * MAP_XY_FACTOR );
+		CHECK( pHi - pLo < 16.0f * MAP_XY_FACTOR );
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Structures face 45-degree compass points, not a random spin. */
+//-------------------------------------------------------------------------------------------------
+TEST(placed_objects_face_forty_five_degrees)
+{
+	CHECK( bootOnce() );
+
+	RandomMapSettings settings;
+	settings.m_numPlayers = 4;
+	settings.m_playableCells = RandomMapGenerator::cellsFor( RANDOM_MAP_SIZE_NORMAL, 4 );
+	settings.m_seed = 15;
+
+	std::vector<char> bytes;
+	RandomMapGenerator::generate( settings, bytes );
+	parseGeneratedMap( bytes );
+
+	const Real step = PI * 0.25f;
+	Int checked = 0;
+	for( Int k = 0; k < (Int)theRMGParse.m_objectNames.size(); k++ )
+	{
+		const AsciiString& name = theRMGParse.m_objectNames[k];
+		if( name.compare( "SupplyDock" ) != 0 &&
+				name.compare( "TechOilDerrick" ) != 0 &&
+				name.compare( "SupplyPileSmall" ) != 0 &&
+				name.compare( "CivilianBunker01" ) != 0 &&
+				!name.startsWith( "Tree" ) &&
+				!name.startsWith( "Rock" ) )
+			continue;
+
+		Real angle = theRMGParse.m_objectAngles[k];
+		Real n = angle / step;
+		Real nearest = floorf( n + 0.5f );
+		CHECK( fabsf( n - nearest ) < 0.05f );
+		checked++;
+	}
+	CHECK( checked > 20 );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Eight seats on the furthest-from-the-rest search walk the last ones into the corners. They
+	sit on a ring instead, still inside the edge inset. */
+//-------------------------------------------------------------------------------------------------
+TEST(eight_players_sit_on_a_ring_not_in_the_corners)
+{
+	CHECK( bootOnce() );
+
+	RandomMapSettings settings;
+	settings.m_numPlayers = 8;
+	settings.m_playableCells = RandomMapGenerator::cellsFor( RANDOM_MAP_SIZE_NORMAL, 8 );
+	settings.m_seed = 7;
+
+	std::vector<char> bytes;
+	RandomMapGenerator::generate( settings, bytes );
+	parseGeneratedMap( bytes );
+
+	CHECK_EQ( (Int)theRMGParse.m_waypointPositions.size(), 8 );
+
+	Real centre = (Real)settings.m_playableCells * 0.5f * MAP_XY_FACTOR;
+	Real lo = 1.0e9f, hi = 0.0f;
+	for( Int i = 0; i < 8; i++ )
+	{
+		Real dx = theRMGParse.m_waypointPositions[i].x - centre;
+		Real dy = theRMGParse.m_waypointPositions[i].y - centre;
+		Real d = sqrtf( dx * dx + dy * dy );
+		if( d < lo ) lo = d;
+		if( d > hi ) hi = d;
+	}
+
+	CHECK( lo > 0.22f * (Real)settings.m_playableCells * MAP_XY_FACTOR );
+	CHECK( hi - lo < 0.14f * (Real)settings.m_playableCells * MAP_XY_FACTOR );
 }
 
 /// Whether a point falls inside one of the map's water polygons, by the usual crossing count.
@@ -7492,6 +7722,56 @@ TEST(no_dry_ground_lies_below_the_water_surface)
 }
 
 //-------------------------------------------------------------------------------------------------
+/** The old lakes were a noisy circle: thirty-two radii around a seed. A basin that follows a
+	valley is longer in one direction than the other, which is what this measures. */
+//-------------------------------------------------------------------------------------------------
+TEST(a_generated_lake_follows_the_valley)
+{
+	CHECK( bootOnce() );
+
+	Int elongated = 0;
+
+	for( Int seed = 1; seed <= 6; seed++ )
+	{
+		RandomMapSettings settings;
+		settings.m_seed = seed * 7919;
+		settings.m_numPlayers = 4;
+		settings.m_playableCells = RandomMapGenerator::cellsFor( RANDOM_MAP_SIZE_SMALL, 4 );
+
+		std::vector<char> bytes;
+		RandomMapGenerator::generate( settings, bytes );
+		parseGeneratedMap( bytes );
+
+		for( Int area = 0; area < (Int)theRMGParse.m_waterPolygons.size(); area++ )
+		{
+			const std::vector<Coord3D>& polygon = theRMGParse.m_waterPolygons[area];
+			if( (Int)polygon.size() < 3 )
+				continue;
+
+			Real minX = polygon[0].x, maxX = polygon[0].x;
+			Real minY = polygon[0].y, maxY = polygon[0].y;
+			for( Int p = 1; p < (Int)polygon.size(); p++ )
+			{
+				if( polygon[p].x < minX ) minX = polygon[p].x;
+				if( polygon[p].x > maxX ) maxX = polygon[p].x;
+				if( polygon[p].y < minY ) minY = polygon[p].y;
+				if( polygon[p].y > maxY ) maxY = polygon[p].y;
+			}
+
+			Real width = maxX - minX;
+			Real height = maxY - minY;
+			if( width < 1.0f ) width = 1.0f;
+			if( height < 1.0f ) height = 1.0f;
+			Real aspect = ( width > height ) ? width / height : height / width;
+			if( aspect >= 1.55f )
+				elongated++;
+		}
+	}
+
+	CHECK( elongated > 0 );
+}
+
+//-------------------------------------------------------------------------------------------------
 /** Two towns on one map are two towns, not the same grid stamped twice.  Each rolls its own street
 	count, block spacing and rotation out of the seed, so what says the towns are generated rather
 	than placed is that the same seed at two player counts does not lay the same number of buildings
@@ -7591,6 +7871,357 @@ TEST(map_size_is_chosen_and_then_grows_with_the_players)
 }
 
 //-------------------------------------------------------------------------------------------------
+/** A generated map is not playable if a start cannot walk to the money, or has only one way out
+	of its own base. The flood here is the pathfinder's own: four neighbours, a cliff when the
+	cell's corners span more than PATHFIND_CLIFF_SLOPE_LIMIT_F, and water polygons are closed.
+	RMGFloodFillFromFirstStart ignores water, so a dock on an island still counted as reached. */
+//-------------------------------------------------------------------------------------------------
+static void RMGWorldToCell( const Coord3D& world, Int *cellX, Int *cellY )
+{
+	*cellX = (Int)(world.x / MAP_XY_FACTOR + 0.5f) + theRMGParse.m_border;
+	*cellY = (Int)(world.y / MAP_XY_FACTOR + 0.5f) + theRMGParse.m_border;
+}
+
+static Bool RMGCellIsWalkable( Int x, Int y )
+{
+	if( x < 0 || y < 0 || x >= theRMGParse.m_width - 1 || y >= theRMGParse.m_height - 1 )
+		return FALSE;
+	if( RMGCellSpan( x, y ) > 9.8f )
+		return FALSE;
+
+	Real worldX = (Real)(x - theRMGParse.m_border) * MAP_XY_FACTOR;
+	Real worldY = (Real)(y - theRMGParse.m_border) * MAP_XY_FACTOR;
+	if( insideAWaterArea( worldX, worldY ) )
+		return FALSE;
+
+	return TRUE;
+}
+
+static void RMGFloodFillWalkable( Int startX, Int startY, std::vector<char>& seen )
+{
+	Int width = theRMGParse.m_width;
+	seen.assign( width * theRMGParse.m_height, 0 );
+
+	if( !RMGCellIsWalkable( startX, startY ) )
+		return;
+
+	std::vector<Int> stack;
+	seen[startY * width + startX] = 1;
+	stack.push_back( startY * width + startX );
+
+	static const Int offsetX[4] = { 1, -1, 0, 0 };
+	static const Int offsetY[4] = { 0, 0, 1, -1 };
+
+	while( !stack.empty() )
+	{
+		Int index = stack.back();
+		stack.pop_back();
+
+		Int x = index % width;
+		Int y = index / width;
+
+		for( Int i = 0; i < 4; i++ )
+		{
+			Int nx = x + offsetX[i];
+			Int ny = y + offsetY[i];
+			if( nx < 0 || ny < 0 || nx >= theRMGParse.m_width - 1 || ny >= theRMGParse.m_height - 1 )
+				continue;
+			if( seen[ny * width + nx] )
+				continue;
+			if( !RMGCellIsWalkable( nx, ny ) )
+				continue;
+
+			seen[ny * width + nx] = 1;
+			stack.push_back( ny * width + nx );
+		}
+	}
+}
+
+/// Walkable gaps in the ring at the base blend radius. One gap is a cul-de-sac.
+/// The blend disc is 26 cells; a cell on that circle can still read as a cliff
+/// because its far corners sit on the original terrace, so a sample is open if
+/// any of the three radii 26, 27 and 28 along the same ray is walkable. A ring
+/// that is open all the way round is every way out, not none.
+static Int RMGStartRingCrossings( Int startX, Int startY )
+{
+	const Int samples = 360;
+	char walkable[360];
+	Int walkableCount = 0;
+
+	for( Int i = 0; i < samples; i++ )
+	{
+		Real angle = 2.0f * PI * (Real)i / (Real)samples;
+		Real dirX = Cos( angle );
+		Real dirY = Sin( angle );
+		Bool open = FALSE;
+		for( Int radius = 26; radius <= 28; radius++ )
+		{
+			Int x = (Int)((Real)startX + (Real)radius * dirX + 0.5f);
+			Int y = (Int)((Real)startY + (Real)radius * dirY + 0.5f);
+			if( RMGCellIsWalkable( x, y ) )
+			{
+				open = TRUE;
+				break;
+			}
+		}
+		walkable[i] = open ? 1 : 0;
+		if( open )
+			walkableCount++;
+	}
+
+	if( walkableCount == samples )
+		return 2;
+
+	Int crossings = 0;
+	Int longestOpen = 0;
+	Int run = 0;
+	for( Int i = 0; i < samples * 2; i++ )
+	{
+		Int idx = i % samples;
+		Int prev = (idx == 0) ? samples - 1 : idx - 1;
+		if( i < samples && walkable[idx] && !walkable[prev] )
+			crossings++;
+
+		if( walkable[idx] )
+		{
+			run++;
+			if( run > longestOpen )
+				longestOpen = run;
+		}
+		else
+		{
+			run = 0;
+		}
+	}
+
+	if( crossings >= 2 )
+		return crossings;
+
+	// One opening that is at least a right angle is a front, not a cul-de-sac.
+	if( longestOpen >= 90 )
+		return 2;
+
+	return crossings;
+}
+
+static Bool RMGSeenHasObjectAt( const std::vector<char>& seen, const Coord3D& world )
+{
+	Int x, y;
+	RMGWorldToCell( world, &x, &y );
+	if( x < 0 || y < 0 || x >= theRMGParse.m_width || y >= theRMGParse.m_height )
+		return FALSE;
+	if( seen[y * theRMGParse.m_width + x] )
+		return TRUE;
+
+	static const Int ox[4] = { 1, -1, 0, 0 };
+	static const Int oy[4] = { 0, 0, 1, -1 };
+	for( Int i = 0; i < 4; i++ )
+	{
+		Int nx = x + ox[i];
+		Int ny = y + oy[i];
+		if( nx < 0 || ny < 0 || nx >= theRMGParse.m_width || ny >= theRMGParse.m_height )
+			continue;
+		if( seen[ny * theRMGParse.m_width + nx] )
+			return TRUE;
+	}
+
+	return FALSE;
+}
+
+static void RMGDescribePlayabilityFailure( Int players, Int seed )
+{
+	Int width = theRMGParse.m_width;
+
+	for( Int i = 0; i < (Int)theRMGParse.m_waypointPositions.size(); i++ )
+	{
+		Int startX, startY;
+		RMGWorldToCell( theRMGParse.m_waypointPositions[i], &startX, &startY );
+
+		std::vector<char> seen;
+		RMGFloodFillWalkable( startX, startY, seen );
+
+		if( !RMGCellIsWalkable( startX, startY ) )
+		{
+			printf( "  playability fail players %d seed %d start %d: start cell is not walkable\n",
+				players, seed, i );
+			continue;
+		}
+
+		for( Int j = 0; j < (Int)theRMGParse.m_waypointPositions.size(); j++ )
+		{
+			if( j == i )
+				continue;
+
+			Int otherX, otherY;
+			RMGWorldToCell( theRMGParse.m_waypointPositions[j], &otherX, &otherY );
+			if( !seen[otherY * width + otherX] )
+				printf( "  playability fail players %d seed %d start %d: cannot walk to start %d\n",
+					players, seed, i, j );
+		}
+
+		Int docks = 0, derricks = 0, moneyUnreachable = 0;
+		for( Int k = 0; k < (Int)theRMGParse.m_objectNames.size(); k++ )
+		{
+			Bool isDock = theRMGParse.m_objectNames[k].compare( "SupplyDock" ) == 0;
+			Bool isDerrick = theRMGParse.m_objectNames[k].compare( "TechOilDerrick" ) == 0;
+			Bool isPile = theRMGParse.m_objectNames[k].compare( "SupplyPileSmall" ) == 0;
+			if( !isDock && !isDerrick && !isPile )
+				continue;
+
+			if( RMGSeenHasObjectAt( seen, theRMGParse.m_objectPositions[k] ) )
+			{
+				if( isDock )
+					docks++;
+				else if( isDerrick )
+					derricks++;
+			}
+			else
+			{
+				moneyUnreachable++;
+			}
+		}
+
+		if( docks < 1 )
+			printf( "  playability fail players %d seed %d start %d: reachable docks %d\n",
+				players, seed, i, docks );
+		if( derricks < 2 )
+			printf( "  playability fail players %d seed %d start %d: reachable derricks %d\n",
+				players, seed, i, derricks );
+		if( moneyUnreachable > 0 )
+			printf( "  playability fail players %d seed %d start %d: %d docks/derricks unreachable\n",
+				players, seed, i, moneyUnreachable );
+
+		Int crossings = RMGStartRingCrossings( startX, startY );
+		if( crossings < 2 )
+			printf( "  playability fail players %d seed %d start %d: %d ring crossing(s)\n",
+				players, seed, i, crossings );
+	}
+}
+
+static Bool RMGParsedMapIsPlayable( void )
+{
+	Int width = theRMGParse.m_width;
+
+	for( Int i = 0; i < (Int)theRMGParse.m_waypointPositions.size(); i++ )
+	{
+		Int startX, startY;
+		RMGWorldToCell( theRMGParse.m_waypointPositions[i], &startX, &startY );
+
+		std::vector<char> seen;
+		RMGFloodFillWalkable( startX, startY, seen );
+
+		if( !RMGCellIsWalkable( startX, startY ) )
+			return FALSE;
+
+		for( Int j = 0; j < (Int)theRMGParse.m_waypointPositions.size(); j++ )
+		{
+			if( j == i )
+				continue;
+
+			Int otherX, otherY;
+			RMGWorldToCell( theRMGParse.m_waypointPositions[j], &otherX, &otherY );
+			if( !seen[otherY * width + otherX] )
+				return FALSE;
+		}
+
+		Int docks = 0, derricks = 0;
+		for( Int k = 0; k < (Int)theRMGParse.m_objectNames.size(); k++ )
+		{
+			Bool isDock = theRMGParse.m_objectNames[k].compare( "SupplyDock" ) == 0;
+			Bool isDerrick = theRMGParse.m_objectNames[k].compare( "TechOilDerrick" ) == 0;
+			Bool isPile = theRMGParse.m_objectNames[k].compare( "SupplyPileSmall" ) == 0;
+			if( !isDock && !isDerrick && !isPile )
+				continue;
+
+			if( !RMGSeenHasObjectAt( seen, theRMGParse.m_objectPositions[k] ) )
+				return FALSE;
+
+			if( isDock )
+				docks++;
+			else if( isDerrick )
+				derricks++;
+		}
+
+		if( docks < 1 || derricks < 2 )
+			return FALSE;
+
+		if( RMGStartRingCrossings( startX, startY ) < 2 )
+			return FALSE;
+	}
+
+	return TRUE;
+}
+
+TEST(every_start_reaches_its_money_and_has_two_ways_out)
+{
+	CHECK( bootOnce() );
+
+	/* Before the playability repair, 2-player seed 1 and 4-player seed 12345 (and 32 others on
+		this sweep) failed the ring check. They stay in the seed list below. */
+
+	static const Int thePlayers[] = { 2, 4, 8 };
+	const Int numPlayers = sizeof(thePlayers) / sizeof(thePlayers[0]);
+
+	Int maps = 0;
+	Int failed = 0;
+
+	for( Int p = 0; p < numPlayers; p++ )
+	{
+		Int players = thePlayers[p];
+		std::vector<Int> seeds;
+		Int s;
+		for( s = 1; s <= 12; s++ )
+			seeds.push_back( s );
+		for( s = 1; s <= 4; s++ )
+			seeds.push_back( s * 7919 + players );
+		for( s = 1; s <= 3; s++ )
+			seeds.push_back( s * 104729 + players );
+		seeds.push_back( 1000 + players );
+		if( players == 2 )
+			seeds.push_back( 0 );
+		if( players == 4 )
+			seeds.push_back( 12345 );
+		if( players == 8 )
+			seeds.push_back( 7 );
+
+		for( s = 0; s < (Int)seeds.size(); s++ )
+		{
+			Int seed = seeds[s];
+			Bool already = FALSE;
+			for( Int t = 0; t < s; t++ )
+			{
+				if( seeds[t] == seed )
+					already = TRUE;
+			}
+			if( already )
+				continue;
+
+			RandomMapSettings settings;
+			settings.m_seed = seed;
+			settings.m_numPlayers = players;
+			settings.m_playableCells = RandomMapGenerator::cellsFor( RANDOM_MAP_SIZE_NORMAL, players );
+
+			std::vector<char> bytes;
+			RandomMapGenerator::generate( settings, bytes );
+			parseGeneratedMap( bytes );
+			maps++;
+
+			if( !RMGParsedMapIsPlayable() )
+			{
+				failed++;
+				RMGDescribePlayabilityFailure( players, seed );
+			}
+
+			CHECK( RMGParsedMapIsPlayable() );
+		}
+	}
+
+	CHECK( maps >= 12 * numPlayers );
+	if( failed == 0 )
+		printf( "PASS every_start_reaches_its_money_and_has_two_ways_out (%d maps)\n", maps );
+}
+
+//-------------------------------------------------------------------------------------------------
 /** The seed is worthless across two builds unless both builds turn it into the same bytes, and
 	nothing warns anybody when they stop doing so.  These numbers are that warning: change the
 	generator and this test fails until RANDOM_MAP_GENERATOR_VERSION and the recorded fingerprints
@@ -7600,14 +8231,14 @@ TEST(the_generator_still_turns_a_seed_into_the_bytes_it_used_to)
 {
 	CHECK( bootOnce() );
 
-	CHECK_EQ( RANDOM_MAP_GENERATOR_VERSION, 4 );
+	CHECK_EQ( RANDOM_MAP_GENERATOR_VERSION, 10 );
 
 	struct RMGFingerprint { Int m_seed, m_players, m_cells; UnsignedInt m_crc; };
 	static const RMGFingerprint theFingerprints[] =
 	{
-		{ 0, 2, 64, 0xF5A3F75C },
-		{ 12345, 4, 96, 0x6B8C91F3 },
-		{ 7, 8, 128, 0x4D643AD3 },
+		{ 0, 2, 64, 0x6FE5FB90 },
+		{ 12345, 4, 96, 0x71D5E795 },
+		{ 7, 8, 128, 0x9C0240F4 },
 	};
 	const Int numFingerprints = sizeof(theFingerprints) / sizeof(theFingerprints[0]);
 
