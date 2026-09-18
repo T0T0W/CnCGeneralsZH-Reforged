@@ -122,6 +122,7 @@
 #include "GameClient/Drawable.h"
 #include "Common/BuildAssistant.h"
 #include "GameLogic/Object.h"
+#include "GameLogic/Weapon.h"
 #include "GameClient/CommandXlat.h"
 #include "Common/ActionManager.h"
 #include "GameLogic/PartitionManager.h"
@@ -6492,6 +6493,16 @@ TEST(an_armed_unit_sees_little_further_than_it_can_shoot)
 	CHECK_NEAR( Object_armedShroudClearingRange( 0.0f, 100.0f ), 0.0f, 0.0001f );
 }
 
+/** Three units of range for every unit of height over the target, never more than doubling the
+	 range, and nothing taken away for standing lower. */
+TEST(high_ground_reaches_further_and_low_ground_no_shorter)
+{
+	CHECK_NEAR( Weapon_elevationRangeBonus( 200.0f, 20.0f ), 60.0f, 0.0001f );
+	CHECK_NEAR( Weapon_elevationRangeBonus( 200.0f, 400.0f ), 200.0f, 0.0001f );
+	CHECK_NEAR( Weapon_elevationRangeBonus( 200.0f, FLT_MAX ), 200.0f, 0.0001f );
+	CHECK_NEAR( Weapon_elevationRangeBonus( 200.0f, 0.0f ), 0.0f, 0.0001f );
+	CHECK_NEAR( Weapon_elevationRangeBonus( 200.0f, -40.0f ), 0.0f, 0.0001f );
+}
 
 /** A hill hides the ground behind it. Standing in the middle of flat ground with a wall of high cells
 	 two to the east, the unit sees the wall and nothing past it, and sees everything to the west. Put

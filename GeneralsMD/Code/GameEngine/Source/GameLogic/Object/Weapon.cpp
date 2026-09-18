@@ -97,6 +97,32 @@
 const DistanceCalculationType DAMAGE_RANGE_CALC_TYPE = FROM_BOUNDINGSPHERE_3D;
 
 //-------------------------------------------------------------------------------------------------
+/** High ground.  Range is measured flat, so a tank on a ridge used to reach no further than one in
+	* the valley below it.  Every world unit it stands above its target now adds three units of range,
+	* up to the range itself again.  Standing lower costs nothing: the approach to a target is
+	* planned with the flat range and never knows the target's height, so a shorter range uphill would
+	* park the attacker just outside it. */
+//-------------------------------------------------------------------------------------------------
+static const Real ELEVATION_RANGE_PER_HEIGHT = 3.0f;
+static const Real ELEVATION_RANGE_CAP = 1.0f;
+
+Real Weapon_elevationRangeBonus( Real range, Real heightAboveTarget )
+{
+	if( heightAboveTarget <= 0.0f )
+		return 0.0f;
+
+	return min( heightAboveTarget * ELEVATION_RANGE_PER_HEIGHT, range * ELEVATION_RANGE_CAP );
+}
+
+Real Weapon_elevatedRange( const Object *source, Real range, Real targetZ )
+{
+	if( source->isKindOf( KINDOF_AIRCRAFT ) )
+		return range;
+
+	return range + Weapon_elevationRangeBonus( range, source->getPosition()->z - targetZ );
+}
+
+//-------------------------------------------------------------------------------------------------
 static void parsePerVetLevelAsciiString( INI* ini, void* /*instance*/, void * store, const void* /*userData*/ )
 {
 	AsciiString* s = (AsciiString*)store;
@@ -878,7 +904,7 @@ UnsignedInt WeaponTemplate::fireWeaponTemplate
 	//Only perform this check if the weapon isn't a leech range weapon (which can have unlimited range!)
 	if( !ignoreRanges && !isLeechRangeWeapon() )
 	{
-		Real attackRangeSqr = sqr(getAttackRange(bonus));
+		Real attackRangeSqr = sqr(Weapon_elevatedRange(sourceObj, getAttackRange(bonus), victimPos->z));
 		if (distSqr > attackRangeSqr)
 		{
 			//DEBUG_ASSERTCRASH(distSqr < 5*5 || distSqr < attackRangeSqr*1.2f, ("*** victim is out of range (%f vs %f) of this weapon -- why did we attempt to fire?\n",sqrtf(distSqr),sqrtf(attackRangeSqr)));
@@ -2230,7 +2256,7 @@ Bool Weapon::isSourceObjectWithGoalPositionWithinAttackRange( const Object *sour
 Bool Weapon::isWithinAttackRange(const Object *source, const Coord3D* pos) const
 {
 	Real distSqr = ThePartitionManager->getDistanceSquared( source, pos, ATTACK_RANGE_CALC_TYPE );
-	Real attackRangeSqr = sqr(getAttackRange(source));
+	Real attackRangeSqr = sqr(Weapon_elevatedRange(source, getAttackRange(source), pos->z));
 	Real minAttackRangeSqr = sqr(m_template->getMinimumAttackRange());
 #ifdef RATIONALIZE_ATTACK_RANGE
 	if (distSqr < minAttackRangeSqr)
@@ -2247,7 +2273,7 @@ Bool Weapon::isWithinAttackRange(const Object *source, const Coord3D* pos) const
 Bool Weapon::isWithinAttackRange(const Object *source, const Object *target) const
 {
 	Real distSqr;
-	Real attackRangeSqr = sqr(getAttackRange(source));
+	Real attackRangeSqr = sqr(Weapon_elevatedRange(source, getAttackRange(source), target->getPosition()->z));
 
 	if( !target->isKindOf(KINDOF_BRIDGE) )
 	{

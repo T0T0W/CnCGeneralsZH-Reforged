@@ -6171,6 +6171,32 @@ public:
 #endif
 };
 
+//-------------------------------------------------------------------------------------------------
+/** A ground unit looks as far as the high ground lets it shoot: the scan runs out to the largest
+	* reach any height could give, and this cuts each enemy back to the reach its own height gives. */
+//-------------------------------------------------------------------------------------------------
+class PartitionFilterElevatedReach : public PartitionFilter
+{
+private:
+	const Object *m_self;
+	Real m_range;			///< the search distance on flat ground
+
+public:
+	PartitionFilterElevatedReach( const Object *self, Real range )
+		: m_self( self ), m_range( range )
+	{ }
+
+	virtual Bool allow( Object *other )
+	{
+		const Real reach = Weapon_elevatedRange( m_self, m_range, other->getPosition()->z );
+		return ThePartitionManager->getDistanceSquared( m_self, other, FROM_BOUNDINGSPHERE_2D ) <= reach * reach;
+	}
+
+#if defined(_DEBUG) || defined(_INTERNAL)
+	virtual const char* debugGetName() { return "PartitionFilterElevatedReach"; }
+#endif
+};
+
 Object* AIUpdateInterface::getNextMoodTarget( Bool calledByAI, Bool calledDuringIdle, Bool allowOutOfWeaponRangeTargets, Bool requireWithinWeaponRange )
 {
 	Object *obj = getObject();
@@ -6372,9 +6398,15 @@ Object* AIUpdateInterface::getNextMoodTarget( Bool calledByAI, Bool calledDuring
 	// ... and an aircraft only makes that long look forward - see PartitionFilterForwardArc.
 	//
 	PartitionFilterForwardArc filterArc( obj, obj->getLargestWeaponRange() );
+	PartitionFilterElevatedReach filterHeight( obj, rangeToFindWithin );
 	PartitionFilter *arc = NULL;
 	if( allowOutOfWeaponRangeTargets && obj->isKindOf( KINDOF_AIRCRAFT ) )
 		arc = &filterArc;
+	else if( !obj->isKindOf( KINDOF_AIRCRAFT ) && container == NULL )
+	{
+		arc = &filterHeight;
+		rangeToFindWithin += Weapon_elevationRangeBonus( rangeToFindWithin, FLT_MAX );
+	}
 
 	Object *newVictim = TheAI->findClosestEnemy(obj, rangeToFindWithin, flags, getAttackInfo(), arc);
 

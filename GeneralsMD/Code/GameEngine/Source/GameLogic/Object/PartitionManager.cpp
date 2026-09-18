@@ -77,6 +77,7 @@
 #include "GameLogic/PolygonTrigger.h"
 #include "GameLogic/Squad.h"
 #include "GameLogic/GhostObject.h"
+#include "GameLogic/Weapon.h"
 
 #include "GameClient/Line2D.h"
 #include "GameClient/ControlBar.h"
@@ -4331,7 +4332,7 @@ static Real sightBlockingHeight( PartitionCell *cell, const Object *looker, cons
 }
 
 //-----------------------------------------------------------------------------
-void PartitionManager::doBlockedShroudReveal( SightingInfo *sighting, const Object *looker )
+void PartitionManager::doBlockedShroudReveal( SightingInfo *sighting, const Object *looker, Real flatRange )
 {
 	Int cellCenterX, cellCenterY;
 	worldToCell( sighting->m_where.x, sighting->m_where.y, &cellCenterX, &cellCenterY );
@@ -4357,9 +4358,22 @@ void PartitionManager::doBlockedShroudReveal( SightingInfo *sighting, const Obje
 
 	PartitionManager_findSightMargins( &heights[0], cellRadius, m_cellSize, sighting->m_where.z, &sightMargin[0] );
 
+	// r * ( r + 1 ) rather than r squared: the circle the reveal is drawn with is a Bresenham one,
+	// and on flat ground this has to keep every cell of it
+	const Bool stretched = sighting->m_howFar > flatRange;
 	sighting->m_revealedCells.resize( side * side );
 	for( Int cell = 0; cell < side * side; ++cell )
-		sighting->m_revealedCells[ cell ] = sightMargin[ cell ] >= 0.0f;
+	{
+		Bool revealed = sightMargin[ cell ] >= 0.0f;
+		if( revealed && stretched )
+		{
+			const Int offsetX = cell % side - cellRadius;
+			const Int offsetY = cell / side - cellRadius;
+			const Int reachCells = sightCellRadius( Weapon_elevatedRange( looker, flatRange, heights[ cell ] ) );
+			revealed = offsetX * offsetX + offsetY * offsetY <= reachCells * ( reachCells + 1 );
+		}
+		sighting->m_revealedCells[ cell ] = revealed;
+	}
 
 	applyRecordedReveal( sighting, TRUE );
 }

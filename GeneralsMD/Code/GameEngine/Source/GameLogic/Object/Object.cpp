@@ -5236,10 +5236,11 @@ void Object::look()
 				Coord3D eye = *getPosition();
 				eye.z += getGeometryInfo().getMaxHeightAbovePosition();
 
+				// out to the furthest the high ground could carry it; each cell is cut back to its own height
 				m_partitionLastLook->m_where = eye;
 				m_partitionLastLook->m_forWhom = lookingMask;
-				m_partitionLastLook->m_howFar = shroudClearingRange;
-				ThePartitionManager->doBlockedShroudReveal( m_partitionLastLook, this );
+				m_partitionLastLook->m_howFar = Weapon_elevatedRange( this, shroudClearingRange, -FLT_MAX );
+				ThePartitionManager->doBlockedShroudReveal( m_partitionLastLook, this, shroudClearingRange );
 
 	//			DEBUG_LOG(( "A %s looks at %f, %f for %x at range %f\n",
 	//									getTemplate()->getName().str(),

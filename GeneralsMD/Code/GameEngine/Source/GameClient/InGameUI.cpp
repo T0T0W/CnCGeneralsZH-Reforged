@@ -150,7 +150,8 @@ enum
 
 	REACH_OUTLINE_SEGMENTS		= 256,	///< straight pieces round one reach circle
 	REACH_CROSSING_HALVINGS		= 8,		///< halvings that find where one circle's outline enters another
-	REACH_OUTLINE_ALPHA				= 230		///< the outline in the owner's colour, a touch see-through
+	REACH_OUTLINE_ALPHA				= 230,	///< the outline in the owner's colour, a touch see-through
+	ELEVATED_REACH_PASSES			= 3			///< where the ground under the edge is read moves with the edge
 };
 
 static const Real REACH_OUTLINE_WIDTH = 1.0f;
@@ -1695,6 +1696,26 @@ static Real templateReach( const ThingTemplate *tmpl )
 }
 
 //-------------------------------------------------------------------------------------------------
+/** A structure's flat reach, templateReach, along one direction from where it stands: further
+	* wherever the ground it looks down on lies below it, by the same high ground bonus its weapon,
+	* of templatePlacementRange, is tested with.  How far the edge goes decides whose ground height
+	* it gets, so it is settled over a few passes. */
+//-------------------------------------------------------------------------------------------------
+static Real elevatedReach( Real reach, Real range, const Coord3D &center, Real angle )
+{
+	const Real dirX = Cos( angle );
+	const Real dirY = Sin( angle );
+
+	Real along = reach;
+	for( Int pass = 0; pass < ELEVATED_REACH_PASSES; pass++ )
+	{
+		const Real groundZ = TheTerrainLogic->getGroundHeight( center.x + dirX * along, center.y + dirY * along );
+		along = reach + Weapon_elevationRangeBonus( range, center.z - groundZ );
+	}
+	return along;
+}
+
+//-------------------------------------------------------------------------------------------------
 // The top left drop-down.  Row 0 is its header; each row after it is one strip, its words, the
 // GlobalData switch it flips and the Options.ini key that switch is saved under.
 //-------------------------------------------------------------------------------------------------
@@ -1943,16 +1964,31 @@ static void fillSpanRows( std::vector< std::vector< ICoord2D > > &rows, Color co
 
 //-------------------------------------------------------------------------------------------------
 /** A defence's reach cut into the blind-spot polar grid: sector ray covers the angles from ray to
-	* ray + 1, ring ring the distances from ring to ring + 1 ring widths.  blocked is empty for a
-	* defence that shoots whatever is in range. */
+	* ray + 1, ring ring the distances from ring to ring + 1 ring widths.  reach is how far each sector
+	* goes, longer down a slope, and radius the longest of them.  blocked is empty for a defence that
+	* shoots whatever is in range. */
 //-------------------------------------------------------------------------------------------------
 struct ReachView
 {
-	Coord2D center;
+	Coord3D center;
 	Real radius;
+	std::vector< Real > reach;
 	Int rings;
 	std::vector< Bool > blocked;
 };
+
+static void traceReachView( ReachView &view, const ThingTemplate *tmpl )
+{
+	const Real flatReach = templateReach( tmpl );
+	const Real range = templatePlacementRange( tmpl );
+	view.reach.resize( BLIND_SPOT_RAYS );
+	view.radius = 0.0f;
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		view.reach[ ray ] = elevatedReach( flatReach, range, view.center, 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS );
+		view.radius = max( view.radius, view.reach[ ray ] );
+	}
+}
 
 static Bool templateNeedsLineOfSight( const ThingTemplate *tmpl )
 {
@@ -1993,7 +2029,8 @@ static void lookRoundReach( ReachView &view, Real eyeZ, ObjectID self )
 			const Bool behindHill = targetSlope < horizonSlope;
 			horizonSlope = max( horizonSlope, ( groundZ - LOS_TERRAIN_SLOP - eyeZ ) / along );
 
-			view.blocked[ ray * view.rings + ring ] = behindBuilding || behindHill;
+			const Bool inReach = ( ring + 0.5f ) * BLIND_SPOT_RING_WIDTH < view.reach[ ray ];
+			view.blocked[ ray * view.rings + ring ] = inReach && ( behindBuilding || behindHill );
 		}
 	}
 }
@@ -2005,13 +2042,16 @@ static Bool reachViewHits( const ReachView &view, Real x, Real y )
 	const Real distance = sqrtf( sqr( dx ) + sqr( dy ) );
 	if( distance >= view.radius )
 		return FALSE;
-	if( view.blocked.empty() )
-		return TRUE;
 
 	Real angle = atan2( dy, dx );
 	if( angle < 0.0f )
 		angle += 2.0f * PI;
 	const Int ray = min( (Int)( angle * BLIND_SPOT_RAYS / ( 2.0f * PI ) ), BLIND_SPOT_RAYS - 1 );
+	if( distance >= view.reach[ ray ] )
+		return FALSE;
+	if( view.blocked.empty() )
+		return TRUE;
+
 	const Int ring = min( (Int)( distance / BLIND_SPOT_RING_WIDTH ), view.rings - 1 );
 	return !view.blocked[ ray * view.rings + ring ];
 }
@@ -2051,9 +2091,9 @@ void InGameUI::drawPlacementBlindSpots( void )
 	ReachView pending;
 	pending.center.x = center.x;
 	pending.center.y = center.y;
-	pending.radius = m_placementRingRadius;
-	const Real eyeZ = TheTerrainLogic->getGroundHeight( center.x, center.y )
-		+ m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
+	pending.center.z = TheTerrainLogic->getGroundHeight( center.x, center.y );
+	traceReachView( pending, m_pendingPlaceType );
+	const Real eyeZ = pending.center.z + m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
 	lookRoundReach( pending, eyeZ, INVALID_ID );
 
 	const Real range = pending.radius;
@@ -2069,13 +2109,16 @@ void InGameUI::drawPlacementBlindSpots( void )
 		if( obj->getControllingPlayer() != local && local->getRelationship( obj->getTeam() ) != ALLIES )
 			continue;
 
-		ReachView guard;
-		guard.radius = templateReach( obj->getTemplate() );
-		guard.center.x = obj->getPosition()->x;
-		guard.center.y = obj->getPosition()->y;
-		guard.rings = 0;
-		if( guard.radius <= 0.0f || sqr( guard.center.x - center.x ) + sqr( guard.center.y - center.y ) >= sqr( guard.radius + range ) )
+		const Real flatReach = templateReach( obj->getTemplate() );
+		const Real furthest = flatReach + Weapon_elevationRangeBonus( templatePlacementRange( obj->getTemplate() ), FLT_MAX );
+		const Coord3D *position = obj->getPosition();
+		if( flatReach <= 0.0f || sqr( position->x - center.x ) + sqr( position->y - center.y ) >= sqr( furthest + range ) )
 			continue;
+
+		ReachView guard;
+		guard.center = *position;
+		guard.rings = 0;
+		traceReachView( guard, obj->getTemplate() );
 
 		if( templateNeedsLineOfSight( obj->getTemplate() ) )
 			lookRoundReach( guard, obj->getPosition()->z + obj->getGeometryInfo().getMaxHeightAbovePosition(), obj->getID() );
@@ -2162,18 +2205,52 @@ static Bool projectGroundPoint( Real x, Real y, ICoord2D *screen )
 
 struct ReachCircle
 {
-	Coord2D center;
-	Real radius;
+	Coord3D center;
+	Real radius;								///< the furthest the outline goes
+	std::vector< Real > outline;	///< the reach at the start of each outline segment, longer down a slope
 	const Player *owner;
 };
+
+static void traceReachCircle( ReachCircle &circle, const ThingTemplate *tmpl )
+{
+	const Real flatReach = templateReach( tmpl );
+	const Real range = templatePlacementRange( tmpl );
+	circle.outline.resize( REACH_OUTLINE_SEGMENTS );
+	circle.radius = 0.0f;
+	for( Int segment = 0; segment < REACH_OUTLINE_SEGMENTS; segment++ )
+	{
+		circle.outline[ segment ] = elevatedReach( flatReach, range, circle.center, 2.0f * PI * segment / REACH_OUTLINE_SEGMENTS );
+		circle.radius = max( circle.radius, circle.outline[ segment ] );
+	}
+}
+
+/// the reach toward an angle from 0 to two pi, read between the outline corners either side of it
+static Real reachAtAngle( const ReachCircle &circle, Real angle )
+{
+	const Real at = angle * REACH_OUTLINE_SEGMENTS / ( 2.0f * PI );
+	const Int from = min( (Int)at, REACH_OUTLINE_SEGMENTS - 1 );
+	const Real part = at - from;
+	return circle.outline[ from ] * ( 1.0f - part ) + circle.outline[ ( from + 1 ) % REACH_OUTLINE_SEGMENTS ] * part;
+}
 
 /// inside another circle of the same player's; two players' circles cross, each in its own colour
 static Bool insideOtherReach( const std::vector< ReachCircle > &circles, size_t self, Real x, Real y )
 {
 	for( size_t c = 0; c < circles.size(); c++ )
 	{
-		if( c != self && circles[ c ].owner == circles[ self ].owner
-			&& sqr( x - circles[ c ].center.x ) + sqr( y - circles[ c ].center.y ) < sqr( circles[ c ].radius ) )
+		if( c == self || circles[ c ].owner != circles[ self ].owner )
+			continue;
+
+		const Real dx = x - circles[ c ].center.x;
+		const Real dy = y - circles[ c ].center.y;
+		const Real distanceSqr = sqr( dx ) + sqr( dy );
+		if( distanceSqr >= sqr( circles[ c ].radius ) )
+			continue;
+
+		Real angle = atan2( dy, dx );
+		if( angle < 0.0f )
+			angle += 2.0f * PI;
+		if( distanceSqr < sqr( reachAtAngle( circles[ c ], angle ) ) )
 			return TRUE;
 	}
 	return FALSE;
@@ -2212,8 +2289,9 @@ void InGameUI::drawPlacementReach( void )
 		ReachCircle pending;
 		pending.center.x = m_placeIcon[ 0 ]->getPosition()->x;
 		pending.center.y = m_placeIcon[ 0 ]->getPosition()->y;
-		pending.radius = m_placementRingRadius;
+		pending.center.z = TheTerrainLogic->getGroundHeight( pending.center.x, pending.center.y );
 		pending.owner = local;
+		traceReachCircle( pending, m_pendingPlaceType );
 		circles.push_back( pending );
 	}
 
@@ -2224,13 +2302,12 @@ void InGameUI::drawPlacementReach( void )
 		if( obj->getControllingPlayer() != local && obj->getShroudedStatus( local->getPlayerIndex() ) >= OBJECTSHROUD_FOGGED )
 			continue;
 
-		ReachCircle placed;
-		placed.radius = templateReach( obj->getTemplate() );
-		if( placed.radius <= 0.0f )
+		if( templateReach( obj->getTemplate() ) <= 0.0f )
 			continue;
-		placed.center.x = obj->getPosition()->x;
-		placed.center.y = obj->getPosition()->y;
+		ReachCircle placed;
+		placed.center = *obj->getPosition();
 		placed.owner = obj->getControllingPlayer();
+		traceReachCircle( placed, obj->getTemplate() );
 		circles.push_back( placed );
 	}
 
@@ -2248,8 +2325,9 @@ void InGameUI::drawPlacementReach( void )
 			Bool inside[ 2 ];
 			for( Int e = 0; e < 2; e++ )
 			{
-				ends[ e ][ 0 ] = circle.center.x + Cos( angles[ e ] ) * circle.radius;
-				ends[ e ][ 1 ] = circle.center.y + Sin( angles[ e ] ) * circle.radius;
+				const Real reach = reachAtAngle( circle, angles[ e ] );
+				ends[ e ][ 0 ] = circle.center.x + Cos( angles[ e ] ) * reach;
+				ends[ e ][ 1 ] = circle.center.y + Sin( angles[ e ] ) * reach;
 				inside[ e ] = insideOtherReach( circles, c, ends[ e ][ 0 ], ends[ e ][ 1 ] );
 			}
 			if( inside[ 0 ] && inside[ 1 ] )
@@ -2263,14 +2341,16 @@ void InGameUI::drawPlacementReach( void )
 				for( Int halving = 0; halving < REACH_CROSSING_HALVINGS; halving++ )
 				{
 					const Real middle = 0.5f * ( outsideAngle + insideAngle );
-					if( insideOtherReach( circles, c, circle.center.x + Cos( middle ) * circle.radius, circle.center.y + Sin( middle ) * circle.radius ) )
+					const Real middleReach = reachAtAngle( circle, middle );
+					if( insideOtherReach( circles, c, circle.center.x + Cos( middle ) * middleReach, circle.center.y + Sin( middle ) * middleReach ) )
 						insideAngle = middle;
 					else
 						outsideAngle = middle;
 				}
 				const Int cut = inside[ 0 ] ? 0 : 1;
-				ends[ cut ][ 0 ] = circle.center.x + Cos( outsideAngle ) * circle.radius;
-				ends[ cut ][ 1 ] = circle.center.y + Sin( outsideAngle ) * circle.radius;
+				const Real cutReach = reachAtAngle( circle, outsideAngle );
+				ends[ cut ][ 0 ] = circle.center.x + Cos( outsideAngle ) * cutReach;
+				ends[ cut ][ 1 ] = circle.center.y + Sin( outsideAngle ) * cutReach;
 			}
 
 			ICoord2D from, to;

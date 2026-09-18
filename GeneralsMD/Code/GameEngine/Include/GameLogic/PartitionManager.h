@@ -1386,8 +1386,10 @@ public:
 
 	/** Reveal the circle around an eye except where a hill or a building stands between the eye and
 		the ground, and record in the sighting which cells that was. The looker never hides behind
-		itself or the building it sits in. */
-	void doBlockedShroudReveal( SightingInfo *sighting, const Object *looker );
+		itself or the building it sits in. The sighting's range is the furthest the looker could see
+		from high ground; a cell lies inside it only as far as flatRange stretches from the height the
+		looker stands above that cell. */
+	void doBlockedShroudReveal( SightingInfo *sighting, const Object *looker, Real flatRange );
 
 	void doShroudCover( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);
 	void undoShroudCover( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);

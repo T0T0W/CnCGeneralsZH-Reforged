@@ -897,5 +897,11 @@ private:
 // EXTERNALS //////////////////////////////////////////////////////////////////////////////////////
 extern WeaponStore *TheWeaponStore;
 
+///< how much further a range reaches from heightAboveTarget above what it is aimed at; never less
+extern Real Weapon_elevationRangeBonus( Real range, Real heightAboveTarget );
+
+///< range as source reaches something standing at targetZ; an aircraft gets no high ground
+extern Real Weapon_elevatedRange( const Object *source, Real range, Real targetZ );
+
 #endif // __WEAPON_H_
 
