@@ -1180,7 +1180,7 @@ protected:
 	Bool												m_placementRangeRingUp;	///< the structure on the cursor is armed, so its reach is drawn
 	Real												m_placementRingRadius;	///< how far from its centre it hits
 	void drawPlacementReach( void );			///< while placing, the reach of every armed building in sight, as one outline
-	void drawPlacementBlindSpots( void );	///< shade the ground behind buildings a placed defence cannot shoot past
+	void drawBlindSpots( void );					///< shade the ground a placed or selected defence cannot shoot into
 
 	DisplayString *							m_hudDisplayString;			///< the ShowHudOverlay line (fps / clock)
 	DisplayString *							m_peaceTimeDisplayString;	///< the peace time clock at the top of the screen

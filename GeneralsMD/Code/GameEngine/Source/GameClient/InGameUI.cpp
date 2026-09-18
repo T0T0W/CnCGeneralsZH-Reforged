@@ -1653,12 +1653,18 @@ static Real templateWeaponRange( const ThingTemplate *tmpl )
 	* Half the GLA's defences carry no gun at all: a stinger site is an empty shell with a
 	* SpawnBehavior that keeps three stinger soldiers alive next to it, and the soldiers own the
 	* missiles. Judged by its own template the site is unarmed, so no ring was ever drawn for the
-	* one faction whose defences most need siting. */
+	* one faction whose defences most need siting.
+	*
+	* Only a structure the INI marks SPAWNS_ARE_THE_WEAPONS counts its spawns.  A GLA supply stash
+	* spawns workers too, and a worker carries a mine-disarming weapon, so reading every spawner's
+	* spawns put a reach circle round the stash. */
 //-------------------------------------------------------------------------------------------------
 static Real templatePlacementRange( const ThingTemplate *tmpl )
 {
 	Real range = templateWeaponRange( tmpl );
 	if( range > 0.0f || tmpl == NULL || TheThingFactory == NULL )
+		return range;
+	if( !tmpl->isKindOf( KINDOF_SPAWNS_ARE_THE_WEAPONS ) )
 		return range;
 
 	const ModuleInfo& modules = tmpl->getBehaviorModuleInfo();
@@ -2057,7 +2063,245 @@ static Bool reachViewHits( const ReachView &view, Real x, Real y )
 }
 
 //-------------------------------------------------------------------------------------------------
-/** The ground a defence on the cursor could not shoot into, darkened inside its red range area.
+/** Every structure on the map as the reach drawing sees it, gathered once a frame.  A building going
+	* up or coming down changes what a defence can see past, and one coming out of the fog changes which
+	* circles are drawn, so every cache below is thrown away when this list differs from the last
+	* frame's.  Working the circles and the blind spots out again every frame is what made clicking a
+	* turret in a base of forty defences slow: each circle's outline was tested against every other
+	* circle, every frame. */
+//-------------------------------------------------------------------------------------------------
+struct StructureKey
+{
+	ObjectID id;
+	Coord3D position;
+	const Player *owner;
+	Bool reachShown;		///< armed and not hidden from the local player, so its circle is drawn
+
+	Bool operator==( const StructureKey &other ) const
+	{
+		return id == other.id && position.x == other.position.x && position.y == other.position.y
+			&& position.z == other.position.z && owner == other.owner && reachShown == other.reachShown;
+	}
+};
+
+static std::vector< StructureKey > theStructureKeys;
+static UnsignedInt theStructureKeysFrame = 0;
+static Int theStructureGeneration = 0;		///< goes up every time theStructureKeys changes
+
+static void refreshStructureKeys( void )
+{
+	const UnsignedInt frame = TheGameClient->getFrame();
+	if( frame == theStructureKeysFrame && !theStructureKeys.empty() )
+		return;
+	theStructureKeysFrame = frame;
+
+	const Player *local = ThePlayerList->getLocalPlayer();
+	std::vector< StructureKey > keys;
+	keys.reserve( theStructureKeys.size() );
+	for( Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject() )
+	{
+		if( !obj->isKindOf( KINDOF_STRUCTURE ) )
+			continue;
+
+		StructureKey key;
+		key.id = obj->getID();
+		key.position = *obj->getPosition();
+		key.owner = obj->getControllingPlayer();
+		key.reachShown = templateReach( obj->getTemplate() ) > 0.0f
+			&& ( key.owner == local || obj->getShroudedStatus( local->getPlayerIndex() ) < OBJECTSHROUD_FOGGED );
+		keys.push_back( key );
+	}
+
+	if( keys == theStructureKeys )
+		return;
+	theStructureKeys.swap( keys );
+	++theStructureGeneration;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A defence's polar grid with the ground under every corner of it looked up: corner ( ray, ring )
+	* sits on the ray's leading edge at the ring's inner radius. */
+//-------------------------------------------------------------------------------------------------
+struct BlindSpotShade
+{
+	ReachView view;
+	std::vector< Coord3D > corners;
+};
+
+static void buildBlindSpotShade( BlindSpotShade &shade, const ThingTemplate *tmpl, const Coord3D &center, Real eyeZ, ObjectID self )
+{
+	shade.view.center = center;
+	traceReachView( shade.view, tmpl );
+	lookRoundReach( shade.view, eyeZ, self );
+
+	const Int cornerRings = shade.view.rings + 1;
+	shade.corners.resize( BLIND_SPOT_RAYS * cornerRings );
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ray / BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < cornerRings; ring++ )
+		{
+			const Real along = min( ring * BLIND_SPOT_RING_WIDTH, shade.view.radius );
+			Coord3D &ground = shade.corners[ ray * cornerRings + ring ];
+			ground.x = center.x + Cos( angle ) * along;
+			ground.y = center.y + Sin( angle ) * along;
+			ground.z = TheTerrainLogic->getGroundHeight( ground.x, ground.y );
+		}
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The blocked cells of a shade projected corner by corner and filled as one shape, row by row, so
+	* the shade follows the ground and has no seams in it. */
+//-------------------------------------------------------------------------------------------------
+static void fillBlindSpotShade( const BlindSpotShade &shade )
+{
+	const ReachView &view = shade.view;
+	if( std::find( view.blocked.begin(), view.blocked.end(), TRUE ) == view.blocked.end() )
+		return;
+
+	// only the corners of blocked cells are projected, each once
+	enum { CORNER_UNPROJECTED, CORNER_ON_SCREEN, CORNER_OFF_SCREEN };
+	const Int rings = view.rings;
+	const Int cornerRings = rings + 1;
+	std::vector< ICoord2D > corners( shade.corners.size() );
+	std::vector< UnsignedByte > projected( shade.corners.size(), CORNER_UNPROJECTED );
+
+	std::vector< std::vector< ICoord2D > > rows( TheDisplay->getHeight() );
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Int next = ( ray + 1 ) % BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < rings; ring++ )
+		{
+			if( !view.blocked[ ray * rings + ring ] )
+				continue;
+
+			const Int quad[ 4 ] = { ray * cornerRings + ring, next * cornerRings + ring,
+				next * cornerRings + ring + 1, ray * cornerRings + ring + 1 };
+			Bool allOnScreen = TRUE;
+			for( Int q = 0; q < 4; q++ )
+			{
+				UnsignedByte &state = projected[ quad[ q ] ];
+				if( state == CORNER_UNPROJECTED )
+				{
+					const Bool onScreen = TheTacticalView->worldToScreenTriReturn( &shade.corners[ quad[ q ] ], &corners[ quad[ q ] ] ) != View::WTS_INVALID;
+					state = onScreen ? CORNER_ON_SCREEN : CORNER_OFF_SCREEN;
+				}
+				allOnScreen = allOnScreen && state == CORNER_ON_SCREEN;
+			}
+			if( !allOnScreen )
+				continue;
+
+			const ICoord2D *quadCorners[ 4 ] = { &corners[ quad[ 0 ] ], &corners[ quad[ 1 ] ], &corners[ quad[ 2 ] ], &corners[ quad[ 3 ] ] };
+			addQuadSpans( quadCorners, rows );
+		}
+	}
+
+	fillSpanRows( rows, GameMakeColor( 0, 0, 0, 120 ) );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** What each of the player's and the allies' defences hits from where it stands, kept until a
+	* structure somewhere changes. */
+//-------------------------------------------------------------------------------------------------
+static std::map< ObjectID, ReachView > theGuardViews;
+static Int theGuardViewsGeneration = -1;
+
+static const ReachView &guardView( const Object *obj )
+{
+	if( theGuardViewsGeneration != theStructureGeneration )
+	{
+		theGuardViews.clear();
+		theGuardViewsGeneration = theStructureGeneration;
+	}
+
+	std::map< ObjectID, ReachView >::iterator found = theGuardViews.find( obj->getID() );
+	if( found != theGuardViews.end() )
+		return found->second;
+
+	ReachView &guard = theGuardViews[ obj->getID() ];
+	guard.center = *obj->getPosition();
+	guard.rings = 0;
+	traceReachView( guard, obj->getTemplate() );
+	if( templateNeedsLineOfSight( obj->getTemplate() ) )
+		lookRoundReach( guard, obj->getPosition()->z + obj->getGeometryInfo().getMaxHeightAbovePosition(), obj->getID() );
+	return guard;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Ground a defence on the cursor cannot see but one of the player's or an ally's defences already
+	* hits is left bright: a turret beside the building covers the corner behind it, and that corner is
+	* not a hole.  Each of those defences has the same polar grid from where it stands, with its own
+	* cells not counted as a building in its way, and the shaded cell's middle is looked up in it. */
+//-------------------------------------------------------------------------------------------------
+static void clearGuardedBlindSpots( ReachView &pending )
+{
+	const Player *local = ThePlayerList->getLocalPlayer();
+	std::vector< const ReachView * > guards;
+	for( size_t k = 0; k < theStructureKeys.size(); k++ )
+	{
+		const StructureKey &key = theStructureKeys[ k ];
+		const Object *obj = TheGameLogic->findObjectByID( key.id );
+		if( key.owner != local && local->getRelationship( obj->getTeam() ) != ALLIES )
+			continue;
+
+		const Real flatReach = templateReach( obj->getTemplate() );
+		const Real furthest = flatReach + Weapon_elevationRangeBonus( templatePlacementRange( obj->getTemplate() ), FLT_MAX );
+		if( flatReach <= 0.0f || sqr( key.position.x - pending.center.x ) + sqr( key.position.y - pending.center.y ) >= sqr( furthest + pending.radius ) )
+			continue;
+
+		guards.push_back( &guardView( obj ) );
+	}
+
+	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	{
+		const Real angle = 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS;
+		for( Int ring = 0; ring < pending.rings; ring++ )
+		{
+			const Int index = ray * pending.rings + ring;
+			if( !pending.blocked[ index ] )
+				continue;
+
+			const Real along = min( ( ring + 0.5f ) * BLIND_SPOT_RING_WIDTH, pending.radius );
+			const Real x = pending.center.x + Cos( angle ) * along;
+			const Real y = pending.center.y + Sin( angle ) * along;
+			for( size_t g = 0; g < guards.size() && pending.blocked[ index ]; g++ )
+			{
+				if( reachViewHits( *guards[ g ], x, y ) )
+					pending.blocked[ index ] = FALSE;
+			}
+		}
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A selected defence's blind spots, worked out once and kept until a structure somewhere changes. */
+//-------------------------------------------------------------------------------------------------
+static std::map< ObjectID, BlindSpotShade > theSelectedShades;
+static Int theSelectedShadesGeneration = -1;
+
+static const BlindSpotShade &selectedBlindSpotShade( const Object *obj )
+{
+	if( theSelectedShadesGeneration != theStructureGeneration )
+	{
+		theSelectedShades.clear();
+		theSelectedShadesGeneration = theStructureGeneration;
+	}
+
+	std::map< ObjectID, BlindSpotShade >::iterator found = theSelectedShades.find( obj->getID() );
+	if( found != theSelectedShades.end() )
+		return found->second;
+
+	BlindSpotShade &shade = theSelectedShades[ obj->getID() ];
+	const Coord3D *position = obj->getPosition();
+	buildBlindSpotShade( shade, obj->getTemplate(), *position,
+		position->z + obj->getGeometryInfo().getMaxHeightAbovePosition(), obj->getID() );
+	return shade;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The ground a defence could not shoot into, darkened inside its reach: the one on the cursor while
+	* it is being sited, and every selected one.
 	*
 	* A defence that needs a line of sight - a Patriot battery, a Gattling Cannon, a Fire Base - does
 	* not fire through a building, and cannot pick a target a hill hides from it.  Both rules are the
@@ -2073,134 +2317,38 @@ static Bool reachViewHits( const ReachView &view, Real x, Real y )
 	* filled as one shape, row by row, so the shade follows the ground and has no seams in it.
 	*
 	* A Stinger Site, a bunker and anything else that does not need the line of sight gets no shading,
-	* because none of that ground is out of its reach.
-	*
-	* Ground the defence cannot see but one of the player's or an ally's defences already hits is left
-	* bright: a turret beside the building covers the corner behind it, and that corner is not a hole.
-	* Each of those defences gets the same polar grid from where it stands, with its own cells not
-	* counted as a building in its way, and the shaded cell's middle is looked up in it. */
+	* because none of that ground is out of its reach. */
 //-------------------------------------------------------------------------------------------------
-void InGameUI::drawPlacementBlindSpots( void )
+void InGameUI::drawBlindSpots( void )
 {
-	if( m_pendingPlaceType == NULL || !m_placementRangeRingUp )
-		return;
-	if( !templateNeedsLineOfSight( m_pendingPlaceType ) )
-		return;
-
-	const Coord3D center = *m_placeIcon[ 0 ]->getPosition();
-	ReachView pending;
-	pending.center.x = center.x;
-	pending.center.y = center.y;
-	pending.center.z = TheTerrainLogic->getGroundHeight( center.x, center.y );
-	traceReachView( pending, m_pendingPlaceType );
-	const Real eyeZ = pending.center.z + m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
-	lookRoundReach( pending, eyeZ, INVALID_ID );
-
-	const Real range = pending.radius;
-	const Int rings = pending.rings;
-	std::vector< Bool > &blocked = pending.blocked;
-
-	std::vector< ReachView > guards;
-	const Player *local = ThePlayerList->getLocalPlayer();
-	for( Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject() )
+	if( m_pendingPlaceType != NULL && m_placementRangeRingUp && templateNeedsLineOfSight( m_pendingPlaceType ) )
 	{
-		if( !obj->isKindOf( KINDOF_STRUCTURE ) )
-			continue;
-		if( obj->getControllingPlayer() != local && local->getRelationship( obj->getTeam() ) != ALLIES )
-			continue;
+		refreshStructureKeys();
+		Coord3D center = *m_placeIcon[ 0 ]->getPosition();
+		center.z = TheTerrainLogic->getGroundHeight( center.x, center.y );
+		const Real eyeZ = center.z + m_pendingPlaceType->getTemplateGeometryInfo().getMaxHeightAbovePosition();
 
-		const Real flatReach = templateReach( obj->getTemplate() );
-		const Real furthest = flatReach + Weapon_elevationRangeBonus( templatePlacementRange( obj->getTemplate() ), FLT_MAX );
-		const Coord3D *position = obj->getPosition();
-		if( flatReach <= 0.0f || sqr( position->x - center.x ) + sqr( position->y - center.y ) >= sqr( furthest + range ) )
-			continue;
-
-		ReachView guard;
-		guard.center = *position;
-		guard.rings = 0;
-		traceReachView( guard, obj->getTemplate() );
-
-		if( templateNeedsLineOfSight( obj->getTemplate() ) )
-			lookRoundReach( guard, obj->getPosition()->z + obj->getGeometryInfo().getMaxHeightAbovePosition(), obj->getID() );
-		guards.push_back( guard );
+		BlindSpotShade pending;
+		buildBlindSpotShade( pending, m_pendingPlaceType, center, eyeZ, INVALID_ID );
+		clearGuardedBlindSpots( pending.view );
+		fillBlindSpotShade( pending );
 	}
 
-	Bool anyBlocked = FALSE;
-	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
-	{
-		const Real angle = 2.0f * PI * ( ray + 0.5f ) / BLIND_SPOT_RAYS;
-		for( Int ring = 0; ring < rings; ring++ )
-		{
-			const Int index = ray * rings + ring;
-			if( !blocked[ index ] )
-				continue;
-
-			const Real along = min( ( ring + 0.5f ) * BLIND_SPOT_RING_WIDTH, range );
-			const Real x = center.x + Cos( angle ) * along;
-			const Real y = center.y + Sin( angle ) * along;
-			for( size_t g = 0; g < guards.size() && blocked[ index ]; g++ )
-			{
-				if( reachViewHits( guards[ g ], x, y ) )
-					blocked[ index ] = FALSE;
-			}
-			anyBlocked = anyBlocked || blocked[ index ];
-		}
-	}
-
-	if( !anyBlocked )
+	if( !TheGlobalData->m_showPlacementRangeRing )
 		return;
 
-	// corner ( ray, ring ) sits on the ray's leading edge at the ring's inner radius
-	const Int cornerRings = rings + 1;
-	std::vector< ICoord2D > corners( BLIND_SPOT_RAYS * cornerRings );
-	std::vector< Bool > onScreen( BLIND_SPOT_RAYS * cornerRings );
-	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
+	// a selected defence shows its own blind spots only, not what its neighbours cover for it
+	for( DrawableListCIt it = m_selectedDrawables.begin(); it != m_selectedDrawables.end(); ++it )
 	{
-		const Real angle = 2.0f * PI * ray / BLIND_SPOT_RAYS;
-		for( Int ring = 0; ring < cornerRings; ring++ )
-		{
-			const Real along = min( ring * BLIND_SPOT_RING_WIDTH, range );
-			Coord3D ground;
-			ground.x = center.x + Cos( angle ) * along;
-			ground.y = center.y + Sin( angle ) * along;
-			ground.z = TheTerrainLogic->getGroundHeight( ground.x, ground.y );
-			const Int index = ray * cornerRings + ring;
-			onScreen[ index ] = TheTacticalView->worldToScreenTriReturn( &ground, &corners[ index ] ) != View::WTS_INVALID;
-		}
+		const Object *obj = (*it)->getObject();
+		if( obj == NULL || !obj->isKindOf( KINDOF_STRUCTURE ) || templateReach( obj->getTemplate() ) <= 0.0f )
+			continue;
+		if( !templateNeedsLineOfSight( obj->getTemplate() ) )
+			continue;
+
+		refreshStructureKeys();
+		fillBlindSpotShade( selectedBlindSpotShade( obj ) );
 	}
-
-	std::vector< std::vector< ICoord2D > > rows( TheDisplay->getHeight() );
-	for( Int ray = 0; ray < BLIND_SPOT_RAYS; ray++ )
-	{
-		const Int next = ( ray + 1 ) % BLIND_SPOT_RAYS;
-		for( Int ring = 0; ring < rings; ring++ )
-		{
-			if( !blocked[ ray * rings + ring ] )
-				continue;
-
-			const Int quad[ 4 ] = { ray * cornerRings + ring, next * cornerRings + ring,
-				next * cornerRings + ring + 1, ray * cornerRings + ring + 1 };
-			if( !onScreen[ quad[ 0 ] ] || !onScreen[ quad[ 1 ] ] || !onScreen[ quad[ 2 ] ] || !onScreen[ quad[ 3 ] ] )
-				continue;
-
-			const ICoord2D *quadCorners[ 4 ] = { &corners[ quad[ 0 ] ], &corners[ quad[ 1 ] ], &corners[ quad[ 2 ] ], &corners[ quad[ 3 ] ] };
-			addQuadSpans( quadCorners, rows );
-		}
-	}
-
-	fillSpanRows( rows, GameMakeColor( 0, 0, 0, 120 ) );
-}
-
-//-------------------------------------------------------------------------------------------------
-/** Where a ground point lands on the screen, FALSE when the camera cannot put it anywhere. */
-//-------------------------------------------------------------------------------------------------
-static Bool projectGroundPoint( Real x, Real y, ICoord2D *screen )
-{
-	Coord3D ground;
-	ground.x = x;
-	ground.y = y;
-	ground.z = TheTerrainLogic->getGroundHeight( x, y );
-	return TheTacticalView->worldToScreenTriReturn( &ground, screen ) != View::WTS_INVALID;
 }
 
 struct ReachCircle
@@ -2233,27 +2381,154 @@ static Real reachAtAngle( const ReachCircle &circle, Real angle )
 	return circle.outline[ from ] * ( 1.0f - part ) + circle.outline[ ( from + 1 ) % REACH_OUTLINE_SEGMENTS ] * part;
 }
 
-/// inside another circle of the same player's; two players' circles cross, each in its own colour
-static Bool insideOtherReach( const std::vector< ReachCircle > &circles, size_t self, Real x, Real y )
+static Bool insideReach( const ReachCircle &circle, Real x, Real y )
 {
-	for( size_t c = 0; c < circles.size(); c++ )
+	const Real dx = x - circle.center.x;
+	const Real dy = y - circle.center.y;
+	const Real distanceSqr = sqr( dx ) + sqr( dy );
+	if( distanceSqr >= sqr( circle.radius ) )
+		return FALSE;
+
+	Real angle = atan2( dy, dx );
+	if( angle < 0.0f )
+		angle += 2.0f * PI;
+	return distanceSqr < sqr( reachAtAngle( circle, angle ) );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** What hides a stretch of one player's outline: another of that player's circles in circles, or
+	* extra when it is that player's.  Two players' circles cross, each in its own colour. */
+//-------------------------------------------------------------------------------------------------
+struct ReachCover
+{
+	const std::vector< ReachCircle > *circles;	///< NULL when only extra covers
+	size_t self;															///< the circle being cut, which never covers itself
+	const ReachCircle *extra;									///< NULL when there is none
+	const Player *owner;
+
+	Bool covers( Real x, Real y ) const
 	{
-		if( c == self || circles[ c ].owner != circles[ self ].owner )
-			continue;
-
-		const Real dx = x - circles[ c ].center.x;
-		const Real dy = y - circles[ c ].center.y;
-		const Real distanceSqr = sqr( dx ) + sqr( dy );
-		if( distanceSqr >= sqr( circles[ c ].radius ) )
-			continue;
-
-		Real angle = atan2( dy, dx );
-		if( angle < 0.0f )
-			angle += 2.0f * PI;
-		if( distanceSqr < sqr( reachAtAngle( circles[ c ], angle ) ) )
-			return TRUE;
+		for( size_t c = 0; circles != NULL && c < circles->size(); c++ )
+		{
+			const ReachCircle &other = (*circles)[ c ];
+			if( c != self && other.owner == owner && insideReach( other, x, y ) )
+				return TRUE;
+		}
+		return extra != NULL && extra->owner == owner && insideReach( *extra, x, y );
 	}
-	return FALSE;
+};
+
+struct ReachSegment
+{
+	size_t circle;
+	Real angles[ 2 ];
+	Coord3D ends[ 2 ];		///< on the ground
+};
+
+//-------------------------------------------------------------------------------------------------
+/** One stretch of a circle's outline between two angles, cut where it runs under cover: with both
+	* ends covered it is dropped, with one it walks the arc in halves to where it crosses and keeps the
+	* outside. */
+//-------------------------------------------------------------------------------------------------
+static void clipReachSegment( const ReachCircle &circle, size_t index, Real fromAngle, Real toAngle,
+															const ReachCover &cover, std::vector< ReachSegment > &out )
+{
+	ReachSegment segment;
+	segment.circle = index;
+	segment.angles[ 0 ] = fromAngle;
+	segment.angles[ 1 ] = toAngle;
+
+	Bool inside[ 2 ];
+	for( Int e = 0; e < 2; e++ )
+	{
+		const Real reach = reachAtAngle( circle, segment.angles[ e ] );
+		inside[ e ] = cover.covers( circle.center.x + Cos( segment.angles[ e ] ) * reach, circle.center.y + Sin( segment.angles[ e ] ) * reach );
+	}
+	if( inside[ 0 ] && inside[ 1 ] )
+		return;
+
+	if( inside[ 0 ] != inside[ 1 ] )
+	{
+		const Int cut = inside[ 0 ] ? 0 : 1;
+		Real outsideAngle = segment.angles[ 1 - cut ];
+		Real insideAngle = segment.angles[ cut ];
+		for( Int halving = 0; halving < REACH_CROSSING_HALVINGS; halving++ )
+		{
+			const Real middle = 0.5f * ( outsideAngle + insideAngle );
+			const Real middleReach = reachAtAngle( circle, middle );
+			if( cover.covers( circle.center.x + Cos( middle ) * middleReach, circle.center.y + Sin( middle ) * middleReach ) )
+				insideAngle = middle;
+			else
+				outsideAngle = middle;
+		}
+		segment.angles[ cut ] = outsideAngle;
+	}
+
+	for( Int e = 0; e < 2; e++ )
+	{
+		const Real reach = reachAtAngle( circle, segment.angles[ e ] );
+		segment.ends[ e ].x = circle.center.x + Cos( segment.angles[ e ] ) * reach;
+		segment.ends[ e ].y = circle.center.y + Sin( segment.angles[ e ] ) * reach;
+		segment.ends[ e ].z = TheTerrainLogic->getGroundHeight( segment.ends[ e ].x, segment.ends[ e ].y );
+	}
+	out.push_back( segment );
+}
+
+static void outlineReachCircle( const std::vector< ReachCircle > &circles, size_t index, const ReachCover &cover,
+																std::vector< ReachSegment > &out )
+{
+	for( Int segment = 0; segment < REACH_OUTLINE_SEGMENTS; segment++ )
+	{
+		clipReachSegment( circles[ index ], index, 2.0f * PI * segment / REACH_OUTLINE_SEGMENTS,
+			2.0f * PI * ( segment + 1 ) / REACH_OUTLINE_SEGMENTS, cover, out );
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The outlines of every armed building in sight, cut against each other, kept until a structure
+	* somewhere changes.  Only the circle on the cursor is worked out every frame. */
+//-------------------------------------------------------------------------------------------------
+static std::vector< ReachCircle > theReachCircles;
+static std::vector< ReachSegment > theReachSegments;
+static Int theReachGeneration = -1;
+
+static void refreshReachOutlines( void )
+{
+	if( theReachGeneration == theStructureGeneration )
+		return;
+	theReachGeneration = theStructureGeneration;
+
+	theReachCircles.clear();
+	theReachSegments.clear();
+	for( size_t k = 0; k < theStructureKeys.size(); k++ )
+	{
+		const StructureKey &key = theStructureKeys[ k ];
+		if( !key.reachShown )
+			continue;
+
+		ReachCircle placed;
+		placed.center = key.position;
+		placed.owner = key.owner;
+		traceReachCircle( placed, TheGameLogic->findObjectByID( key.id )->getTemplate() );
+		theReachCircles.push_back( placed );
+	}
+
+	for( size_t c = 0; c < theReachCircles.size(); c++ )
+	{
+		const ReachCover cover = { &theReachCircles, c, NULL, theReachCircles[ c ].owner };
+		outlineReachCircle( theReachCircles, c, cover, theReachSegments );
+	}
+}
+
+static void drawReachSegment( const ReachSegment &segment, const Player *owner )
+{
+	UnsignedByte red, green, blue, alpha;
+	GameGetColorComponents( clientPlayerColor( owner ), &red, &green, &blue, &alpha );
+
+	ICoord2D from, to;
+	if( TheTacticalView->worldToScreenTriReturn( &segment.ends[ 0 ], &from ) != View::WTS_INVALID
+		&& TheTacticalView->worldToScreenTriReturn( &segment.ends[ 1 ], &to ) != View::WTS_INVALID )
+		TheDisplay->drawLine( from.x, from.y, to.x, to.y, REACH_OUTLINE_WIDTH, GameMakeColor( red, green, blue, REACH_OUTLINE_ALPHA ) );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2282,82 +2557,50 @@ void InGameUI::drawPlacementReach( void )
 	if( m_pendingPlaceType == NULL && !armedSelected )
 		return;
 
-	const Player *local = ThePlayerList->getLocalPlayer();
-	std::vector< ReachCircle > circles;
-	if( m_pendingPlaceType != NULL && m_placementRangeRingUp )
+	refreshStructureKeys();
+	refreshReachOutlines();
+
+	// the circle on the cursor moves every frame, so it alone is cut afresh against the kept ones
+	const Bool pendingUp = m_pendingPlaceType != NULL && m_placementRangeRingUp;
+	std::vector< ReachCircle > pendingCircles;
+	std::vector< ReachSegment > pendingSegments;
+	if( pendingUp )
 	{
 		ReachCircle pending;
 		pending.center.x = m_placeIcon[ 0 ]->getPosition()->x;
 		pending.center.y = m_placeIcon[ 0 ]->getPosition()->y;
 		pending.center.z = TheTerrainLogic->getGroundHeight( pending.center.x, pending.center.y );
-		pending.owner = local;
+		pending.owner = ThePlayerList->getLocalPlayer();
 		traceReachCircle( pending, m_pendingPlaceType );
-		circles.push_back( pending );
-	}
+		pendingCircles.push_back( pending );
 
-	for( Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject() )
-	{
-		if( !obj->isKindOf( KINDOF_STRUCTURE ) )
-			continue;
-		if( obj->getControllingPlayer() != local && obj->getShroudedStatus( local->getPlayerIndex() ) >= OBJECTSHROUD_FOGGED )
-			continue;
-
-		if( templateReach( obj->getTemplate() ) <= 0.0f )
-			continue;
-		ReachCircle placed;
-		placed.center = *obj->getPosition();
-		placed.owner = obj->getControllingPlayer();
-		traceReachCircle( placed, obj->getTemplate() );
-		circles.push_back( placed );
+		const ReachCover cover = { &theReachCircles, theReachCircles.size(), NULL, pending.owner };
+		outlineReachCircle( pendingCircles, 0, cover, pendingSegments );
 	}
 
 	TheDisplay->beginBatch2D();
-	for( size_t c = 0; c < circles.size(); c++ )
+	std::vector< ReachSegment > recut;
+	for( size_t s = 0; s < theReachSegments.size(); s++ )
 	{
-		UnsignedByte red, green, blue, alpha;
-		GameGetColorComponents( clientPlayerColor( circles[ c ].owner ), &red, &green, &blue, &alpha );
-		const Color outline = GameMakeColor( red, green, blue, REACH_OUTLINE_ALPHA );
-		const ReachCircle &circle = circles[ c ];
-		for( Int segment = 0; segment < REACH_OUTLINE_SEGMENTS; segment++ )
+		const ReachSegment &segment = theReachSegments[ s ];
+		const ReachCircle &circle = theReachCircles[ segment.circle ];
+		const Bool underPending = pendingUp && circle.owner == pendingCircles[ 0 ].owner
+			&& ( insideReach( pendingCircles[ 0 ], segment.ends[ 0 ].x, segment.ends[ 0 ].y )
+				|| insideReach( pendingCircles[ 0 ], segment.ends[ 1 ].x, segment.ends[ 1 ].y ) );
+		if( !underPending )
 		{
-			const Real angles[ 2 ] = { 2.0f * PI * segment / REACH_OUTLINE_SEGMENTS, 2.0f * PI * ( segment + 1 ) / REACH_OUTLINE_SEGMENTS };
-			Real ends[ 2 ][ 2 ];
-			Bool inside[ 2 ];
-			for( Int e = 0; e < 2; e++ )
-			{
-				const Real reach = reachAtAngle( circle, angles[ e ] );
-				ends[ e ][ 0 ] = circle.center.x + Cos( angles[ e ] ) * reach;
-				ends[ e ][ 1 ] = circle.center.y + Sin( angles[ e ] ) * reach;
-				inside[ e ] = insideOtherReach( circles, c, ends[ e ][ 0 ], ends[ e ][ 1 ] );
-			}
-			if( inside[ 0 ] && inside[ 1 ] )
-				continue;
-
-			// one end inside another circle: walk the arc in halves to where it crosses, keep the outside
-			if( inside[ 0 ] != inside[ 1 ] )
-			{
-				Real outsideAngle = inside[ 0 ] ? angles[ 1 ] : angles[ 0 ];
-				Real insideAngle = inside[ 0 ] ? angles[ 0 ] : angles[ 1 ];
-				for( Int halving = 0; halving < REACH_CROSSING_HALVINGS; halving++ )
-				{
-					const Real middle = 0.5f * ( outsideAngle + insideAngle );
-					const Real middleReach = reachAtAngle( circle, middle );
-					if( insideOtherReach( circles, c, circle.center.x + Cos( middle ) * middleReach, circle.center.y + Sin( middle ) * middleReach ) )
-						insideAngle = middle;
-					else
-						outsideAngle = middle;
-				}
-				const Int cut = inside[ 0 ] ? 0 : 1;
-				const Real cutReach = reachAtAngle( circle, outsideAngle );
-				ends[ cut ][ 0 ] = circle.center.x + Cos( outsideAngle ) * cutReach;
-				ends[ cut ][ 1 ] = circle.center.y + Sin( outsideAngle ) * cutReach;
-			}
-
-			ICoord2D from, to;
-			if( projectGroundPoint( ends[ 0 ][ 0 ], ends[ 0 ][ 1 ], &from ) && projectGroundPoint( ends[ 1 ][ 0 ], ends[ 1 ][ 1 ], &to ) )
-				TheDisplay->drawLine( from.x, from.y, to.x, to.y, REACH_OUTLINE_WIDTH, outline );
+			drawReachSegment( segment, circle.owner );
+			continue;
 		}
+
+		recut.clear();
+		const ReachCover cover = { NULL, segment.circle, &pendingCircles[ 0 ], circle.owner };
+		clipReachSegment( circle, segment.circle, segment.angles[ 0 ], segment.angles[ 1 ], cover, recut );
+		for( size_t r = 0; r < recut.size(); r++ )
+			drawReachSegment( recut[ r ], circle.owner );
 	}
+	for( size_t s = 0; s < pendingSegments.size(); s++ )
+		drawReachSegment( pendingSegments[ s ], pendingCircles[ 0 ].owner );
 	TheDisplay->endBatch2D();
 }
 
@@ -6246,7 +6489,7 @@ void InGameUI::postDraw( void )
 	// drawHudOverlay is NOT called here - it goes on top of everything, see W3DInGameUI::draw
 	drawProductionStrip();
 	drawSkillStrip();			// the same shelf, the other end of it
-	drawPlacementBlindSpots();
+	drawBlindSpots();
 	drawPlacementReach();		// after the shade, so the outline stays bright over it
 	drawHudToggles();
 

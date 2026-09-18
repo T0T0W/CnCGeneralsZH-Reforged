@@ -1,0 +1,6 @@
+# A selected defence and the cost of drawing its reach. One Patriot battery dead centre of
+# -camera 760 920, 120 more in a grid to the north, in Alpine Assault's rail yard where the rock and
+# the yard buildings throw blind spots. docs/reference/UI-MAP.md has the launch line and the click
+# that selects the battery without moving the real mouse.
+30    spawn      0  AmericaPatriotBattery  1    760 920
+30    spawn      0  AmericaPatriotBattery  120  760 1500 70
