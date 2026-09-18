@@ -1017,7 +1017,7 @@ protected:
 
 //=====================================
 /**
- * Accept if they are clear, not fogged or shrouded
+ * Accept if they are at least partly clear, not wholly fogged or shrouded
  */
 class PartitionFilterFreeOfFog : public PartitionFilter
 {

@@ -5346,9 +5346,13 @@ Bool PartitionFilterRejectBuildings::allow( Object *other )
 
 //-----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
+/** Partly in sight counts. Since hills and buildings block sight, a building hides its own back
+	cells from anyone lower than its roof and is never wholly clear, so taking only CLEAR here left
+	every unit the AI controls standing in front of an enemy base without firing a shot. */
 Bool PartitionFilterFreeOfFog::allow( Object *other )
 {
-	return other->getShroudedStatus(m_comparisonIndex) == OBJECTSHROUD_CLEAR;
+	const ObjectShroudStatus status = other->getShroudedStatus(m_comparisonIndex);
+	return status == OBJECTSHROUD_CLEAR || status == OBJECTSHROUD_PARTIAL_CLEAR;
 }
 
 //-----------------------------------------------------------------------------
