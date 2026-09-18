@@ -81,6 +81,8 @@
 #include "GameClient/Line2D.h"
 #include "GameClient/ControlBar.h"
 
+#include <float.h>
+
 #ifdef _DEBUG
 //#include "GameClient/InGameUI.h"	// for debugHints
 #include "Common/PlayerList.h"
@@ -4105,7 +4107,10 @@ void PartitionManager::processPendingUndoShroudRevealQueue( Bool considerTimesta
 	{
 		SightingInfo *thisInfo = m_pendingUndoShroudReveals.front();
 
-		undoShroudReveal( thisInfo->m_where.x, thisInfo->m_where.y, thisInfo->m_howFar, thisInfo->m_forWhom );
+		if( !thisInfo->m_revealedCells.empty() )
+			applyRecordedReveal( thisInfo, FALSE );
+		else
+			undoShroudReveal( thisInfo->m_where.x, thisInfo->m_where.y, thisInfo->m_howFar, thisInfo->m_forWhom );
 
 		thisInfo->deleteInstance();
 		m_pendingUndoShroudReveals.pop();
@@ -4156,18 +4161,207 @@ void PartitionManager::undoShroudReveal(Real centerX, Real centerY, Real radius,
 }
 	
 //-----------------------------------------------------------------------------
-void PartitionManager::queueUndoShroudReveal(Real centerX, Real centerY, Real radius, PlayerMaskType playerMask) 
+void PartitionManager::queueUndoShroudReveal( SightingInfo *sighting )
 {
 	UnsignedInt now = TheGameLogic->getFrame();
 	SightingInfo *newInfo = newInstance(SightingInfo);
 
-	newInfo->m_where.x = centerX;
-	newInfo->m_where.y = centerY;
-	newInfo->m_howFar = radius;
-	newInfo->m_forWhom = playerMask;
+	newInfo->m_where = sighting->m_where;
+	newInfo->m_howFar = sighting->m_howFar;
+	newInfo->m_forWhom = sighting->m_forWhom;
+	newInfo->m_revealedCells.swap( sighting->m_revealedCells );
 	newInfo->m_data = now + TheGlobalData->m_unlookPersistDuration;
 
 	m_pendingUndoShroudReveals.push(newInfo);
+}
+
+//-----------------------------------------------------------------------------
+static Real slopeFromEye( Real height, Int cellOffsetX, Int cellOffsetY, Real cellSize, Real eyeZ )
+{
+	return ( height - eyeZ ) / ( sqrtf( (Real)( cellOffsetX * cellOffsetX + cellOffsetY * cellOffsetY ) ) * cellSize );
+}
+
+//-----------------------------------------------------------------------------
+/** minor * (major - 1) / major, rounded half away from zero: where a line from the middle through
+	(major, minor) crosses the ring one step further in. */
+static Int scaleOneRingIn( Int minor, Int major )
+{
+	const Int halfStep = minor < 0 ? -major : major;
+	return ( 2 * minor * ( major - 1 ) + halfStep ) / ( 2 * major );
+}
+
+//-----------------------------------------------------------------------------
+/** One pass, ring by ring outwards. Each cell takes the steepest slope met on the way in from its
+	neighbour one step closer to the middle, together with that neighbour's own slope, so a ridge
+	keeps hiding everything behind it however far the circle reaches. The middle cell is where the
+	eye stands and hides nothing. */
+void PartitionManager_findSightMargins( const Real *heights, Int cellRadius, Real cellSize, Real eyeZ,
+																				Real *sightMargin )
+{
+	const Int side = 2 * cellRadius + 1;
+	const Int middle = cellRadius * side + cellRadius;
+	static std::vector<Real> steepestOnTheWay;
+	steepestOnTheWay.resize( side * side );
+
+	steepestOnTheWay[ middle ] = -FLT_MAX;
+	sightMargin[ middle ] = 0.0f;
+
+	for( Int ring = 1; ring <= cellRadius; ++ring )
+	{
+		for( Int offsetY = -ring; offsetY <= ring; ++offsetY )
+		{
+			const Int stepX = ( abs( offsetY ) == ring ) ? 1 : 2 * ring;
+			for( Int offsetX = -ring; offsetX <= ring; offsetX += stepX )
+			{
+				Int innerX, innerY;
+				if( abs( offsetX ) >= abs( offsetY ) )
+				{
+					innerX = offsetX - ( offsetX < 0 ? -1 : 1 );
+					innerY = scaleOneRingIn( offsetY, abs( offsetX ) );
+				}
+				else
+				{
+					innerY = offsetY - ( offsetY < 0 ? -1 : 1 );
+					innerX = scaleOneRingIn( offsetX, abs( offsetY ) );
+				}
+
+				const Int inner = ( innerY + cellRadius ) * side + innerX + cellRadius;
+				const Int here = ( offsetY + cellRadius ) * side + offsetX + cellRadius;
+
+				Real steepest = steepestOnTheWay[ inner ];
+				if( inner != middle )
+					steepest = max( steepest, slopeFromEye( heights[ inner ], innerX, innerY, cellSize, eyeZ ) );
+
+				steepestOnTheWay[ here ] = steepest;
+				sightMargin[ here ] = slopeFromEye( heights[ here ], offsetX, offsetY, cellSize, eyeZ ) - steepest;
+			}
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+struct RecordedLookers
+{
+	Int m_cornerX;		///< cell coordinates of the first entry of m_revealedCells
+	Int m_cornerY;
+	Int m_side;
+	const UnsignedByte *m_revealedCells;
+	Int m_playerIndex;
+	Bool m_reveal;		///< add the looker, or take it away again
+};
+
+//-----------------------------------------------------------------------------
+static void hLineRecordedLooker( Int x1, Int x2, Int y, void *lookersVoid )
+{
+	const RecordedLookers *lookers = (const RecordedLookers *)lookersVoid;
+	if( y < 0 || y >= ThePartitionManager->getCellCountY() )
+		return;
+
+	const UnsignedByte *revealed = lookers->m_revealedCells + ( y - lookers->m_cornerY ) * lookers->m_side - lookers->m_cornerX;
+	for( Int x = max( x1, 0 ); x <= min( x2, ThePartitionManager->getCellCountX() - 1 ); ++x )
+	{
+		if( !revealed[ x ] )
+			continue;
+
+		PartitionCell *cell = ThePartitionManager->getCellAt( x, y );
+		if( lookers->m_reveal )
+			cell->addLooker( lookers->m_playerIndex );
+		else
+			cell->removeLooker( lookers->m_playerIndex );
+	}
+}
+
+//-----------------------------------------------------------------------------
+static Int sightCellRadius( Real radius )
+{
+	return max( ThePartitionManager->worldToCellDist( radius ), 1 );
+}
+
+//-----------------------------------------------------------------------------
+void PartitionManager::applyRecordedReveal( const SightingInfo *sighting, Bool reveal )
+{
+	Int cellCenterX, cellCenterY;
+	worldToCell( sighting->m_where.x, sighting->m_where.y, &cellCenterX, &cellCenterY );
+	const Int cellRadius = sightCellRadius( sighting->m_howFar );
+
+	RecordedLookers lookers;
+	lookers.m_cornerX = cellCenterX - cellRadius;
+	lookers.m_cornerY = cellCenterY - cellRadius;
+	lookers.m_side = 2 * cellRadius + 1;
+	lookers.m_revealedCells = &sighting->m_revealedCells[0];
+	lookers.m_reveal = reveal;
+
+	DiscreteCircle circle( cellCenterX, cellCenterY, cellRadius );
+	for( Int currentIndex = ThePlayerList->getPlayerCount() - 1; currentIndex >= 0; currentIndex-- )
+	{
+		if( BitTest( sighting->m_forWhom, ThePlayerList->getNthPlayer( currentIndex )->getPlayerMask() ) )
+		{
+			lookers.m_playerIndex = currentIndex;
+			circle.drawCircle( hLineRecordedLooker, &lookers );
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+/** The top of whatever stands in a cell: the highest ground in it, or the roof of a building on it if
+	that is higher. Trees and bushes that are objects count, a bridge does not (it is ground to walk
+	on and to see across). A planned building nobody has started is not there yet. */
+static Real sightBlockingHeight( PartitionCell *cell, const Object *looker, const Object *lookerContainer )
+{
+	Real height = cell->getHiTerrain();
+	for( CellAndObjectIntersection *coi = cell->getFirstCoiInCell(); coi; coi = coi->getNextCoi() )
+	{
+		// a ghost object has no Object behind it
+		const Object *obj = coi->getModule()->getObject();
+		if( obj == NULL || obj == looker || obj == lookerContainer )
+			continue;
+
+		if( !obj->isKindOf( KINDOF_STRUCTURE ) && !obj->isKindOf( KINDOF_SHRUBBERY ) )
+			continue;
+
+		if( obj->isKindOf( KINDOF_BRIDGE ) )
+			continue;
+
+		if( Object_isAwaitingBuilder( obj->testStatus( OBJECT_STATUS_UNDER_CONSTRUCTION ), obj->getConstructionPercent() ) )
+			continue;
+
+		height = max( height, obj->getPosition()->z + obj->getGeometryInfo().getMaxHeightAbovePosition() );
+	}
+	return height;
+}
+
+//-----------------------------------------------------------------------------
+void PartitionManager::doBlockedShroudReveal( SightingInfo *sighting, const Object *looker )
+{
+	Int cellCenterX, cellCenterY;
+	worldToCell( sighting->m_where.x, sighting->m_where.y, &cellCenterX, &cellCenterY );
+	const Int cellRadius = sightCellRadius( sighting->m_howFar );
+	const Object *lookerContainer = looker->getContainedBy();
+
+	const Int side = 2 * cellRadius + 1;
+	static std::vector<Real> heights;
+	static std::vector<Real> sightMargin;
+	heights.resize( side * side );
+	sightMargin.resize( side * side );
+
+	for( Int offsetY = -cellRadius; offsetY <= cellRadius; ++offsetY )
+	{
+		const Int cellY = min( max( cellCenterY + offsetY, 0 ), m_cellCountY - 1 );
+		for( Int offsetX = -cellRadius; offsetX <= cellRadius; ++offsetX )
+		{
+			const Int cellX = min( max( cellCenterX + offsetX, 0 ), m_cellCountX - 1 );
+			heights[ ( offsetY + cellRadius ) * side + offsetX + cellRadius ] =
+				sightBlockingHeight( getCellAt( cellX, cellY ), looker, lookerContainer );
+		}
+	}
+
+	PartitionManager_findSightMargins( &heights[0], cellRadius, m_cellSize, sighting->m_where.z, &sightMargin[0] );
+
+	sighting->m_revealedCells.resize( side * side );
+	for( Int cell = 0; cell < side * side; ++cell )
+		sighting->m_revealedCells[ cell ] = sightMargin[ cell ] >= 0.0f;
+
+	applyRecordedReveal( sighting, TRUE );
 }
 	
 //-----------------------------------------------------------------------------
@@ -5978,6 +6172,7 @@ void SightingInfo::reset()
 	m_howFar = 0.0f;
 	m_forWhom = 0;
 	m_data = 0;
+	m_revealedCells.clear();
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -5998,13 +6193,14 @@ void SightingInfo::crc( Xfer *xfer )
 // ------------------------------------------------------------------------------------------------
 /** Xfer Method
 	* Version Info:
-	* 1: Initial version */
+	* 1: Initial version
+	* 2: m_revealedCells; a version 1 sighting was a whole circle and is undone as one */
 // ------------------------------------------------------------------------------------------------
 void SightingInfo::xfer( Xfer *xfer )
 {
 
 	// version
-	XferVersion currentVersion = 1;
+	XferVersion currentVersion = 2;
 	XferVersion version = currentVersion;
 	xfer->xferVersion( &version, currentVersion );
 
@@ -6019,6 +6215,15 @@ void SightingInfo::xfer( Xfer *xfer )
 
 	// how much
 	xfer->xferUnsignedInt( &m_data );
+
+	if( version >= 2 )
+	{
+		Int revealedCellCount = m_revealedCells.size();
+		xfer->xferInt( &revealedCellCount );
+		m_revealedCells.resize( revealedCellCount );
+		if( revealedCellCount > 0 )
+			xfer->xferUser( &m_revealedCells[0], revealedCellCount );
+	}
 
 }  // end xfer
 

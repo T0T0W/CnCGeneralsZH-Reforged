@@ -174,6 +174,9 @@ extern Bool Object_constructionFootprintGoesDown( Bool underConstruction, Real w
 extern Real Object_shroudClearingRange( Real ownRange, Bool underConstruction, Real constructionPercent,
 																				Real boundingCircleRadius );
 
+///< how far an armed unit clears shroud: no further than half as far again as its longest weapon reaches
+extern Real Object_armedShroudClearingRange( Real clearingRange, Real largestWeaponRange );
+
 ///< does this object go away without any death of its own - no explosion, no collapse, no rubble?
 extern Bool Object_deathIsSilent( Bool underConstruction, Real constructionPercent );
 

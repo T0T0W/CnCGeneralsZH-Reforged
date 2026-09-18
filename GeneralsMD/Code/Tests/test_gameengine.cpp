@@ -124,6 +124,7 @@
 #include "GameLogic/Object.h"
 #include "GameClient/CommandXlat.h"
 #include "Common/ActionManager.h"
+#include "GameLogic/PartitionManager.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -6476,6 +6477,55 @@ TEST(a_planned_structure_opens_no_shroud_until_the_work_starts)
 
 	// a structure that clears no shroud at all is not the same as one with no vision by template
 	CHECK_NEAR( Object_shroudClearingRange( 0.0f, FALSE, CONSTRUCTION_COMPLETE, boundingRadius ), 0.0f, 0.0001f );
+}
+
+/** A unit sees half as far again as its longest weapon reaches. Artillery that outranges its own sight
+	 keeps the sight, and a unit with no weapon keeps what its template gives it. */
+TEST(an_armed_unit_sees_little_further_than_it_can_shoot)
+{
+	const Real noWeapon = -1.0f;
+
+	CHECK_NEAR( Object_armedShroudClearingRange( 200.0f, 100.0f ), 150.0f, 0.0001f );
+	CHECK_NEAR( Object_armedShroudClearingRange( 200.0f, 350.0f ), 200.0f, 0.0001f );
+	CHECK_NEAR( Object_armedShroudClearingRange( 200.0f, 150.0f ), 200.0f, 0.0001f );
+	CHECK_NEAR( Object_armedShroudClearingRange( 200.0f, noWeapon ), 200.0f, 0.0001f );
+	CHECK_NEAR( Object_armedShroudClearingRange( 0.0f, 100.0f ), 0.0f, 0.0001f );
+}
+
+
+/** A hill hides the ground behind it. Standing in the middle of flat ground with a wall of high cells
+	 two to the east, the unit sees the wall and nothing past it, and sees everything to the west. Put
+	 the eye above the wall, the way an aircraft flies, and the far side comes back. */
+TEST(a_unit_does_not_see_over_a_hill)
+{
+	const Int cellRadius = 4;
+	const Int side = 2 * cellRadius + 1;
+	const Real cellSize = 40.0f;
+	const Real groundZ = 10.0f;
+	const Real hillZ = 60.0f;
+	const Real tankEyeZ = groundZ + 15.0f;
+	const Real aircraftEyeZ = groundZ + 200.0f;
+	const Int wallOffsetX = 2;
+
+	Real heights[ side * side ];
+	Real sightMargin[ side * side ];
+	for( Int cell = 0; cell < side * side; ++cell )
+		heights[ cell ] = groundZ;
+	for( Int row = 0; row < side; ++row )
+		heights[ row * side + cellRadius + wallOffsetX ] = hillZ;
+
+	const Int middleRow = cellRadius * side;
+	PartitionManager_findSightMargins( heights, cellRadius, cellSize, tankEyeZ, sightMargin );
+
+	CHECK( sightMargin[ middleRow + cellRadius + 1 ] >= 0.0f );
+	CHECK( sightMargin[ middleRow + cellRadius + wallOffsetX ] >= 0.0f );
+	CHECK( sightMargin[ middleRow + cellRadius + wallOffsetX + 1 ] < 0.0f );
+	CHECK( sightMargin[ middleRow + side - 1 ] < 0.0f );
+	CHECK( sightMargin[ middleRow + 0 ] >= 0.0f );
+	CHECK( sightMargin[ 0 ] >= 0.0f );
+
+	PartitionManager_findSightMargins( heights, cellRadius, cellSize, aircraftEyeZ, sightMargin );
+	CHECK( sightMargin[ middleRow + side - 1 ] >= 0.0f );
 }
 
 /** Since the plan reveals nothing, the fog it was placed in would swallow it - and there would be

@@ -256,7 +256,13 @@ public:
 	Coord3D					m_where;
 	Real						m_howFar;
 	PlayerMaskType	m_forWhom;	// ask not for whom the sighting is masked; it masks for thee
-	
+
+	/** For a sighting that hills and buildings cut short, the cells it actually revealed: one entry per
+		cell of the square around m_where, row by row, nonzero for revealed. Kept rather than worked out
+		again at undo time, because a building that went up or came down in between would hide a
+		different set and the looker counts would never come back. Empty for a whole circle. */
+	std::vector<UnsignedByte>	m_revealedCells;
+
 	UnsignedInt			m_data;			// Threat and value use as the value.  Sighting uses it for a Timestamp
 
 protected:
@@ -267,6 +273,12 @@ protected:
 	virtual void loadPostProcess();
 
 };
+
+/** How far each cell of a square around an eye sits above the steepest ground between it and the eye.
+	heights and sightMargin are (2 * cellRadius + 1) cells a side, row by row, with the eye over the
+	middle cell; a cell is in sight when its margin is zero or more. */
+extern void PartitionManager_findSightMargins( const Real *heights, Int cellRadius, Real cellSize, Real eyeZ,
+																							 Real *sightMargin );
 
 //=====================================
 /**
@@ -1316,6 +1328,9 @@ protected:
 	friend void hLineAddValue(Int x1, Int x2, Int y, void *threatValueParms);
 	friend void hLineRemoveValue(Int x1, Int x2, Int y, void *threatValueParms);
 
+	/// add or take away a looker on every cell a sighting recorded as revealed
+	void applyRecordedReveal( const SightingInfo *sighting, Bool reveal );
+
 	void processPendingUndoShroudRevealQueue(Bool considerTimestamp = TRUE);				///< keep popping and processing untill you get to one that is in the future
 	void resetPendingUndoShroudRevealQueue();					///< Just delete everything in the queue without doing anything with them
 
@@ -1367,7 +1382,12 @@ public:
 	// Queueing does not give you control of the timestamp to enforce the queue.  I own the delay, you don't.
 	void doShroudReveal( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);
 	void undoShroudReveal( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);
-	void queueUndoShroudReveal( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask );
+	void queueUndoShroudReveal( SightingInfo *sighting );	///< takes the sighting's recorded cells with it
+
+	/** Reveal the circle around an eye except where a hill or a building stands between the eye and
+		the ground, and record in the sighting which cells that was. The looker never hides behind
+		itself or the building it sits in. */
+	void doBlockedShroudReveal( SightingInfo *sighting, const Object *looker );
 
 	void doShroudCover( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);
 	void undoShroudCover( Real centerX, Real centerY, Real radius, PlayerMaskType playerMask);

@@ -5188,7 +5188,12 @@ void Object::look()
 			// garrisoned buildings weren't looking, we were just seeing the leftover last look of the guy inside.
 			// Otherwise we'd just have enclosingContainer control looking which is the 'correct' answer.
 
+			// applied here and not in getShroudClearingRange, so the sight bonuses that multiply the
+			// stored range and later divide it back out never bake the weapon cap into it
 			Real shroudClearingRange = getShroudClearingRange();
+			if( !isKindOf( KINDOF_STRUCTURE ) )
+				shroudClearingRange = Object_armedShroudClearingRange( shroudClearingRange, getLargestWeaponRange() );
+
 			if( shroudClearingRange > 0.0f )
 			{
 				PlayerMaskType lookingMask = 0;
@@ -5227,12 +5232,14 @@ void Object::look()
 					lookingMask |= m_visionSpiedMask;
 				}
 
-				Coord3D pos = *getPosition();
-				ThePartitionManager->doShroudReveal( pos.x, pos.y, shroudClearingRange, lookingMask );
+				// the eye is at the top of the object, so an aircraft looks over the hill a tank cannot
+				Coord3D eye = *getPosition();
+				eye.z += getGeometryInfo().getMaxHeightAbovePosition();
 
-				m_partitionLastLook->m_where = pos;
+				m_partitionLastLook->m_where = eye;
 				m_partitionLastLook->m_forWhom = lookingMask;
-				m_partitionLastLook->m_howFar = getShroudClearingRange();
+				m_partitionLastLook->m_howFar = shroudClearingRange;
+				ThePartitionManager->doBlockedShroudReveal( m_partitionLastLook, this );
 
 	//			DEBUG_LOG(( "A %s looks at %f, %f for %x at range %f\n",
 	//									getTemplate()->getName().str(),
@@ -5278,11 +5285,7 @@ void Object::unlook()
 		return;
 	}
 
-	ThePartitionManager->queueUndoShroudReveal(m_partitionLastLook->m_where.x, 
-																				m_partitionLastLook->m_where.y, 
-																				m_partitionLastLook->m_howFar, 
-																				m_partitionLastLook->m_forWhom
-																				);
+	ThePartitionManager->queueUndoShroudReveal( m_partitionLastLook );
 
 //			DEBUG_LOG(( "A %s queues an unlook at %f, %f for %x at range %f\n",
 //									getTemplate()->getName().str(),
@@ -5296,11 +5299,7 @@ void Object::unlook()
 
 	if( !m_partitionRevealAllLastLook->isInvalid() )
 	{
-		ThePartitionManager->queueUndoShroudReveal(m_partitionRevealAllLastLook->m_where.x, 
-																				m_partitionRevealAllLastLook->m_where.y, 
-																				m_partitionRevealAllLastLook->m_howFar, 
-																				m_partitionRevealAllLastLook->m_forWhom
-																				);
+		ThePartitionManager->queueUndoShroudReveal( m_partitionRevealAllLastLook );
 		
 		m_partitionRevealAllLastLook->reset();
 	}
@@ -5425,6 +5424,21 @@ Real Object_shroudClearingRange( Real ownRange, Bool underConstruction, Real con
 		return boundingCircleRadius;
 
 	return ownRange;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A unit sees half as far again as it can shoot: far enough to spot what it would close with on an
+	* attack move before it is in range, no further. A unit with no weapon at all (largestWeaponRange
+	* is -1 then) keeps the sight its template gives it, or dozers, trucks and spies would go blind. */
+//-------------------------------------------------------------------------------------------------
+static const Real SIGHT_PER_WEAPON_RANGE = 1.5f;
+
+Real Object_armedShroudClearingRange( Real clearingRange, Real largestWeaponRange )
+{
+	if( largestWeaponRange <= 0.0f )
+		return clearingRange;
+
+	return min( clearingRange, largestWeaponRange * SIGHT_PER_WEAPON_RANGE );
 }
 
 //-------------------------------------------------------------------------------------------------
