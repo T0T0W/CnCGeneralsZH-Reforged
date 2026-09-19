@@ -339,11 +339,13 @@ static void take_the_frame_to_the_screen()
 	Backend.Begin_Scene();
 }
 
+// The chain binds its own shaders, states and views on the context the backend's draws use.
 void Direct3D11_Finish_Scene()
 {
 	if (Active && Post.Run_Chain()) {
 		take_the_frame_to_the_screen();
 	}
+	Backend.Forget_Bindings();
 }
 
 void Direct3D11_Finish_Frame()
@@ -351,6 +353,7 @@ void Direct3D11_Finish_Frame()
 	if (Active && Post.Copy_Through()) {
 		take_the_frame_to_the_screen();
 	}
+	Backend.Forget_Bindings();
 }
 
 void Direct3D11_Begin_Scene()

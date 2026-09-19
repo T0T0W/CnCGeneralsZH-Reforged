@@ -62,6 +62,13 @@ static bool _CombinerShadersEnabled = false;
 static std::map<Combination, unsigned> _Counts;
 static std::map<IDirect3DPixelShader9 *, unsigned> _PixelShaderIds;
 static unsigned long long _DrawsSeen = 0;
+static unsigned long long _DrawsSampled = 0;
+
+// Reading forty-odd states back off the device on every draw was 0.8ms of an 8ms frame in the
+// fireball scene, on either renderer, for a report nobody playing reads.  One draw in this many is
+// read instead.  The stride is a count, not a clock, so the same draws are sampled every run, and a
+// combination drawn even once a frame still turns up within the first second.
+static const unsigned SAMPLE_STRIDE = 16;
 
 void FixedFunctionProbe_Enable(bool enabled)
 {
@@ -88,10 +95,14 @@ void FixedFunctionProbe_Record(IDirect3DDevice9 * device)
 	if (!_Enabled || device == NULL) {
 		return;
 	}
-	++_DrawsSeen;
+	if (_DrawsSeen++ % SAMPLE_STRIDE != 0) {
+		return;
+	}
+	++_DrawsSampled;
 
-	Combination combination;
-	combination.reserve(PIXEL_RENDER_STATE_COUNT + MAXIMUM_STAGES*STAGE_STATE_COUNT + 2);
+	// Kept between draws so a draw does not allocate one; clear() keeps the capacity.
+	static Combination combination;
+	combination.clear();
 
 	for (size_t index = 0; index < PIXEL_RENDER_STATE_COUNT; ++index) {
 		DWORD value = 0;
@@ -223,10 +234,10 @@ void FixedFunctionProbe_Dump(const char * path)
 		}
 	}
 
-	fprintf(file, "%u distinct combinations over %llu draw calls\n",
-		(unsigned)_Counts.size(), _DrawsSeen);
-	fprintf(file, "%u of them fixed function (%llu draws), %u driven by a pixel shader (%u draws)\n",
-		(unsigned)_Counts.size() - shader_combinations, _DrawsSeen - shader_draws,
+	fprintf(file, "%u distinct combinations over %llu draw calls, one in %u read (%llu)\n",
+		(unsigned)_Counts.size(), _DrawsSeen, SAMPLE_STRIDE, _DrawsSampled);
+	fprintf(file, "%u of them fixed function (%llu draws read), %u driven by a pixel shader (%u draws read)\n",
+		(unsigned)_Counts.size() - shader_combinations, _DrawsSampled - shader_draws,
 		shader_combinations, shader_draws);
 	fprintf(file, "%u distinct pixel shaders seen\n\n", (unsigned)_PixelShaderIds.size());
 
@@ -234,8 +245,8 @@ void FixedFunctionProbe_Dump(const char * path)
 	for (std::multimap<unsigned, const Combination *>::const_reverse_iterator entry = by_use.rbegin();
 			entry != by_use.rend(); ++entry) {
 		const Combination & combination = *entry->second;
-		fprintf(file, "#%u  %u draws (%.2f%%)\n", ++rank, entry->first,
-			100.0 * entry->first / (double)(_DrawsSeen ? _DrawsSeen : 1));
+		fprintf(file, "#%u  %u draws read (%.2f%%)\n", ++rank, entry->first,
+			100.0 * entry->first / (double)(_DrawsSampled ? _DrawsSampled : 1));
 
 		size_t position = 0;
 		for (size_t index = 0; index < PIXEL_RENDER_STATE_COUNT; ++index, ++position) {
@@ -261,4 +272,5 @@ void FixedFunctionProbe_Dump(const char * path)
 	_Counts.clear();
 	_PixelShaderIds.clear();
 	_DrawsSeen = 0;
+	_DrawsSampled = 0;
 }

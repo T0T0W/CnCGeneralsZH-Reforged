@@ -84,7 +84,10 @@ void CombinerShaderCache_Read_Device(IDirect3DDevice9 * device, CombinerDescript
 IDirect3DPixelShader9 * CombinerShaderCache_Get(IDirect3DDevice9 * device,
 	const CombinerDescription & description)
 {
-	const std::string key = CombinerShader_Key(description);
+	// The description's own bytes, not CombinerShader_Key's text: formatting that text on every draw
+	// was 15% of a Direct3D 9 frame in the fireball scene, all of it inside the C runtime's printf.
+	// CombinerShaderCache_Read_Device zeroes the whole struct first, so equal draws are equal bytes.
+	const std::string key((const char *)&description, sizeof(description));
 	const std::map<std::string, IDirect3DPixelShader9 *>::const_iterator known = _Shaders.find(key);
 	if (known != _Shaders.end()) {
 		if (known->second != NULL) {

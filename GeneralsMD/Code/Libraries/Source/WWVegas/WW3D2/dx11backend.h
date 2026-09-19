@@ -71,6 +71,9 @@ public:
 	bool Initialise(DX11DeviceClass * device);
 	void Shutdown();
 
+	// For whoever binds on the context behind the draws: the next draw binds everything again.
+	void Forget_Bindings();
+
 	// The setters, named for the D3D9 calls the engine makes.  None of them touches the device;
 	// they write into the shadow state that Draw resolves.
 	void Set_Render_State(D3DRENDERSTATETYPE state, DWORD value);
@@ -276,8 +279,7 @@ private:
 
 	float World[16];
 	float View[16];
-	float Projection[16];
-	// The per-stage texture transforms.  Two of them, because ffvertex writes two and the game sets
+	float Projection[16];	// The per-stage texture transforms.  Two of them, because ffvertex writes two and the game sets
 	// no more than two stages in any state the probe counted.  These are what turn a camera space
 	// position into the cloud shadow's coordinates, and with an identity in their place the whole
 	// terrain samples one texel of it.
@@ -425,7 +427,10 @@ private:
 	ID3D11Resource * CurrentTargetResource;
 	ID3D11Texture2D * TargetCopy;
 	ID3D11ShaderResourceView * TargetCopyView;
-	ID3D11ShaderResourceView * Readable_Texture(ID3D11ShaderResourceView * texture);
+	ID3D11ShaderResourceView * Readable_Texture(unsigned stage, ID3D11ShaderResourceView * texture);
+	// Per stage, the last view asked about and whether it views the current target.
+	ID3D11ShaderResourceView * TargetCheckedViews[DX11_BACKEND_TEXTURE_STAGES];
+	bool TargetCheckedIsTarget[DX11_BACKEND_TEXTURE_STAGES];
 
 	std::map<std::string, ID3D11BlendState *> BlendStates;
 	std::map<std::string, ID3D11DepthStencilState *> DepthStencilStates;
@@ -448,6 +453,37 @@ private:
 	D3D11_SAMPLER_DESC LastSamplerDescriptions[DX11_BACKEND_TEXTURE_STAGES];
 	ID3D11SamplerState * LastSamplerStates[DX11_BACKEND_TEXTURE_STAGES];
 	void Forget_Last_State_Objects();
+
+	// What the last draw left bound on the context, so the next one only makes the calls that change
+	// something.  Every draw used to make fifteen binding calls, and in the fireball scene the runtime
+	// behind them was the largest single thing on the main thread.  Only the draws below bind through
+	// this; whatever else binds on the context calls Forget_Bindings, and so does anything that
+	// changes the render target, since the runtime unbinds any view of a texture that becomes one.
+	struct ContextBindings
+	{
+		bool Known;
+		ID3D11BlendState * Blend;
+		ID3D11DepthStencilState * DepthStencil;
+		UINT StencilReference;
+		ID3D11RasterizerState * Rasterizer;
+		ID3D11SamplerState * Samplers[DX11_BACKEND_TEXTURE_STAGES];
+		ID3D11ShaderResourceView * Textures[DX11_BACKEND_TEXTURE_STAGES];
+		ID3D11InputLayout * Layout;
+		ID3D11Buffer * VertexBuffer;
+		UINT VertexStride;
+		UINT VertexOffset;
+		ID3D11Buffer * IndexBuffer;
+		DXGI_FORMAT IndexFormat;
+		D3D11_PRIMITIVE_TOPOLOGY Topology;
+		ID3D11VertexShader * VertexShader;
+		ID3D11Buffer * VertexConstants;
+		ID3D11PixelShader * PixelShader;
+		ID3D11Buffer * PixelConstants;
+	};
+	ContextBindings Bound;
+	void Bind_Pipeline(const Pipeline & pipeline, ID3D11Buffer * vertices, UINT stride,
+		UINT offset, ID3D11Buffer * indices, DXGI_FORMAT index_format,
+		D3D11_PRIMITIVE_TOPOLOGY topology);
 
 	unsigned PipelinesBuilt;
 	unsigned long long DrawsMade;

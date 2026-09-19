@@ -253,6 +253,7 @@ DX11BackendClass::~DX11BackendClass()
 bool DX11BackendClass::Initialise(DX11DeviceClass * device)
 {
 	Device = device;
+	Forget_Bindings();
 
 	// New buffers hold nothing the copies below know about.
 	VertexConstantsHeld = false;
@@ -679,6 +680,7 @@ void DX11BackendClass::Begin_Scene()
 	}
 
 	Device->Get_Context()->OMSetRenderTargets(1, &target, Device->Get_Depth_Stencil_View());
+	Forget_Bindings();
 	Set_Viewport(0, 0, Device->Get_Width(), Device->Get_Height());
 }
 
@@ -756,6 +758,7 @@ void DX11BackendClass::Set_Render_Target(ID3D11RenderTargetView * target)
 		if (back_buffer != NULL) {
 			Device->Get_Context()->OMSetRenderTargets(1, &back_buffer,
 				Device->Get_Depth_Stencil_View());
+			Forget_Bindings();
 			Set_Viewport(0, 0, Device->Get_Width(), Device->Get_Height());
 		}
 		return;
@@ -789,6 +792,7 @@ void DX11BackendClass::Set_Render_Target(ID3D11RenderTargetView * target)
 	CurrentTargetResource = resource;
 	CurrentDepth = Depth_For(width, height);
 	Device->Get_Context()->OMSetRenderTargets(1, &CurrentTarget, CurrentDepth);
+	Forget_Bindings();
 	Set_Viewport(0, 0, width, height);
 }
 
@@ -1233,6 +1237,8 @@ void DX11BackendClass::Forget_Last_State_Objects()
 	LastDepthStencilState = NULL;
 	LastRasterizerState = NULL;
 	memset(LastSamplerStates, 0, sizeof(LastSamplerStates));
+	// A released state object's address can come back as a new one, so what is bound goes too.
+	Forget_Bindings();
 }
 
 ID3D11BlendState * DX11BackendClass::Blend_State()
@@ -1357,36 +1363,121 @@ ID3D11Buffer * DX11BackendClass::Vertex_Constants() const
 	return (VertexProgram != ENGINE_SHADER_NONE) ? EngineConstantBuffer : VertexConstantBuffer;
 }
 
+void DX11BackendClass::Forget_Bindings()
+{
+	memset(&Bound, 0, sizeof(Bound));
+	memset(TargetCheckedViews, 0, sizeof(TargetCheckedViews));
+	memset(TargetCheckedIsTarget, 0, sizeof(TargetCheckedIsTarget));
+}
+
 void DX11BackendClass::Bind_State_Objects()
 {
 	ID3D11DeviceContext * context = Device->Get_Context();
+	const bool known = Bound.Known;
 
-	context->OMSetBlendState(Blend_State(), NULL, 0xffffffff);
-	context->OMSetDepthStencilState(Depth_Stencil_State(), RenderStates.Get_Stencil_Reference());
-	context->RSSetState(Rasterizer_State());
+	ID3D11BlendState * blend = Blend_State();
+	if (!known || blend != Bound.Blend) {
+		context->OMSetBlendState(blend, NULL, 0xffffffff);
+		Bound.Blend = blend;
+	}
+	ID3D11DepthStencilState * depth_stencil = Depth_Stencil_State();
+	const UINT stencil_reference = RenderStates.Get_Stencil_Reference();
+	if (!known || depth_stencil != Bound.DepthStencil || stencil_reference != Bound.StencilReference) {
+		context->OMSetDepthStencilState(depth_stencil, stencil_reference);
+		Bound.DepthStencil = depth_stencil;
+		Bound.StencilReference = stencil_reference;
+	}
+	ID3D11RasterizerState * rasterizer = Rasterizer_State();
+	if (!known || rasterizer != Bound.Rasterizer) {
+		context->RSSetState(rasterizer);
+		Bound.Rasterizer = rasterizer;
+	}
 
 	ID3D11SamplerState * samplers[DX11_BACKEND_TEXTURE_STAGES];
 	ID3D11ShaderResourceView * textures[DX11_BACKEND_TEXTURE_STAGES];
 	for (unsigned sampler = 0; sampler < DX11_BACKEND_TEXTURE_STAGES; ++sampler) {
 		samplers[sampler] = Sampler_State(sampler);
-		textures[sampler] = Readable_Texture(Textures[sampler]);
+		textures[sampler] = Readable_Texture(sampler, Textures[sampler]);
 	}
-	context->PSSetSamplers(0, DX11_BACKEND_TEXTURE_STAGES, samplers);
-	context->PSSetShaderResources(0, DX11_BACKEND_TEXTURE_STAGES, textures);
+	if (!known || memcmp(samplers, Bound.Samplers, sizeof(samplers)) != 0) {
+		context->PSSetSamplers(0, DX11_BACKEND_TEXTURE_STAGES, samplers);
+		memcpy(Bound.Samplers, samplers, sizeof(samplers));
+	}
+	if (!known || memcmp(textures, Bound.Textures, sizeof(textures)) != 0) {
+		context->PSSetShaderResources(0, DX11_BACKEND_TEXTURE_STAGES, textures);
+		memcpy(Bound.Textures, textures, sizeof(textures));
+	}
 }
 
-ID3D11ShaderResourceView * DX11BackendClass::Readable_Texture(ID3D11ShaderResourceView * texture)
+void DX11BackendClass::Bind_Pipeline(const Pipeline & pipeline, ID3D11Buffer * vertices, UINT stride,
+	UINT offset, ID3D11Buffer * indices, DXGI_FORMAT index_format, D3D11_PRIMITIVE_TOPOLOGY topology)
+{
+	ID3D11DeviceContext * context = Device->Get_Context();
+	const bool known = Bound.Known;
+
+	if (!known || pipeline.Layout != Bound.Layout) {
+		context->IASetInputLayout(pipeline.Layout);
+		Bound.Layout = pipeline.Layout;
+	}
+	if (!known || vertices != Bound.VertexBuffer || stride != Bound.VertexStride
+			|| offset != Bound.VertexOffset) {
+		context->IASetVertexBuffers(0, 1, &vertices, &stride, &offset);
+		Bound.VertexBuffer = vertices;
+		Bound.VertexStride = stride;
+		Bound.VertexOffset = offset;
+	}
+	// A draw with no index buffer leaves the last one bound, as it always did.
+	if (indices != NULL && (!known || indices != Bound.IndexBuffer || index_format != Bound.IndexFormat)) {
+		context->IASetIndexBuffer(indices, index_format, 0);
+		Bound.IndexBuffer = indices;
+		Bound.IndexFormat = index_format;
+	}
+	if (!known || topology != Bound.Topology) {
+		context->IASetPrimitiveTopology(topology);
+		Bound.Topology = topology;
+	}
+	if (!known || pipeline.VertexShader != Bound.VertexShader) {
+		context->VSSetShader(pipeline.VertexShader, NULL, 0);
+		Bound.VertexShader = pipeline.VertexShader;
+	}
+	ID3D11Buffer * vertex_constants = Vertex_Constants();
+	if (!known || vertex_constants != Bound.VertexConstants) {
+		context->VSSetConstantBuffers(0, 1, &vertex_constants);
+		Bound.VertexConstants = vertex_constants;
+	}
+	if (!known || pipeline.PixelShader != Bound.PixelShader) {
+		context->PSSetShader(pipeline.PixelShader, NULL, 0);
+		Bound.PixelShader = pipeline.PixelShader;
+	}
+	if (!known || PixelConstantBuffer != Bound.PixelConstants) {
+		context->PSSetConstantBuffers(0, 1, &PixelConstantBuffer);
+		Bound.PixelConstants = PixelConstantBuffer;
+	}
+	Bound.Known = true;
+}
+
+ID3D11ShaderResourceView * DX11BackendClass::Readable_Texture(unsigned stage,
+	ID3D11ShaderResourceView * texture)
 {
 	if (texture == NULL || CurrentTarget == NULL) {
 		return texture;
 	}
 
-	ID3D11Resource * resource = NULL;
-	texture->GetResource(&resource);
-	resource->Release();
-	if (resource != CurrentTargetResource) {
+	// The whole scene is drawn into a target when the screen filters are on, and asking every
+	// texture of every draw which resource it views went through the runtime twice a stage: 4% of
+	// the fireball frame. The answer only changes with the view or the target, and a new target
+	// calls Forget_Bindings, which clears these.
+	if (texture != TargetCheckedViews[stage]) {
+		ID3D11Resource * resource = NULL;
+		texture->GetResource(&resource);
+		resource->Release();
+		TargetCheckedViews[stage] = texture;
+		TargetCheckedIsTarget[stage] = resource == CurrentTargetResource;
+	}
+	if (!TargetCheckedIsTarget[stage]) {
 		return texture;
 	}
+	ID3D11Resource * resource = CurrentTargetResource;
 
 	// Set_Render_Target keeps only a target that is a two dimensional texture.
 	D3D11_TEXTURE2D_DESC description;
@@ -1466,17 +1557,7 @@ bool DX11BackendClass::Draw_Indexed(unsigned index_count, unsigned start_index,
 	Upload_Constants();
 	Bind_State_Objects();
 
-	const UINT stride = StreamStride;
-	const UINT offset = StreamOffset;
-	context->IASetInputLayout(pipeline.Layout);
-	context->IASetVertexBuffers(0, 1, &StreamBuffer, &stride, &offset);
-	context->IASetIndexBuffer(IndexBuffer, IndexFormat, 0);
-	context->IASetPrimitiveTopology(topology);
-	context->VSSetShader(pipeline.VertexShader, NULL, 0);
-	ID3D11Buffer * vertex_constants = Vertex_Constants();
-	context->VSSetConstantBuffers(0, 1, &vertex_constants);
-	context->PSSetShader(pipeline.PixelShader, NULL, 0);
-	context->PSSetConstantBuffers(0, 1, &PixelConstantBuffer);
+	Bind_Pipeline(pipeline, StreamBuffer, StreamStride, StreamOffset, IndexBuffer, IndexFormat, topology);
 	context->DrawIndexed(index_count, start_index, base_vertex);
 
 	++DrawsMade;
@@ -1515,16 +1596,8 @@ bool DX11BackendClass::Draw_Triangles(unsigned vertex_count, unsigned start_vert
 	Upload_Constants();
 	Bind_State_Objects();
 
-	const UINT stride = StreamStride;
-	const UINT offset = StreamOffset;
-	context->IASetInputLayout(pipeline.Layout);
-	context->IASetVertexBuffers(0, 1, &StreamBuffer, &stride, &offset);
-	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	context->VSSetShader(pipeline.VertexShader, NULL, 0);
-	ID3D11Buffer * vertex_constants = Vertex_Constants();
-	context->VSSetConstantBuffers(0, 1, &vertex_constants);
-	context->PSSetShader(pipeline.PixelShader, NULL, 0);
-	context->PSSetConstantBuffers(0, 1, &PixelConstantBuffer);
+	Bind_Pipeline(pipeline, StreamBuffer, StreamStride, StreamOffset, NULL, DXGI_FORMAT_UNKNOWN,
+		D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	context->Draw(vertex_count, start_vertex);
 
 	++DrawsMade;
@@ -1685,16 +1758,8 @@ bool DX11BackendClass::Draw_User_Strip(const void * vertices, unsigned primitive
 	Upload_Constants();
 	Bind_State_Objects();
 
-	const UINT vertex_stride = stride;
-	const UINT offset = 0;
-	context->IASetInputLayout(pipeline.Layout);
-	context->IASetVertexBuffers(0, 1, &UserBuffer, &vertex_stride, &offset);
-	context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	context->VSSetShader(pipeline.VertexShader, NULL, 0);
-	ID3D11Buffer * vertex_constants = Vertex_Constants();
-	context->VSSetConstantBuffers(0, 1, &vertex_constants);
-	context->PSSetShader(pipeline.PixelShader, NULL, 0);
-	context->PSSetConstantBuffers(0, 1, &PixelConstantBuffer);
+	Bind_Pipeline(pipeline, UserBuffer, stride, 0, NULL, DXGI_FORMAT_UNKNOWN,
+		D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	context->Draw(list_vertex_count, 0);
 
 	++DrawsMade;
