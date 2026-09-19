@@ -1,0 +1,21 @@
+# The unit limit split between two players, both armies ordered across the map through each other.
+#
+#   generals.exe -headless -quickstart -noshellmap -observer -multiInstance -noFPSLimit
+#     -randommap 3 2 large -autoskirmish 2 -takeover -seed 3 -maxframes 9000 -peacetime 10
+#     -scenario mass420x2 -logPrefix mass420x2_
+#
+# -peacetime keeps them from fighting, so what is measured is 840 units crossing, not a battle.
+#
+# 2026-09-19: all 840 left and arrived, the orders cost 5.1 and 5.2 ms, logic frame p99 9.25 ms and
+# never over 33.3 ms.
+
+30    spawn   0  AmericaTankCrusader  210  start0:0:400  40
+30    spawn   0  AmericaInfantryRanger  210  start0:400:0  20
+30    spawn   1  ChinaTankBattleMaster  210  start1:0:-400  40
+30    spawn   1  ChinaInfantryRedguard  210  start1:-400:0  20
+90    playermove    0  *      start1
+90    playermove    1  *      start0
+90    arrive  0  AmericaTankCrusader      start1  900
+90    arrive  0  AmericaInfantryRanger    start1  900
+90    arrive  1  ChinaTankBattleMaster    start0  900
+90    arrive  1  ChinaInfantryRedguard    start0  900

@@ -65,7 +65,8 @@ enum ScenarioActionType
 	SCENARIO_ACTION_STOP,					///< stop <slot> <selector>
 	SCENARIO_ACTION_ARRIVE,				///< arrive <slot> <selector> <position> [radius]
 	SCENARIO_ACTION_PARTICLES,		///< particles <slot> <systemTemplate> <count> <position> [spacing]; slot is read and ignored
-	SCENARIO_ACTION_ENTER					///< enter <slot> <selector> <targetSlot> <targetSelector>
+	SCENARIO_ACTION_ENTER,				///< enter <slot> <selector> <targetSlot> <targetSelector>
+	SCENARIO_ACTION_PLAYERMOVE		///< playermove <slot> <selector> <position>; a right click, not a script order
 };
 
 /// ScenarioAction::atStart when the position is plain numbers

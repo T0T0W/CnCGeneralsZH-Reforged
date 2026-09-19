@@ -1,0 +1,22 @@
+# The whole unit limit in one order: 840 units, one player, one right click.
+#
+# The lobby's unit limit is 840 for the match. This is all of it under one player and one
+# playermove, which is the most a single order can ever carry.
+#
+#   generals.exe -headless -quickstart -noshellmap -observer -multiInstance -noFPSLimit
+#     -randommap 3 2 large -autoskirmish 2 -takeover -seed 3 -maxframes 9000 -peacetime 10
+#     -scenario mass840 -logPrefix mass840_
+#
+# Grep HEADLESS DEPART (did every unit start), HEADLESS ARRIVE (did every unit get there),
+# SLOW GROUPMOVE (what the order frame cost) and HEADLESS LOGICTIME. Drop -headless -observer and add
+# -win -xres 1280 -yres 720 -camera 1900 2300 for the drawn frame with the whole army on screen.
+#
+# 2026-09-19: 840 of 840 left and arrived, the last to leave after 19.1 s, the order frame 13.1 ms,
+# logic frame p99 8.5 ms and never over 33.3 ms. Before the pathfind queue grew past 512, 329 of them
+# never left.
+
+30    spawn   0  AmericaTankCrusader  420  start0:0:400  40
+30    spawn   0  AmericaInfantryRanger  420  start0:400:0  20
+90    playermove    0  *      start1
+90    arrive  0  AmericaTankCrusader      start1  900
+90    arrive  0  AmericaInfantryRanger    start1  900

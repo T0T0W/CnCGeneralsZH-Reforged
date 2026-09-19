@@ -1,0 +1,19 @@
+# Mass move probe: does every unit of a big selection obey one right click?
+#
+# Two hundred units, one player-shaped order (playermove takes the same branch of
+# AIGroup::groupMoveToPosition as a right click; move is a script order and does not), and a count of
+# who arrived. Before 2026-09-19 a crowd this size left units standing idle halfway: a unit shoved
+# aside by a neighbour lost the path its order was waiting for and gave the order up.
+#
+#   generals.exe -headless -quickstart -noshellmap -observer -multiInstance -noFPSLimit
+#     -randommap 3 2 small -autoskirmish 2 -takeover -seed 3 -maxframes 4000
+#     -scenario massmove -logPrefix mass_
+#
+# then grep the log for HEADLESS ARRIVE; every unit that did not arrive writes a HEADLESS STRAGGLER
+# line with its position and whether it is idle, moving or still waiting for a path.
+
+30    spawn   0  AmericaTankCrusader  100  start0:0:300  40
+30    spawn   0  AmericaInfantryRanger  100  start0:300:0  20
+90    playermove    0  *      700 600
+90    arrive  0  AmericaTankCrusader      700 600  450
+90    arrive  0  AmericaInfantryRanger    700 600  450

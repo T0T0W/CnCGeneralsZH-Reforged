@@ -1,0 +1,20 @@
+# Squad stop probe: how often does a unit on the march stand still for a second?
+#
+# A player-sized army (20 Crusaders, 10 Rangers) given one right click to the enemy start. The
+# arrive lines count who got there and, in HEADLESS STALL, every stop of a second or more on the
+# way, split by what the unit was doing when it stopped: held back by the repath guard, queued for
+# a route, blocked by something in front, or none of those.
+#
+#   generals.exe -headless -quickstart -noshellmap -observer -multiInstance -noFPSLimit
+#     -randommap 3 2 small -autoskirmish 2 -takeover -seed 1 -maxframes 4000 -peacetime 10
+#     -scenario squad30 -logPrefix squad_
+#
+# Seeds 1-5 and 7-9, 2026-09-19: 53 stops (25 held back, 27 blocked) before the bump limit could
+# recover in contact, 48 (28 held back, 19 blocked) after; 12 (2 held back, 9 blocked) once tanks
+# stopped shoving marching infantry aside. Last arrival 2006 -> 1807 -> 1733 frames.
+
+30    spawn   0  AmericaTankCrusader  20  start0:0:300  40
+30    spawn   0  AmericaInfantryRanger  10  start0:300:0  20
+90    playermove    0  *      start1
+90    arrive  0  AmericaTankCrusader      start1  250
+90    arrive  0  AmericaInfantryRanger    start1  250

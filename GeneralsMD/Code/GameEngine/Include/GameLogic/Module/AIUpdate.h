@@ -740,6 +740,9 @@ public:
 	inline Int getTmpValue(void) {return m_tmpInt;}
 
 	inline Bool getRetryPath(void) {return m_retryPath;}
+	inline Bool didPathfindFindNothing(void) const {return m_pathfindFoundNothing;}
+	void queueForPathOrRetry(void);	///< join the pathfind queue, or try again shortly when it is full
+	UnsignedInt getQueueForPathFrame(void) const {return m_queueForPathFrame;}	///< nonzero while a too-quick path request is held back
 	
 	inline void setAllowedToChase( Bool allow ) { m_allowedToChase = allow; }
 	inline Bool isAllowedToChase() const { return m_allowedToChase; }
@@ -945,6 +948,7 @@ private:
 	Bool				m_isRecruitable;						///< TRUE if recruitable by the ai.
 	Bool				m_executingWaypointQueue;						///< if true, we are moving thru the waypoints
 	Bool				m_retryPath;								///< If true, we need to try the path a second time.  jba.
+	Bool				m_pathfindFoundNothing;			///< The last ground search, closest-path fallback included, returned no path.
 	Bool				m_allowedToChase;						///< Allowed to pursue targets.
 	Bool				m_isInUpdate;								///< If true, we are inside our update method.
 	Bool				m_fixLocoInPostProcess;		

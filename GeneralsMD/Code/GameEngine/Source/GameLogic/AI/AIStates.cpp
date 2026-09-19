@@ -1641,7 +1641,7 @@ StateReturnType AIInternalMoveToState::onEnter()
 		}
 	}
 	m_tryOneMoreRepath = true;  // We may try one more repath after the first one is finished.
-	ai->friend_startingMove(); 
+	ai->friend_startingMove();
 
 	// get object physics state
 	PhysicsBehavior *physics = obj->getPhysics();
@@ -1800,8 +1800,20 @@ StateReturnType AIInternalMoveToState::update()
 			/// @todo srj -- find a way to sleep for a number of frames here, if possible
 			return STATE_CONTINUE;
 		}
-		if (thePath==NULL) 
+		if (thePath==NULL)
 		{
+			/* An empty path here is usually not the pathfinder's answer. A unit shoved aside by a
+				 neighbour runs AIMoveOutOfTheWayState on top of this order, and that state destroys the
+				 path when it ends; if this order was waiting for a repath at that moment, the path it was
+				 waiting for is gone and it used to give up and stand. In a big selection units shove each
+				 other all the way, and 120 units ordered across a small map left 7 of them idle halfway.
+				 So a path that was found and then lost is asked for again, as often as it is lost; only
+				 the pathfinder coming back with nothing ends the move. */
+			if (!ai->didPathfindFindNothing())
+			{
+				computePath();
+				return STATE_CONTINUE;
+			}
 			//Kris: 7/01/03 (Temporary debug hook for units not being able to leave maps)
 			if( blah )
 			{
@@ -1890,7 +1902,7 @@ StateReturnType AIInternalMoveToState::update()
 		if (forceRecompute || !isSamePosition(obj->getPosition(), &m_pathGoalPosition, &m_goalPosition ))
 		{
 			// goal moved - repath
-			if (!computePath()) 
+			if (!computePath())
 			{
 				//Kris: 7/01/03 (Temporary debug hook for units not being able to leave maps)
 				if( blah )

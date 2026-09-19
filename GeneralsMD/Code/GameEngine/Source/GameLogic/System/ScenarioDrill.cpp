@@ -155,6 +155,8 @@ static Bool parseActionType( const AsciiString &token, ScenarioActionType *actio
 		*action = SCENARIO_ACTION_SPAWN;
 	else if (token == "move")
 		*action = SCENARIO_ACTION_MOVE;
+	else if (token == "playermove")
+		*action = SCENARIO_ACTION_PLAYERMOVE;
 	else if (token == "attackmove")
 		*action = SCENARIO_ACTION_ATTACKMOVE;
 	else if (token == "attack")
@@ -241,6 +243,7 @@ static Int tokensNeededFor( ScenarioActionType action )
 		case SCENARIO_ACTION_SPAWN:				return SCENARIO_TOKENS_SPAWN;
 		case SCENARIO_ACTION_PARTICLES:		return SCENARIO_TOKENS_SPAWN;
 		case SCENARIO_ACTION_MOVE:				return SCENARIO_TOKENS_MOVE;
+		case SCENARIO_ACTION_PLAYERMOVE:	return SCENARIO_TOKENS_MOVE;
 		case SCENARIO_ACTION_ATTACKMOVE:	return SCENARIO_TOKENS_MOVE;
 		case SCENARIO_ACTION_ATTACK:			return SCENARIO_TOKENS_ATTACK;
 		case SCENARIO_ACTION_ENTER:				return SCENARIO_TOKENS_ATTACK;
@@ -306,6 +309,7 @@ ScenarioParseResult ScenarioDrill_parseLine( const char *line, ScenarioAction *a
 		}
 
 		case SCENARIO_ACTION_MOVE:
+		case SCENARIO_ACTION_PLAYERMOVE:
 		case SCENARIO_ACTION_ATTACKMOVE:
 		case SCENARIO_ACTION_ARRIVE:
 		{
@@ -377,7 +381,28 @@ struct ScenarioArrival
 	UnsignedInt fromFrame;
 	std::vector<ObjectID> ids;
 	std::vector<UnsignedInt> arrivedOn;
+	std::vector<Coord3D> startedAt;			///< where each stood when the line fired
+	std::vector<UnsignedInt> departedOn;	///< the frame each first stood SCENARIO_DEPARTED_DISTANCE from there
+	std::vector<Coord3D> lastSeenAt;		///< where each stood on the frame before
+	std::vector<Int> stillFor;					///< frames each has stood still since it last moved
+	// Stops on the way: a unit that has left and not arrived standing still for SCENARIO_STALL_FRAMES,
+	// counted once per stop by what it was doing at that moment.
+	Int stallsIdle;						///< gave the order up
+	Int stallsHeldBack;				///< its path request held back a second for coming too soon after the last
+	Int stallsWaitingForPath;	///< still waiting in the queue for its route
+	Int stallsBlocked;				///< blocked by something in front
+	Int stallsOther;					///< has a route, is not blocked, and is not moving
+	Int longestStall;
+	ObjectID longestStallID;
 };
+
+/// how long a unit on its way has to stand still before it counts as having stopped
+static const Int SCENARIO_STALL_FRAMES = LOGICFRAMES_PER_SECOND;
+/// less than this from one frame to the next is standing still
+static const Real SCENARIO_STILL_DISTANCE = 0.05f;
+
+/// how far a unit has to have gone from where it stood before it counts as having obeyed the order
+static const Real SCENARIO_DEPARTED_DISTANCE = 20.0f;
 
 static std::vector<ScenarioArrival> theScenarioArrivals;
 
@@ -682,7 +707,18 @@ static Bool executeArrive( const ScenarioAction &action, Player *player, const C
 
 		arrival.ids.push_back( obj->getID() );
 		arrival.arrivedOn.push_back( SCENARIO_NOT_ARRIVED );
+		arrival.startedAt.push_back( *obj->getPosition() );
+		arrival.departedOn.push_back( SCENARIO_NOT_ARRIVED );
+		arrival.lastSeenAt.push_back( *obj->getPosition() );
+		arrival.stillFor.push_back( 0 );
 	}
+	arrival.stallsIdle = 0;
+	arrival.stallsHeldBack = 0;
+	arrival.stallsWaitingForPath = 0;
+	arrival.stallsBlocked = 0;
+	arrival.stallsOther = 0;
+	arrival.longestStall = 0;
+	arrival.longestStallID = INVALID_ID;
 
 	DEBUG_LOG(("SCENARIO: frame %d arrive slot %d '%s' x%d within %.0f of (%.0f,%.0f)\n",
 						 action.frame, action.slot, action.selector.str(), (Int)arrival.ids.size(),
@@ -710,6 +746,41 @@ static void updateArrivals( UnsignedInt now )
 			if (obj == NULL || obj->isEffectivelyDead())
 				continue;
 
+			if (it->departedOn[ i ] == SCENARIO_NOT_ARRIVED)
+			{
+				const Real mx = obj->getPosition()->x - it->startedAt[ i ].x;
+				const Real my = obj->getPosition()->y - it->startedAt[ i ].y;
+				if (mx * mx + my * my >= SCENARIO_DEPARTED_DISTANCE * SCENARIO_DEPARTED_DISTANCE)
+					it->departedOn[ i ] = now;
+			}
+			else
+			{
+				const Real sx = obj->getPosition()->x - it->lastSeenAt[ i ].x;
+				const Real sy = obj->getPosition()->y - it->lastSeenAt[ i ].y;
+				if (sx * sx + sy * sy >= SCENARIO_STILL_DISTANCE * SCENARIO_STILL_DISTANCE)
+					it->stillFor[ i ] = 0;
+				else if (++it->stillFor[ i ] == SCENARIO_STALL_FRAMES)
+				{
+					const AIUpdateInterface *ai = obj->getAIUpdateInterface();
+					if (ai->isIdle())
+						++it->stallsIdle;
+					else if (ai->isWaitingForPath() && ai->getQueueForPathFrame() != 0)
+						++it->stallsHeldBack;
+					else if (ai->isWaitingForPath())
+						++it->stallsWaitingForPath;
+					else if (ai->getNumFramesBlocked() > 0 || ai->isBlockedAndStuck())
+						++it->stallsBlocked;
+					else
+						++it->stallsOther;
+				}
+				if (it->stillFor[ i ] > it->longestStall)
+				{
+					it->longestStall = it->stillFor[ i ];
+					it->longestStallID = obj->getID();
+				}
+			}
+			it->lastSeenAt[ i ] = *obj->getPosition();
+
 			const Real dx = obj->getPosition()->x - it->goal.x;
 			const Real dy = obj->getPosition()->y - it->goal.y;
 			if (dx * dx + dy * dy <= radiusSquared)
@@ -727,12 +798,14 @@ void ScenarioDrill_logArrivals( void )
 		Int lost = 0;
 		UnsignedInt first = SCENARIO_NOT_ARRIVED;
 		UnsignedInt last = 0;
+		Real arrivalSum = 0.0f;
 		for( size_t i = 0; i < it->ids.size(); ++i )
 		{
 			const UnsignedInt on = it->arrivedOn[ i ];
 			if (on != SCENARIO_NOT_ARRIVED)
 			{
 				++arrived;
+				arrivalSum += (Real)(on - it->fromFrame);
 				first = (on < first) ? on : first;
 				last = (on > last) ? on : last;
 				continue;
@@ -740,11 +813,42 @@ void ScenarioDrill_logArrivals( void )
 
 			Object *obj = TheGameLogic->findObjectByID( it->ids[ i ] );
 			if (obj == NULL || obj->isEffectivelyDead())
+			{
 				++lost;
+				continue;
+			}
+			const AIUpdateInterface *ai = obj->getAIUpdateInterface();
+			DEBUG_LOG(("HEADLESS STRAGGLER: '%s' id %d at (%.0f,%.0f), state %d idle %d moving %d waiting %d path %d\n",
+								 it->selector.str(), obj->getID(), obj->getPosition()->x, obj->getPosition()->y,
+								 ai->getCurrentStateID(), ai->isIdle(), ai->isMoving(), ai->isWaitingForPath(), ai->getPath() != NULL));
 		}
 
 		const Int total = (Int)it->ids.size();
 		const Int stillOut = total - arrived - lost;
+
+		// how long the last of them stood before it obeyed; the order is only as quick as that
+		Int departed = 0;
+		UnsignedInt lastDeparture = 0;
+		for( size_t i = 0; i < it->ids.size(); ++i )
+		{
+			if (it->departedOn[ i ] == SCENARIO_NOT_ARRIVED)
+				continue;
+			++departed;
+			lastDeparture = (it->departedOn[ i ] > lastDeparture) ? it->departedOn[ i ] : lastDeparture;
+		}
+		DEBUG_LOG(("HEADLESS DEPART: slot %d '%s' from frame %d: %d of %d moved %.0f, the last after %d frames (%.1f s)\n",
+							 it->slot, it->selector.str(), it->fromFrame, departed, total, SCENARIO_DEPARTED_DISTANCE,
+							 departed ? (Int)(lastDeparture - it->fromFrame) : 0,
+							 departed ? (Real)(lastDeparture - it->fromFrame) / (Real)LOGICFRAMES_PER_SECOND : 0.0f));
+
+		DEBUG_LOG(("HEADLESS STALL: slot %d '%s': %d stops of %.0f s or more on the way - %d idle, %d held back, %d waiting for a path, %d blocked, %d with a path and no reason; longest %d frames (%.1f s), unit %d\n",
+							 it->slot, it->selector.str(),
+							 it->stallsIdle + it->stallsHeldBack + it->stallsWaitingForPath + it->stallsBlocked + it->stallsOther,
+							 (Real)SCENARIO_STALL_FRAMES / (Real)LOGICFRAMES_PER_SECOND,
+							 it->stallsIdle, it->stallsHeldBack, it->stallsWaitingForPath, it->stallsBlocked, it->stallsOther,
+							 it->longestStall, (Real)it->longestStall / (Real)LOGICFRAMES_PER_SECOND,
+							 (Int)it->longestStallID));
+
 		if (arrived == 0)
 		{
 			DEBUG_LOG(("HEADLESS ARRIVE: slot %d '%s' from frame %d: none of %d within %.0f of (%.0f,%.0f), %d lost, %d still out\n",
@@ -753,9 +857,9 @@ void ScenarioDrill_logArrivals( void )
 			continue;
 		}
 
-		DEBUG_LOG(("HEADLESS ARRIVE: slot %d '%s' from frame %d: %d of %d within %.0f of (%.0f,%.0f), first after %d frames, last after %d frames (%.1f s), %d lost, %d still out\n",
+		DEBUG_LOG(("HEADLESS ARRIVE: slot %d '%s' from frame %d: %d of %d within %.0f of (%.0f,%.0f), first after %d frames, mean %.0f, last after %d frames (%.1f s), %d lost, %d still out\n",
 							 it->slot, it->selector.str(), it->fromFrame, arrived, total, it->radius, it->goal.x, it->goal.y,
-							 first - it->fromFrame, last - it->fromFrame,
+							 first - it->fromFrame, arrivalSum / (Real)arrived, last - it->fromFrame,
 							 (Real)(last - it->fromFrame) / (Real)LOGICFRAMES_PER_SECOND, lost, stillOut));
 	}
 }
@@ -776,16 +880,21 @@ static Bool executeOrder( const ScenarioAction &action, Player *player, const Co
 	switch (action.action)
 	{
 		case SCENARIO_ACTION_MOVE:
+		case SCENARIO_ACTION_PLAYERMOVE:
 		case SCENARIO_ACTION_ATTACKMOVE:
 		{
+			// A player's move takes a different branch of groupMoveToPosition (every member gathers on
+			// the clicked point), so a script order cannot stand in for a right click.
 			if (action.action == SCENARIO_ACTION_MOVE)
 				group->groupMoveToPosition( &dest, FALSE, CMD_FROM_SCRIPT );
+			else if (action.action == SCENARIO_ACTION_PLAYERMOVE)
+				group->groupMoveToPosition( &dest, FALSE, CMD_FROM_PLAYER );
 			else
 				group->groupAttackMoveToPosition( &dest, SCENARIO_ATTACK_SHOTS, CMD_FROM_SCRIPT );
 
 			DEBUG_LOG(("SCENARIO: frame %d %s slot %d '%s' x%d to (%.0f,%.0f)\n",
 								 action.frame,
-								 (action.action == SCENARIO_ACTION_MOVE) ? "move" : "attackmove",
+								 (action.action == SCENARIO_ACTION_ATTACKMOVE) ? "attackmove" : "move",
 								 action.slot, action.selector.str(), taken, dest.x, dest.y));
 			break;
 		}

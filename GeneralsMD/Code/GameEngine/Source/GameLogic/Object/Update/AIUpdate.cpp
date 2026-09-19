@@ -388,6 +388,7 @@ AIUpdateInterface::AIUpdateInterface( Thing *thing, const ModuleData* moduleData
 	// state or an attack move turns it on for as long as it lasts.
 	m_allowedToChase = FALSE;
 	m_retryPath = FALSE;
+	m_pathfindFoundNothing = FALSE;
 	m_isInUpdate = FALSE;
 	m_fixLocoInPostProcess = FALSE;
 
@@ -507,7 +508,7 @@ void AIUpdateInterface::doPathfind( PathfindServicesInterface *pathfinder )
 		return;
 	}
 	//CRCDEBUG_LOG(("AIUpdateInterface::doPathfind() for object %d\n", getObject()->getID()));
-	m_waitingForPath = FALSE;	 
+	m_waitingForPath = FALSE;
 	if (m_isSafePath) {
 		destroyPath();
 		Coord3D pos1, pos2;
@@ -525,6 +526,7 @@ void AIUpdateInterface::doPathfind( PathfindServicesInterface *pathfinder )
 			getObject()->getPosition(), 
 			&pos1, 	&pos2, 
 			getObject()->getVisionRange() + TheAI->getAiData()->m_repulsedDistance);
+		m_pathfindFoundNothing = (m_path == NULL);
 		return;
 	}
 	if (m_isApproachPath & !isDoingGroundMovement()) {
@@ -534,6 +536,7 @@ void AIUpdateInterface::doPathfind( PathfindServicesInterface *pathfinder )
 		destroyPath();
 		m_path = pathfinder->findClosestPath(getObject(), m_locomotorSet, getObject()->getPosition(), 
 			&m_requestedDestination, m_isBlockedAndStuck, 0.2f, FALSE );
+		m_pathfindFoundNothing = (m_path == NULL);
 		if (isDoingGroundMovement() && getPath()) {
 			TheAI->pathfinder()->updateGoal(getObject(), getPath()->getLastNode()->getPosition(),
 				getPath()->getLastNode()->getLayer());
@@ -545,7 +548,9 @@ void AIUpdateInterface::doPathfind( PathfindServicesInterface *pathfinder )
 		if (m_requestedVictimID != INVALID_ID) { 
 			victim = TheGameLogic->findObjectByID(m_requestedVictimID);
 		}
-		if (computeAttackPath(pathfinder, victim, &m_requestedDestination))	{	
+		if (computeAttackPath(pathfinder, victim, &m_requestedDestination))	{
+			// in range already comes back with no path, and the approach state still ends on that
+			m_pathfindFoundNothing = (m_path == NULL);
 			if (getPath()) {
 				TheAI->pathfinder()->updateGoal(getObject(), getPath()->getLastNode()->getPosition(),
 					getPath()->getLastNode()->getLayer());
@@ -620,7 +625,7 @@ void AIUpdateInterface::requestPath( Coord3D *destination, Bool isFinalGoal )
 		}
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queueForPathOrRetry();
 
 }
 
@@ -644,7 +649,7 @@ void AIUpdateInterface::requestAttackPath( ObjectID victimID, const Coord3D* vic
 		setLocomotorGoalNone();
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queueForPathOrRetry();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -667,7 +672,7 @@ void AIUpdateInterface::requestApproachPath( Coord3D *destination )
 		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queueForPathOrRetry();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -691,7 +696,7 @@ void AIUpdateInterface::requestSafePath( ObjectID repulsor )
 		setQueueForPathTime(2*LOGICFRAMES_PER_SECOND);
 		return;
 	}
-	TheAI->pathfinder()->queueForPath(getObject()->getID());
+	queueForPathOrRetry();
 }
 
 enum {WAYPOINT_PATH_LIMIT=1024};
@@ -1091,6 +1096,16 @@ void AIUpdateInterface::setQueueForPathTime(Int frames)
 }
 
 //-------------------------------------------------------------------------------------------------
+/* A full pathfind queue refuses the request, and every caller used to carry on waiting for a path
+	 nobody was going to find: the unit stood there for the rest of the match. Refused, it asks
+	 again half a second later through the same timer a too-quick repath uses. */
+void AIUpdateInterface::queueForPathOrRetry()
+{
+	if (!TheAI->pathfinder()->queueForPath(getObject()->getID()))
+		setQueueForPathTime(LOGICFRAMES_PER_SECOND / 2);
+}
+
+//-------------------------------------------------------------------------------------------------
 void AIUpdateInterface::wakeUpNow()
 {
 #ifdef SLEEPY_AI
@@ -1225,10 +1240,10 @@ UpdateSleepTime AIUpdateInterface::update( void )
 	UnsignedInt now = TheGameLogic->getFrame();
 	if (m_queueForPathFrame != 0)
 	{
-		if (now >= m_queueForPathFrame) 
+		if (now >= m_queueForPathFrame)
 		{
-			TheAI->pathfinder()->queueForPath(getObject()->getID());
 			setQueueForPathTime(0);
+			queueForPathOrRetry();
 		}
 		else
 		{
@@ -1482,6 +1497,19 @@ Bool AIUpdateInterface::blockedBy(Object *other)
 	Real dx = pos.x-otherPos.x;
 	Real dy = pos.y-otherPos.y;
 	Real curDSqr = dx*dx+dy*dy;
+
+	/* A foot soldier marching our way is not in our way. A vehicle blocked by an ally on foot tells him
+		 to step aside, and a soldier who steps aside loses his own route and stands for a second before
+		 the repath guard lets him ask for another: in a 30-unit mixed squad every one of the 28 stops of
+		 that kind was a Ranger shoved by a Crusader going the same way. The vehicle drives through him
+		 instead, the way infantry already walks through infantry. One standing still, or crossing, is
+		 still asked to move. */
+	if (!obj->isKindOf(KINDOF_INFANTRY) && other->isKindOf(KINDOF_INFANTRY) && otherMoving) {
+		const Coord3D *ourDir = obj->getUnitDirectionVector2D();
+		const Coord3D *theirDir = other->getUnitDirectionVector2D();
+		if (ourDir->x*theirDir->x + ourDir->y*theirDir->y > 0.5f)
+			return FALSE;
+	}
 
 	if (obj->isKindOf(KINDOF_INFANTRY) && other->isKindOf(KINDOF_INFANTRY)) {
 		// Infantry doesn't tend to impede other infantry...
@@ -1752,7 +1780,7 @@ Bool AIUpdateInterface::processCollision(PhysicsBehavior *physics, Object *other
 					// Just wait.
 				}
 			}	
-			else 
+			else
 			{
 				// We are rotating, so don't accumulate blocked frames.
 				m_blockedFrames = 1;
@@ -1966,6 +1994,7 @@ Bool AIUpdateInterface::computePath( PathfindServicesInterface *pathServices, Co
 	// search fail rather than merely route differently.
 	if (theNewPath == NULL)
 		Pathfinder::bumpNoPath();
+	m_pathfindFoundNothing = (theNewPath == NULL);
 	if (theNewPath) {
 		// destroy previous path
 		destroyPath();
@@ -3757,11 +3786,25 @@ UpdateSleepTime AIUpdateInterface::doLocomotor( void )
 						if (blocked && speed>m_curMaxBlockedSpeed) 
 						{
 							speed = m_curMaxBlockedSpeed;
+							/* The bump limit used to shrink by 5% every frame of contact and never grow while
+								 contact lasted, so once a blocker had stood still for a moment it sat at zero: the
+								 tank in front drove off at full speed and the one touching it stayed parked until
+								 the bodies came apart, then crept back up from a fifth of its speed. Traced on a
+								 Crusader, 17 frames at a limit of 0.000 while the speed it was allowed rose from
+								 0.02 to 0.55. It now recovers towards what the blocker allows, the same way it
+								 recovers out of contact, and drives at 95% of it so the gap still opens. */
 							if (m_bumpSpeedLimit>speed) {
 								m_bumpSpeedLimit = speed;
+							} else {
+								if (m_bumpSpeedLimit<speed*0.2f) {
+									m_bumpSpeedLimit = speed*0.2f;
+								}
+								m_bumpSpeedLimit *= 1.05f;
+								if (m_bumpSpeedLimit>speed) {
+									m_bumpSpeedLimit = speed;
+								}
 							}
-							m_bumpSpeedLimit *= 0.95f;
-							speed = m_bumpSpeedLimit;
+							speed = m_bumpSpeedLimit * 0.95f;
 						} 
 						else 
 						{
@@ -6818,12 +6861,13 @@ void AIUpdateInterface::crc( Xfer *x )
 	* 5: the production rally point and its flag
 	* 6: the out-of-bounds xfer of m_guardTargetType is fixed
 	* 11: m_isMoving, which the duplicated m_isSafePath used to stand in place of
-	* 12: m_allowedToChase */
+	* 12: m_allowedToChase
+	* 13: m_pathfindFoundNothing */
 // ------------------------------------------------------------------------------------------------
 void AIUpdateInterface::xfer( Xfer *xfer )
 {
   // version
-  const XferVersion currentVersion = 12;
+  const XferVersion currentVersion = 13;
   XferVersion version = currentVersion;
   xfer->xferVersion( &version, currentVersion );
  
@@ -7112,6 +7156,11 @@ void AIUpdateInterface::xfer( Xfer *xfer )
 		xfer->xferReal(&m_crowdLaneSpace);
 	}
 
+	if (version >= 13)
+	{
+		// lives from one path search to the move state's next look at it, which a save can fall between
+		xfer->xferBool(&m_pathfindFoundNothing);
+	}
 
 }  // end xfer
 

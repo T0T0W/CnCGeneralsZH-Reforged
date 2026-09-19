@@ -542,7 +542,10 @@ private:
 #define PATHFIND_CELL_SIZE		10
 #define PATHFIND_CELL_SIZE_F	10.0f
 
-enum { PATHFIND_QUEUE_LEN=512};
+// One slot per object that can ask (queueForPath refuses a second), so this has to outnumber
+// everything that paths at once. Retail 512 was under the lobby's 840-unit limit: one order to 841
+// units left 329 of them waiting for a path that was never queued.
+enum { PATHFIND_QUEUE_LEN=2048};
 
 struct TCheckMovementInfo;
 

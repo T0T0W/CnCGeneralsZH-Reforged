@@ -7045,7 +7045,10 @@ void Pathfinder::floodGroupGoals(const Coord3D *dest, const std::vector<Object *
 			}
 		}
 
-		if (!isStandable && head > 0)
+		/* Until somebody has a cell the flood goes through anything, because a click on a building
+			 or into a lake has no standable neighbour and used to hand the whole group nothing: every
+			 member was sent at the building itself. Once the first goal is out, a cliff stops it. */
+		if (!isStandable && unplacedCount < memberCount)
 			continue;
 		for (Int dy = -1; dy <= 1; dy++)
 		{
@@ -7316,7 +7319,7 @@ Bool Pathfinder::queueForPath(ObjectID id)
 		nextSlot = 0;
 	}
 	if (nextSlot==m_queuePRHead) {
-		DEBUG_CRASH(("Ran out of pathfind queue slots."));
+		DEBUG_LOG(("PATHFIND QUEUE FULL: object %d asks again shortly\n", id));
 		return false;
 	}
 	m_queuedPathfindRequests[m_queuePRTail] = id;
@@ -7575,6 +7578,10 @@ void Pathfinder::processPathfindQueue(void)
 		 the searches themselves 25,202 to 21,995 - a unit whose request waits a frame often no longer
 		 needs the second, third and fourth repath it used to make while jammed. Two is a shade faster
 		 still and the movement gives way: blocked back up to 8,531, units left stuck 12 to 21. */
+	/* Tried against an 841-unit order, 2026-09-19: one extra request a frame for every sixteen
+		 waiting answered the backlog sooner and made the army leave later, the last unit 23.2 s after
+		 the order against 19.1 s, with one of them never arriving. The back of a packed army waits for
+		 the front to clear, not for its path, and more paths at once is more units shoving. */
 	enum { PATHFIND_REQUESTS_PER_FRAME = 3 };
 	Int requestsThisFrame = 0;
 

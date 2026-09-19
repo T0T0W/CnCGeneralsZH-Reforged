@@ -1906,6 +1906,7 @@ W3DVolumetricShadow::W3DVolumetricShadow( void )
 			m_shadowVolumeRenderTask[i][j].m_lightIndex = (UnsignedByte)i;
 			m_objectXformHistory[ i ][j].Make_Identity();
 			m_lightPosHistory[ i ][j] = Vector3(0,0,0);
+			m_skinRebuiltOnFrame[ i ][j] = 0;
 		}
 	}  // end for i
 
@@ -2376,6 +2377,34 @@ void W3DVolumetricShadow::updateMeshVolume(Int meshIndex, Int lightIndex, MeshCl
 	//tests above can see the change - the silhouette has to be rebuilt every time.
 	if (isSkin)
 		isMeshRotating = true;
+
+	/* That rebuild is the most expensive thing a shadow does, and an army of infantry asks for it
+		 once per soldier per frame: 420 Rangers on screen were a tenth of the frame in shadows alone.
+		 So a frame rebuilds at most SKIN_SHADOW_REBUILDS_PER_FRAME skinned volumes, and any past that
+		 keep last frame's pose, but never one older than SKIN_SHADOW_MAX_AGE_FRAMES: a stale one is
+		 rebuilt whatever the budget says, which bounds how far a shadow's arms can lag its body. The
+		 volume still moves with the unit either way; only the pose waits. Drawing only, so the logic
+		 never sees it. */
+	if (isSkin && !isLightMoving && m_shadowVolume[ lightIndex ][meshIndex])
+	{
+		enum { SKIN_SHADOW_REBUILDS_PER_FRAME = 64, SKIN_SHADOW_MAX_AGE_FRAMES = 6 };
+		static UnsignedInt s_budgetFrame = 0;
+		static Int s_rebuildsThisFrame = 0;
+		const UnsignedInt frame = WW3D::Get_Frame_Count();
+		if (frame != s_budgetFrame)
+		{
+			s_budgetFrame = frame;
+			s_rebuildsThisFrame = 0;
+		}
+		const Bool isStale = frame - m_skinRebuiltOnFrame[ lightIndex ][meshIndex] >= SKIN_SHADOW_MAX_AGE_FRAMES;
+		if (!isStale && s_rebuildsThisFrame >= SKIN_SHADOW_REBUILDS_PER_FRAME)
+			isMeshRotating = false;
+		else
+		{
+			++s_rebuildsThisFrame;
+			m_skinRebuiltOnFrame[ lightIndex ][meshIndex] = frame;
+		}
+	}
 
 	// reconstruct if needed
 	if (isLightMoving || isMeshRotating)

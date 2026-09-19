@@ -182,6 +182,7 @@ class W3DVolumetricShadow	: public Shadow
 		Int m_shadowVolumeCount[MAX_SHADOW_CASTER_MESHES];  // how man shadows are valid in m_shadowVolume
 		Vector3 m_lightPosHistory[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];
 		Matrix4x4 m_objectXformHistory[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];
+		UnsignedInt m_skinRebuiltOnFrame[ MAX_SHADOW_LIGHTS ][MAX_SHADOW_CASTER_MESHES];	///< render frame a skinned volume was last rebuilt on
 
 		// silhouette building space
 		Short *m_silhouetteIndex[MAX_SHADOW_CASTER_MESHES];  // silhouette vertex index list, edges occur
