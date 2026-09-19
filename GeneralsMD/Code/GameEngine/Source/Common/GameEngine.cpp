@@ -91,6 +91,7 @@
 #include "GameLogic/ScriptEngine.h"
 #include "GameLogic/SidesList.h"
 
+#include "GameClient/CinemaDirector.h"
 #include "GameClient/Display.h"
 #include "GameClient/FXList.h"
 #include "GameClient/GameClient.h"
@@ -2256,6 +2257,7 @@ void GameEngine::update( void )
 		updateShellScreenShot();
 		updateFixedCamera();
 		updateAutoCamera();
+		CinemaDirector_update();
 		updateUIDrill();
 		updateResDrill();
 		updateInputWatch();

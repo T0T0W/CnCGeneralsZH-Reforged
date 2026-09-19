@@ -1771,6 +1771,19 @@ Int parseScenario(char *args[], int num)
 	return 1;
 }
 
+/* -cinema <name>: take the interface off and fly the camera from Run/Cinema/<name>.txt, for
+	 footage. A name with no such file still takes the interface off and leaves the camera to the
+	 player. CinemaDirector.cpp has the shot list's grammar. */
+Int parseCinema(char *args[], int num)
+{
+	if (TheWritableGlobalData && num > 1 && args[1])
+	{
+		TheWritableGlobalData->m_cinemaScript = args[1];
+		return 2;
+	}
+	return 1;
+}
+
 /* -side <slot> <faction> nails one -autoskirmish slot to a faction instead of letting the seed
 	 pick it.
 
@@ -2252,6 +2265,7 @@ static CommandLineParam params[] =
 	{ "-control", parseControlPort },
 	{ "-nodevice", parseNoDevice },
 	{ "-scenario", parseScenario },
+	{ "-cinema", parseCinema },
 	{ "-side", parseSide },
 	{ "-takeover", parseTakeover },
 	{ "-replay", parseReplay },

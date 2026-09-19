@@ -1,0 +1,5 @@
+# The interface off and nothing else: no shots, so the camera stays the player's.
+#
+#   generals.exe -cinema nohud ...
+#
+# Scroll, zoom and turn the camera by hand for a clean picture; F12 still takes a screenshot.

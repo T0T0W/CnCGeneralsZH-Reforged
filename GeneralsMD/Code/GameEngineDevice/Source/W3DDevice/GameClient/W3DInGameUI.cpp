@@ -39,6 +39,7 @@
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/Object.h"
+#include "GameClient/CinemaDirector.h"
 #include "GameClient/DisplayStringManager.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GadgetListBox.h"
@@ -396,6 +397,14 @@ void W3DInGameUI::reset( void )
 //-------------------------------------------------------------------------------------------------
 void W3DInGameUI::draw( void )
 {
+	// -cinema: none of the interface, only the windows - the control bar is already hidden, and
+	// what is left on the window list is the menu somebody opened on purpose
+	if( CinemaDirector_hidesHud() )
+	{
+		TheWindowManager->winRepaint();
+		return;
+	}
+
 	preDraw();
 
 	// draw selection region if drag selecting

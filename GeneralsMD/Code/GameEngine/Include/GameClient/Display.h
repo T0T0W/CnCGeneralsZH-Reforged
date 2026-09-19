@@ -192,6 +192,7 @@ public:
 	virtual void enableLetterBox(Bool enable) = 0;						///< forces letter-boxed display on/off
 	virtual Bool isLetterBoxFading( void ) { return FALSE; }	///< returns true while letterbox fades in/out
 	virtual Bool isLetterBoxed( void ) { return FALSE; }	//WST 10/2/2002. Added query interface
+	void setLetterBoxAspect( Real widthOverHeight ) { m_letterBoxAspect = widthOverHeight; }	///< the picture the bars leave; 16:9 is the game's, and draws nothing on a 16:9 screen
 	virtual const wchar_t *getRendererName( void ) const = 0;	///< the graphics API the picture is presented through, for the HUD corner
 
 	virtual void setCinematicText( AsciiString string ) { m_cinematicText = string; }
@@ -225,6 +226,7 @@ protected:
 	void									*m_debugDisplayUserData;	///< Data for debug display update handler
 	Real	m_letterBoxFadeLevel;	///<tracks the current alpha level for fading letter-boxed mode in/out.
 	Bool	m_letterBoxEnabled;		///<current state of letterbox
+	Real	m_letterBoxAspect;		///< width over height of the picture between the bars
 	UnsignedInt	m_letterBoxFadeStartTime;		///< time of letterbox fade start
 	Int		m_movieHoldTime;									///< time that we hold on the last frame of the movie
 	Int		m_copyrightHoldTime;							///< time that the copyright must be on the screen

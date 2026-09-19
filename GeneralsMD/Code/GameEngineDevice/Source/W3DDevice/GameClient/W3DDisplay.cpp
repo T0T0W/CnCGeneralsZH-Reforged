@@ -2576,8 +2576,8 @@ void W3DDisplay::renderLetterBox(UnsignedInt currentTime)
 			Int height = (Int)(getHeight() * 0.12f * m_letterBoxFadeLevel);
 			TheTacticalView->setOrigin(0, height);
 #else
-			drawFillRect( 0, 0, m_width, (m_height-(9.0f/16.0f * m_width))*0.5f, lbcolor );
-			drawFillRect( 0, m_height-(m_height-(9.0f/16.0f * m_width))*0.5f, m_width, m_height, lbcolor );
+			drawFillRect( 0, 0, m_width, (m_height-(m_width / m_letterBoxAspect))*0.5f, lbcolor );
+			drawFillRect( 0, m_height-(m_height-(m_width / m_letterBoxAspect))*0.5f, m_width, m_height, lbcolor );
 #endif
 		}
 		else
@@ -2594,8 +2594,8 @@ void W3DDisplay::renderLetterBox(UnsignedInt currentTime)
 				Int height = (Int)(getHeight() * 0.12f * m_letterBoxFadeLevel);
 				TheTacticalView->setOrigin(0, height);
 #else
-				drawFillRect( 0, 0, m_width, (m_height-(9.0f/16.0f * m_width))*0.5f, lbcolor );
-				//drawFillRect( 0, m_height-(m_height-(9.0f/16.0f * m_width))*0.5f, m_width, m_height, lbcolor );
+				drawFillRect( 0, 0, m_width, (m_height-(m_width / m_letterBoxAspect))*0.5f, lbcolor );
+				drawFillRect( 0, m_height-(m_height-(m_width / m_letterBoxAspect))*0.5f, m_width, m_height, lbcolor );
 #endif
 			}
 			else

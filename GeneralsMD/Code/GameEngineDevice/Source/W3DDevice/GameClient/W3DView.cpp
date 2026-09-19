@@ -50,6 +50,7 @@
 
 #include "GameClient/Color.h"
 #include "GameClient/CameraBoundary.h"
+#include "GameClient/CinemaDirector.h"
 #include "GameClient/CommandXlat.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GameClient.h"
@@ -1084,6 +1085,10 @@ static void drawablePostDraw( Drawable *draw, void *userData )
 {
 	Real FXPitch = TheTacticalView->getFXPitch();
 	if (draw->isDrawableEffectivelyHidden() || FXPitch < 0.0f)
+		return;
+
+	// -cinema: no health bars, ranks or captions over the units
+	if (CinemaDirector_hidesHud())
 		return;
 
 	Object* obj = draw->getObject();

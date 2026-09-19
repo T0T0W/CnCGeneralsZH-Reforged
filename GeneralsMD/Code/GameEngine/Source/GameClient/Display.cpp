@@ -55,6 +55,7 @@ Display::Display()
 	m_debugDisplay = NULL;
 	m_letterBoxFadeLevel = 0;
 	m_letterBoxEnabled = FALSE;
+	m_letterBoxAspect = 16.0f / 9.0f;
 	m_cinematicText = AsciiString::TheEmptyString;
 	m_cinematicFont = NULL;
 	m_cinematicTextFrames = 0;  

@@ -668,7 +668,12 @@ add_custom_command(TARGET generals POST_BUILD
   # for one, and a scenario run cannot be replayed anyway.
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           ${CMAKE_CURRENT_SOURCE_DIR}/Data/Scenarios
-          ${CMAKE_CURRENT_SOURCE_DIR}/../Run/Scenarios)
+          ${CMAKE_CURRENT_SOURCE_DIR}/../Run/Scenarios
+  # -cinema reads these shot lists. Client-side only, never checksummed, and a tool for making
+  # footage rather than anything a player needs, so they stay out of package.bat too.
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/Data/Cinema
+          ${CMAKE_CURRENT_SOURCE_DIR}/../Run/Cinema)
 
 # ===========================================================================
 # Tests.  Run with:  ctest --test-dir build -C Release --output-on-failure

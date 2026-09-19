@@ -1,0 +1,38 @@
+# A tour of the verbs, written for the parade scenario:
+#
+#   generals.exe -win -xres 1280 -yres 720 -quickstart -noshellmap -observer -multiInstance
+#     -randommap 1 2 small -autoskirmish 2 -takeover -seed 1 -peacetime 10
+#     -scenario parade -cinema demo
+#
+# Add -video 0 1200 demo to get Videos\demo.mp4 instead of watching it (ffmpeg on the PATH).
+# Coordinates are for that map: the column forms up round (700,550) and (1000,250), the order goes
+# out at 3 seconds and sends it to (1000,1150).
+#
+# <seconds> <verb> ...
+#   cut <x> <y> [zoom] [angle] [pitch]   be there now
+#   move <x> <y> <s>                      slide to a point
+#   route <s> <x> <y> <x> <y> ...        slide through points on a curve
+#   zoom <factor> <s>                     1 is the distance the list started at, below 1 is closer
+#   angle <deg> <s> / orbit <deg> <s>     turn to a heading / turn by this much
+#   pitch <deg> <s>                       tilt, -36 to 36; 0 is the game's own
+#   follow <template> [s]                 chase the nearest one of those
+#   unfollow | hud on|off | letterbox on|off | shot | end
+
+0     cut        850 420 1.1 0 0
+0     letterbox  on
+# come down over the column and swing round it while it sets off
+1     zoom       0.6 5
+1     pitch      -20 5
+1     orbit      60 8
+# ride with one tank
+4     follow     AmericaTankCrusader 12
+5     zoom       0.4 4
+# pull back and fly ahead of them to where they are going, then circle it as they arrive
+16    route      8 900 950 1000 1150
+16    zoom       1.0 6
+16    pitch      0 6
+22    orbit      -150 12
+28    shot
+30    zoom       0.55 6
+37    shot
+38    end

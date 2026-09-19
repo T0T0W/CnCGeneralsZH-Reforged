@@ -1,0 +1,13 @@
+# Something to film: a column that marches most of the way across a small generated map, for
+# Cinema\demo.txt. Not a measurement; massmove is the one that counts arrivals.
+#
+#   generals.exe -win -xres 1280 -yres 720 -quickstart -noshellmap -observer -multiInstance
+#     -randommap 1 2 small -autoskirmish 2 -takeover -seed 1 -peacetime 10
+#     -scenario parade -cinema demo
+#
+# On that map the tanks form up round (700,550), the infantry round (1000,250), and the order sends
+# them all to (1000,1150).
+
+30    spawn   0  AmericaTankCrusader  40  start0:0:300  40
+30    spawn   0  AmericaInfantryRanger  40  start0:300:0  20
+90    playermove    0  *      1000 1150

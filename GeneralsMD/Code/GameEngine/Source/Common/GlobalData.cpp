@@ -715,6 +715,7 @@ GlobalData::GlobalData()
 	m_noRenderDevice = FALSE; // -headless still takes a 100x100 device unless -nodevice says not to
 	m_controlPort = 0; // nothing listens; -control opens the socket
 	m_scenarioFile.clear(); // nothing is scripted; -scenario is a measuring tool and ruins the match it runs in
+	m_cinemaScript.clear(); // the interface is on and the camera belongs to the player
 	m_autoSkirmishTakeover = FALSE; // the AI plays the opponents unless -takeover empties their seats
 	for( Int slot = 0; slot < MAX_PLAYER_COUNT; slot++ )
 		m_autoSkirmishSide[ slot ].clear(); // every faction still comes out of the seed unless -side names one

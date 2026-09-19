@@ -13041,3 +13041,4 @@ TEST(camera_preferences_default_to_a_finite_map_margin)
 #include "test_minimap_input.inc"
 #include "test_selection_priority.inc"
 #include "test_supply_center_save.inc"
+#include "test_cinema.inc"
