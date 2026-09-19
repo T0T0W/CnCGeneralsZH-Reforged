@@ -202,7 +202,10 @@ void AISkirmishPlayer::processBaseBuilding( void )
 			// The safety check below is a range query over everything near the spot, most of a
 			// millisecond each late in a 4v4, and it ran for every unbuilt entry on every pass (36 of
 			// them, 28ms, in one frame). An entry that cannot change what this pass picks skips it.
-			const Bool couldBePriority = info->isPriorityBuild() && !isPriority;
+			// A priority entry whose prerequisite is not standing yet was taken all the same, and
+			// buildObjectNow refused it on every pass, so nothing queued behind it went up either: a
+			// China AI asked for a bunker before its barracks and sat on 35,000 until frame 8116.
+			const Bool couldBePriority = info->isPriorityBuild() && !isPriority && m_player->canBuild(curPlan);
 			const Bool couldBePower = powerPlan==NULL && curPlan->isKindOf(KINDOF_FS_POWER) &&
 				!curPlan->isKindOf(KINDOF_CASH_GENERATOR) && (isUnderPowered || info->isAutomaticBuild());
 			const Bool couldBeBuilt = bldgPlan==NULL && info->isAutomaticBuild() && info->isBuildable();
@@ -216,13 +219,11 @@ void AISkirmishPlayer::processBaseBuilding( void )
 			if (!locationSafe) {
 				continue;
 			}
-			if (info->isPriorityBuild()) {
+			if (couldBePriority) {
 				// Always take priority build, unless we already have priority build.
-				if (!isPriority) {
-					bldgPlan = curPlan;
-					bldgInfo = info;
-					isPriority = true;
-				}
+				bldgPlan = curPlan;
+				bldgInfo = info;
+				isPriority = true;
 			}
 			if (curPlan->isKindOf(KINDOF_FS_POWER)) {
 				if (powerPlan==NULL && !curPlan->isKindOf(KINDOF_CASH_GENERATOR)) {

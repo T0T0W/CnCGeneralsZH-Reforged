@@ -632,6 +632,11 @@ add_custom_command(TARGET generals POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           ${CMAKE_CURRENT_SOURCE_DIR}/Data/Patch.str
           ${CMAKE_CURRENT_SOURCE_DIR}/../Run/Data/
+  # The skirmish AI's scripts with the USA Hard opening rewritten by Tools/ScbTool/opening.py.  The
+  # file is in the multiplayer checksum (GlobalData.cpp), so it ships with the exe like the INIs.
+  COMMAND ${CMAKE_COMMAND} -E copy_directory
+          ${CMAKE_CURRENT_SOURCE_DIR}/Data/Scripts
+          ${CMAKE_CURRENT_SOURCE_DIR}/../Run/Data/Scripts
   # The translations the Language option lays over the English strings, one directory per
   # language.  Strings are not in the multiplayer INI checksum: two players can read one match in
   # two languages.

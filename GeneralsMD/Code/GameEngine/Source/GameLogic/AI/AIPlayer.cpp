@@ -388,6 +388,9 @@ AIPlayer::~AIPlayer()
 // ------------------------------------------------------------------------------------------------
 void AIPlayer::onStructureProduced( Object *factory, Object *bldg )
 {
+	// the opening build order is read from these: which building came up on which frame
+	DEBUG_LOG(("AI BUILT frame %d player %d '%s', %d in the bank\n", TheGameLogic->getFrame(),
+		m_player->getPlayerIndex(), bldg->getTemplate()->getName().str(), m_player->getMoney()->countMoney()));
 	m_teamDelay = 0; // Cause the update queues & selection to happen immediately.
 	m_buildDelay = 0; // Cause 
 	/* Find the info building this. */
